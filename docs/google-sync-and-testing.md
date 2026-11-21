@@ -1393,7 +1393,17 @@ Electron binary (`electron --version`) and run spec files sequentially.
   `maestroRetry.ts`), and the step summary names the tag.
 - `pr-complete.yml` (PRs, ubuntu): `PR complete` fails a ready PR whose
   body owes a review stage, a screenshot or its `docs/decisions.md`
-  record (`scripts/check-pr-complete.ts`); drafts pass unchecked.
+  record (`scripts/check-pr-complete.ts`); drafts pass unchecked. It is a
+  commit status on the PR's head, which the `Post PR complete` job sets
+  and then passes: GitHub counts every check run on a commit, so a job
+  that failed before the body was fixed, or one cancelled by the next
+  event, kept the PR red after a later run passed (#347, #352). A status
+  replaces the one before it under the same name, so nothing cancels a
+  run; each reads the PR again after posting and checks and posts again
+  if it changed meanwhile, so a stalled run's older verdict can't be the
+  last to land. A red `Post PR complete` is the run itself breaking (the API), not
+  the body: rerun it. A fork's PR is the exception: its read-only token
+  can't set a status, so there the job's own result is the verdict.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers, so tokens cannot leak into CI logs this way.
 

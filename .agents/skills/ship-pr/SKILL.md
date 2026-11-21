@@ -158,6 +158,9 @@ the next number.
 ## 9. CI and after
 
 - CI: the gate, the macOS desktop e2e, the iOS e2e and `PR complete`.
+  `PR complete` is a commit status, set by the `Post PR complete` job: a
+  body edit runs it again and the new verdict replaces the old one. That
+  job itself goes red only when its run broke; rerun it.
   A failure on CI only: reproduce locally first (`docs/google-sync-and-testing.md`
   → CI lists the known flakes and how to tell them from a real failure).
 - A batch of separate PRs opened together can each be green and still
