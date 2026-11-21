@@ -2645,7 +2645,6 @@ const GAP = {
   ahead: 'a series change that went back behind an occurrence change made under it',
   dropped: 'the deletes a rule change queued, sent after a delete replaced it',
   givenUp: 'an occurrence changed under a new rule that was given up',
-  moving: 'news of a series a queued move takes out of its calendar',
   ownText: "an occurrence's own text under a later edit of its series",
 } as const;
 
@@ -2655,14 +2654,6 @@ const GAP = {
  * QUEUE_SEQUENCE_RUNS=1000; a change to the steps, their odds or the
  * requests the app sends reshuffles every sequence, so search again rather
  * than trust these after one.
- *
- * `moving` has no test of its own: a page leaves out a series a queued
- * move takes out of its calendar (Google lists it there until the move
- * lands, and a copy written then showed it in both calendars), so what
- * another device did to the series meanwhile goes with it and the page's
- * token moves on. In sequence 981 that is one occurrence cancelled, under
- * a move out and a move back in behind it. A move holds no copy of the
- * series as Google has it, as a task's move does.
  */
 const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
   [77, GAP.ahead],
@@ -2670,7 +2661,6 @@ const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
   [524, GAP.ownText],
   [565, GAP.ahead],
   [576, GAP.dropped],
-  [981, GAP.moving],
 ]);
 
 describe('pending-op queue: seeded random sequences', () => {
@@ -3564,6 +3554,39 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
     );
   });
 
+  it.effect('a subtask moved out and back stays out of its parent when the order is read', () => {
+    // Sequence 1813: the subtask moved to another list and back while
+    // offline, which takes it out of its parent. A pass that read the
+    // list's order wrote Google's on the rows, where the subtask is still
+    // under that parent, and the parent's next move took it along here:
+    // its edits then went to a list Google never had it in.
+    const google = newFake();
+    const network = writesDown(google);
+    const BOOK = { day: 5, id: 's2', title: 'Book' };
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveOf(mutations, BOOK, 'list-1', 'list-2');
+        yield* moveOf(mutations, BOOK, 'list-2', 'list-1');
+        expect(yield* placed).toEqual(['list-1/p', 'list-1/s1/p', 'list-1/s2']);
+        // Another device changes the list, so its order is read again.
+        google.insertTaskServerSide('list-1', {
+          id: 'other',
+          status: 'needsAction',
+          title: 'Other',
+        });
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* placed).toEqual(['list-1/p', 'list-1/s1/p', 'list-1/s2']);
+        yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+        expect(yield* placed).toEqual(['list-2/p', 'list-2/s1/p', 'list-1/s2']);
+      }),
+    );
+  });
+
   it.effect(
     'a subtask’s own move undone while its parent’s move waits goes with its parent',
     () => {
@@ -4014,6 +4037,80 @@ describe('pending-op queue: what a pull tells of a queued create or move', () =>
       }),
     );
   });
+
+  it.effect('news of an event its queued move takes out of the calendar reaches its rows', () => {
+    // Sequence 2443: another device renamed the event, then it was moved
+    // while offline. The page of the calendar it leaves left it out —
+    // written there, it showed in both calendars — and its token moved
+    // on: given up, the move put the old title back for good.
+    const google = newFake();
+    const network = writesDown(google);
+    const titles = Effect.gen(function* () {
+      const rows = yield* (yield* SqlClient)<{
+        readonly calendar_id: string;
+        readonly sync_status: string;
+        readonly title: string;
+      }>`SELECT calendar_id, sync_status, title FROM events WHERE id = 'e3'`;
+      return rows.map((row) => `${row.calendar_id} ${row.sync_status} ${row.title}`);
+    });
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        google.patchEventServerSide('cal-2', 'e3', { summary: 'Review (moved room)' });
+        network.down = true;
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-2',
+          eventId: 'e3',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-1' },
+        });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        // Where its rows are: in the calendar the move takes it to.
+        expect(yield* titles).toEqual(['cal-1 pending Review (moved room)']);
+        // Never sent, the move goes back at once.
+        yield* discardAll(mutations);
+        expect(yield* titles).toEqual(['cal-2 synced Review (moved room)']);
+      }),
+    );
+  });
+
+  it.effect('the occurrences of a series take what the page that settles its move brings', () => {
+    // Sequences 1148 and 1777: the series' move landed with its answer
+    // lost, and another device renamed it in its new calendar, which
+    // Google copies onto every exception. The page brought the master and
+    // the exceptions; their rows were still the move's, and were skipped.
+    const google = newFake();
+    lostThenRefused(google, (call) => call.url.includes('/move'));
+    const moved = googleInstanceId('r2', R2_START + DAY, false);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-2',
+          eventId: 'r2',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-1' },
+        });
+        yield* mutations.processPendingOps();
+        google.patchEventServerSide('cal-1', 'r2', { summary: 'Sprint review' });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly calendar_id: string;
+          readonly sync_status: string;
+          readonly title: string;
+        }>`SELECT calendar_id, sync_status, title FROM events WHERE id IN ('r2', ${moved}) ORDER BY id`;
+        expect(rows).toEqual([
+          { calendar_id: 'cal-1', sync_status: 'synced', title: 'Sprint review' },
+          { calendar_id: 'cal-1', sync_status: 'synced', title: 'Sprint review' },
+        ]);
+      }),
+    );
+  });
 });
 
 describe('pending-op queue: an occurrence changed under a queued change of its series', () => {
@@ -4382,6 +4479,41 @@ describe('pending-op queue: open gaps the sequences found in series', () => {
       );
     },
   );
+
+  it.effect.skip('a change made after a discarded move that had landed is kept', () => {
+    // Sequences 1876 and 2506 (past the first thousand; 2506 with a cut in
+    // place of the move): a move landed with its answer lost and was
+    // discarded while Google could not be asked where the event is. It
+    // went back to its source, as a move that never reached Google would,
+    // and until the next pull the user saw it there: a change made then
+    // met a 404 and was dropped. A discarded change Google may have is
+    // only settled once Google answers; until then it would have to wait.
+    const google = newFake();
+    lostThenRefused(
+      google,
+      (call) => call.url.includes('/move') || /\/events\/e1$/.test(new URL(call.url).pathname),
+    );
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* mutations.processPendingOps();
+        yield* discardAll(mutations);
+        google.fault = undefined;
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Standup (new room)' },
+          eventId: 'e1',
+        });
+        yield* drainAll(mutations);
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(google.eventOf('cal-2', 'e1')?.summary).toBe('Standup (new room)');
+      }),
+    );
+  });
 
   it.effect.skip('an occurrence keeps its own text through a later edit of its series', () => {
     // Sequences 485 and 524, and 1080, 2513 and 2801 past the first

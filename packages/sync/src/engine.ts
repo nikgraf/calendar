@@ -364,6 +364,24 @@ const make: Effect.Effect<
         ),
     );
 
+  /**
+   * What a page brings for events a queued move holds, at the calendar
+   * their rows are in (`records` are re-keyed to it): one a queued change
+   * holds there takes it into its copy (`heldEvents.receive`); a row only
+   * the move holds takes it and stays as it was, pending — the move's
+   * landing or its release hands it back to sync. No row there is the
+   * user's delete, or an occurrence nothing changed: nothing is written.
+   */
+  const showMoving = (accountId: string, calendarId: string, records: ReadonlyArray<EventRecord>) =>
+    Effect.gen(function* () {
+      for (const record of yield* heldEvents.receive(accountId, calendarId, records)) {
+        const row = yield* eventRepo.getById(accountId, calendarId, record.id);
+        if (row) {
+          yield* eventRepo.upsertMany([new EventRecord({ ...record, syncStatus: row.syncStatus })]);
+        }
+      }
+    });
+
   const syncEvents = (
     account: Account,
     calendarId: string,
@@ -413,64 +431,88 @@ const make: Effect.Effect<
           // notification planner and the calendar mirrors all recompute on
           // EVENTS_KEY, and none of them has anything to recompute.
           if (upserts.length > 0 || deletions.length > 0) {
-            // A queued create whose event the page brings, or a queued move
-            // into this calendar of one it brings: that write landed, and
-            // its answer was lost. Settled with the page's record once the
-            // page is in (`landedInPull`); left queued, a discard took back
-            // what Google has, for good — the token has moved past it.
-            const queued = (yield* pendingOpRepo.listAll()).filter(
-              (op) => op.accountId === account.id,
-            );
-            const moving = yield* nextMoves(account.id);
-            const landed = upserts.flatMap((record) => {
-              if (record.status === 'cancelled') {
-                return [];
-              }
-              const move = moving.get(record.id);
-              return queued
-                .filter(
-                  (op) =>
-                    op.eventId === record.id &&
-                    ((op.kind === 'create' && op.calendarId === calendarId) ||
-                      (op.id === move?.id && op.targetCalendarId === calendarId)),
-                )
-                .map((op) => ({ opId: op.id, record }));
-            });
-            // An event a queued move brings into this calendar that the page
-            // reports gone from it: the event left here before (an earlier
-            // move out, which that report is of) and the move brings it
-            // back. Its rows here are the move's, and stay.
-            const arriving = new Set(
-              queued
-                .filter((op) => op.kind === 'move' && op.targetCalendarId === calendarId)
-                .map((op) => op.eventId),
-            );
-            const gone = deletions.filter((id) => !arriving.has(id));
-            // One the page reports gone from here that its next move takes
-            // out of here: the move landed, or another device deleted the
-            // event. Released later, the move must not put it back
-            // (`PendingOp.sourceGone`).
-            const left = deletions.flatMap((id) => {
-              const move = moving.get(id);
-              return move?.calendarId === calendarId ? [move.id] : [];
-            });
-            yield* sql.withTransaction(
+            const landed = yield* sql.withTransaction(
               Effect.gen(function* () {
+                // A queued create whose event the page brings, or a queued move
+                // into this calendar of one it brings: that write landed, and
+                // its answer was lost. Settled with the page's record once the
+                // page is in (`landedInPull`); left queued, a discard took back
+                // what Google has, for good — the token has moved past it.
+                const queued = (yield* pendingOpRepo.listAll()).filter(
+                  (op) => op.accountId === account.id,
+                );
+                const next = yield* nextMoves(account.id);
+                const landed = upserts.flatMap((record) => {
+                  if (record.status === 'cancelled') {
+                    return [];
+                  }
+                  const move = next.get(record.id);
+                  return queued
+                    .filter(
+                      (op) =>
+                        op.eventId === record.id &&
+                        ((op.kind === 'create' && op.calendarId === calendarId) ||
+                          (op.id === move?.id && op.targetCalendarId === calendarId)),
+                    )
+                    .map((op) => ({ opId: op.id, record }));
+                });
+                // An event a queued move brings into this calendar that the page
+                // reports gone from it: the event left here before (an earlier
+                // move out, which that report is of) and the move brings it
+                // back. Its rows here are the move's, and stay.
+                const arriving = new Set(
+                  queued
+                    .filter((op) => op.kind === 'move' && op.targetCalendarId === calendarId)
+                    .map((op) => op.eventId),
+                );
+                const gone = deletions.filter((id) => !arriving.has(id));
+                // One the page reports gone from here that its next move takes
+                // out of here: the move landed, or another device deleted the
+                // event. Released later, the move must not put it back
+                // (`PendingOp.sourceGone`).
+                const left = deletions.flatMap((id) => {
+                  const move = next.get(id);
+                  return move?.calendarId === calendarId ? [move.id] : [];
+                });
                 // A series a queued move takes out of this calendar: Google
                 // lists it here until the move lands, and a copy written
-                // now showed it in both calendars — one the user could edit
-                // or delete, whose op then met a 404 here. Read under the
-                // pass's hold on the drain, so no move lands in between (the
-                // tasks pass skips a moving task the same way).
+                // here now showed it in both calendars — one the user could
+                // edit or delete, whose op then met a 404 here. What the
+                // page brings for it goes to its rows where they are: the
+                // calendar its last queued move takes it to (`showMoving`).
+                // Left out, another device's change stayed unseen for good
+                // once the move landed or was given up. Read under the
+                // pass's hold on the drain, so no move lands in between.
                 const leaving = yield* movesOutOf(account.id, calendarId);
-                const staying = upserts.filter(
-                  (record) =>
-                    !leaving.has(record.id) && !leaving.has(record.recurringEventId ?? ''),
-                );
-                for (const record of upserts) {
-                  if (leaving.has(record.id)) {
-                    listedLeaving.add(record.id);
+                const rowsIn = new Map<string, string>();
+                for (const op of queued) {
+                  if (op.kind === 'move' && op.targetCalendarId !== undefined) {
+                    rowsIn.set(op.eventId, op.targetCalendarId);
                   }
+                }
+                const staying: Array<EventRecord> = [];
+                const moving = new Map<string, Array<EventRecord>>();
+                for (const record of upserts) {
+                  const seriesId = leaving.has(record.id)
+                    ? record.id
+                    : leaving.has(record.recurringEventId ?? '')
+                      ? record.recurringEventId
+                      : undefined;
+                  if (seriesId === undefined) {
+                    staying.push(record);
+                    continue;
+                  }
+                  if (record.id === seriesId) {
+                    listedLeaving.add(seriesId);
+                  }
+                  const at = rowsIn.get(seriesId) ?? calendarId;
+                  moving.set(at, [
+                    ...(moving.get(at) ?? []),
+                    new EventRecord({ ...record, calendarId: at }),
+                  ]);
+                }
+                for (const [at, records] of moving) {
+                  yield* showMoving(account.id, at, records);
                 }
                 yield* pendingOpRepo.markSourceGone(left);
                 // An exception of a series whose delete waits with the
@@ -494,10 +536,28 @@ const make: Effect.Effect<
                   deletions: gone,
                   written: rows,
                 });
+                return landed;
               }),
             );
             if (landed.length > 0) {
               yield* mutations.landedInPull(landed);
+              // A series that was settled so: its occurrences' rows were
+              // the move's until now, and the page skipped them. They
+              // take what it brought for them.
+              const settled = new Set(landed.map(({ record }) => record.id));
+              const theirs = upserts.filter((record) => settled.has(record.recurringEventId ?? ''));
+              if (theirs.length > 0) {
+                yield* sql.withTransaction(
+                  Effect.gen(function* () {
+                    const rows = yield* heldEvents.receive(account.id, calendarId, theirs);
+                    yield* eventRepo.applyPage(account.id, calendarId, {
+                      deletions: [],
+                      mode: 'pull',
+                      upserts: rows,
+                    });
+                  }),
+                );
+              }
             }
           }
           // A full list of a big calendar is many pages: let rpc handlers

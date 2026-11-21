@@ -50,9 +50,10 @@ export const readTaskOrder = (
  * Google's order written onto a list's rows, pending ones included (their
  * queued edits do not touch the order), and onto Google's copies of the
  * held ones — the place a discarded reorder or delete puts a task back
- * at; then the reorders still queued are replayed over the rows in queue
- * order, as Google will apply them — each placed by its parent and
- * previous sibling. `landedOpId` is a reorder that just landed and is
+ * at; then the moves into the list and the reorders still queued are
+ * replayed over the rows in queue order, as Google will apply them — a
+ * moved task at the top, a reordered one by its parent and previous
+ * sibling. `landedOpId` is a reorder that just landed and is
  * still in the queue: its place is already in `entries`.
  */
 export const makeApplyTaskOrder =
@@ -74,11 +75,30 @@ export const makeApplyTaskOrder =
         }
       }
       for (const queued of yield* pendingOpRepo.listAll()) {
-        if (
-          queued.id === landedOpId ||
-          queued.accountId !== accountId ||
-          queued.calendarId !== listId
-        ) {
+        if (queued.id === landedOpId || queued.accountId !== accountId) {
+          continue;
+        }
+        // A task its own queued move brings into this list arrives at the
+        // top of it. Where it was here before (it moved out and comes
+        // back), Google still lists it under its old parent until the
+        // moves land: the row stays out of it, or that parent's next move
+        // took it along here and nowhere on Google.
+        if (queued.kind === 'moveTask' && queued.targetTaskListId === listId) {
+          const back = yield* taskRepo.get(accountId, listId, queued.eventId);
+          if (back?.parentId !== undefined) {
+            const top = (yield* taskRepo.listSiblings(accountId, listId, undefined)).filter(
+              (sibling) => sibling.id !== back.id,
+            );
+            yield* taskRepo.updateLocal({
+              accountId,
+              changes: { parentId: null, position: provisionalPosition(top, undefined) },
+              listId,
+              taskId: back.id,
+            });
+          }
+          continue;
+        }
+        if (queued.calendarId !== listId) {
           continue;
         }
         const row =

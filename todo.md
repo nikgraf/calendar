@@ -30,10 +30,13 @@ was written; re-verify before starting one.
       (discarded, or keep-theirs) keeps its change queued at a slot the
       series no longer draws, and meets a 404. Skipped test: "discarding
       a new rule takes along the change of an occurrence only it draws".
-- [ ] A queued move holds no copy of its series as Google has it: what a
-      pull brings for a series the move takes out of that calendar is
-      left out (another device's cancelled occurrence stays on screen
-      once the move lands). `queueSequence.test.ts`, `GAP.moving`.
+- [ ] A change that had landed with its answer lost, then discarded, is
+      put back as if Google never got it until the next pull says
+      otherwise: a discarded move goes back to its source when Google
+      cannot be asked, a discarded edit or cut is not asked about at all.
+      What the user does to the item before that pull meets a 404 and is
+      dropped. Skipped test: "a change made after a discarded move that
+      had landed is kept".
 
 - [ ] Let agent refs resolve zero-duration Google series occurrences
       (`packages/agent/src/resolve.ts`, `ruleProduces`; found reviewing

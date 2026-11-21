@@ -579,8 +579,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   so an edit of all events replaces the series' queued change and goes to
   the back of the queue, behind a change of one occurrence made under
   it; an occurrence changed under a new rule that is then given up keeps
-  its change at a slot the series no longer draws; and the deletes a
-  rule change queued outlive a delete that replaces it.
+  its change at a slot the series no longer draws; the deletes a rule
+  change queued outlive a delete that replaces it; and a change that had
+  landed with its answer lost, discarded before a pull says so, is put
+  back as if Google never got it.
 
 Rules a change to the queue keeps (each broke once):
 
@@ -685,7 +687,15 @@ Rules a change to the queue keeps (each broke once):
   nothing back there, and a move of it out of the same calendar queued
   behind takes the mark on. And a page that reports an event gone from a
   calendar a queued move brings it back to tells of the earlier move
-  out: the rows there are that move's, and stay.
+  out: the rows there are that move's, and stay. What a page brings for
+  an event (or the exceptions of a series) a queued move takes out of the
+  page's calendar is not written there — Google lists it there until the
+  move lands, and it showed in both calendars — but to its rows where
+  they are, in the calendar its last queued move takes it to, re-keyed
+  (`showMoving`): a row only the move holds takes it and stays pending.
+  And when a page settles a series' move, the page's records of that
+  series' exceptions are applied again, since their rows were the move's
+  when the page went in.
 - **A queued delete leaves no row, and a pull writes none**: Google's
   copy of an event or a task whose delete waits goes to its copy (a
   delete of an event that changed since parks). A deletion a page
@@ -821,8 +831,10 @@ Rules a change to the queue keeps (each broke once):
   `updated`, which the task-list pass already fetches. When it differs
   from the one stored at the list's last order read (`taskOrder:<list>`
   in `sync_state`), the pass writes Google's order onto the list's rows
-  and onto the copies of the held ones, then replays the queued reorders,
-  as after a landed reorder — from its
+  and onto the copies of the held ones, then replays the queued moves
+  into the list (a task its own move brings back stays out of the parent
+  Google still lists it under) and the queued reorders, as after a landed
+  reorder — from its
   own listing on a full pass, else from one order-only listing
   (`fields=nextPageToken,items(id,parent,position)`); an idle poll reads
   nothing. That listing names every live task of the list, so a synced
