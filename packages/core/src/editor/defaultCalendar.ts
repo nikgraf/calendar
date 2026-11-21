@@ -41,12 +41,18 @@ export type DefaultCalendarPlace =
   | { readonly kind: 'lastUsed' }
   /** A calendar here that takes new events, as `accountId:calendarId`. */
   | { readonly calendarKey: string; readonly kind: 'here' }
-  /**
-   * Chosen, but no calendar here takes it: its account is not on this
-   * device, the calendar is gone or read-only, or two Apple calendars
-   * share its source and title (which one would be a guess).
-   */
-  | { readonly kind: 'missing'; readonly label: string };
+  /** Chosen, but no calendar here takes it, and why. */
+  | {
+      readonly kind: 'missing';
+      readonly label: string;
+      /**
+       * `absent`: its account is not on this device, or the calendar is
+       * gone. `readOnly`: it is here, but takes no new events. `twins`:
+       * two writable Apple calendars share its source and title, and which
+       * one would be a guess.
+       */
+      readonly reason: 'absent' | 'readOnly' | 'twins';
+    };
 
 const labelOf = (ref: MirrorCalendarRef): string =>
   ref.kind === 'google' ? (ref.title ?? ref.calendarId) : ref.title;
@@ -93,8 +99,13 @@ export const placeDefaultCalendar = ({
     return { kind: 'lastUsed' };
   }
   const matches = matchesOf(ref, accounts, calendars);
-  const [calendar] = matches;
-  return matches.length === 1 && calendar !== undefined && isCalendarWritable(calendar)
-    ? { calendarKey: `${calendar.accountId}:${calendar.id}`, kind: 'here' }
-    : { kind: 'missing', label: labelOf(ref) };
+  // Only writable ones count: a read-only namesake (a calendar shared
+  // with you under your own one's name) leaves no doubt which is meant.
+  const writable = matches.filter(isCalendarWritable);
+  const [calendar] = writable;
+  if (writable.length === 1 && calendar !== undefined) {
+    return { calendarKey: `${calendar.accountId}:${calendar.id}`, kind: 'here' };
+  }
+  const reason = writable.length > 1 ? 'twins' : matches.length > 0 ? 'readOnly' : 'absent';
+  return { kind: 'missing', label: labelOf(ref), reason };
 };

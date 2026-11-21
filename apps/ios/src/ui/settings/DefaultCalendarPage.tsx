@@ -7,6 +7,13 @@ import {
 import { calendarGroupLabel } from '../calendarGroupLabel.ts';
 import { CheckRow, ColorDot, Section, SettingsPage } from '../GroupedList.tsx';
 
+/** Why a chosen calendar takes no new events here, under its name. */
+const MISSING_REASON: Record<'absent' | 'readOnly' | 'twins', string> = {
+  absent: 'Not on this iPhone',
+  readOnly: 'Read-only here',
+  twins: 'Two calendars have this name',
+};
+
 /** What Settings › Calendar shows beside Default Calendar. */
 export const defaultCalendarValue = (editor: DefaultCalendarEditor): string => {
   const { place } = editor;
@@ -23,7 +30,8 @@ export const defaultCalendarValue = (editor: DefaultCalendarEditor): string => {
  * Where new events start — the editor's and the Assistant's alike: Last
  * Used, or a calendar per account (Apple per source), as the editor's own
  * picker lists them. The setting travels in the settings file, so one
- * picked on the Mac that this iPhone lacks shows as such.
+ * picked on the Mac that this iPhone lacks (or holds read-only) shows as
+ * such.
  */
 export function DefaultCalendarPage() {
   const editor = useDefaultCalendarEditor();
@@ -50,7 +58,7 @@ export function DefaultCalendarPage() {
           <CheckRow
             checked
             disabled
-            subtitle="Not on this iPhone"
+            subtitle={MISSING_REASON[place.reason]}
             testID="default-calendar-missing"
             title={place.label}
           />

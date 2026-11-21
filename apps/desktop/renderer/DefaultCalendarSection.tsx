@@ -5,11 +5,19 @@ import { FIELD_CLASS, LABEL_CLASS } from './ui/fieldStyles.ts';
 const LAST_USED = 'lastUsed';
 const MISSING = 'missing';
 
+/** Why a chosen calendar takes no new events here, after its name. */
+const MISSING_REASON: Record<'absent' | 'readOnly' | 'twins', string> = {
+  absent: 'not on this Mac',
+  readOnly: 'read-only here',
+  twins: 'two calendars have this name',
+};
+
 /**
  * Where new events start — the editor's and the Assistant's alike: a
  * calendar picked here, or the one used last. The setting travels in the
  * settings file, so a calendar picked on the iPhone that this Mac lacks
- * shows as such and leaves new events on the one used last.
+ * (or holds read-only) shows as such and leaves new events on the one
+ * used last.
  */
 export function DefaultCalendarSection() {
   const editor = useDefaultCalendarEditor();
@@ -50,7 +58,7 @@ export function DefaultCalendarSection() {
           <option value={LAST_USED}>Last used</option>
           {place.kind === 'missing' ? (
             <option disabled value={MISSING}>
-              {place.label} (not on this Mac)
+              {place.label} ({MISSING_REASON[place.reason]})
             </option>
           ) : null}
           {defaultCalendarGroups(choices, (calendar) =>

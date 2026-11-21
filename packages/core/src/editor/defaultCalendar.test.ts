@@ -78,10 +78,10 @@ describe('placeDefaultCalendar', () => {
       place({
         calendar: { calendarId: 'team', email: 'other@example.com', kind: 'google', title: 'Team' },
       }),
-    ).toEqual({ kind: 'missing', label: 'Team' });
+    ).toEqual({ kind: 'missing', label: 'Team', reason: 'absent' });
     expect(
       place({ calendar: { calendarId: 'gone', email: 'me@example.com', kind: 'google' } }),
-    ).toEqual({ kind: 'missing', label: 'gone' });
+    ).toEqual({ kind: 'missing', label: 'gone', reason: 'absent' });
     expect(
       place({
         calendar: {
@@ -91,10 +91,11 @@ describe('placeDefaultCalendar', () => {
           title: 'Holidays',
         },
       }),
-    ).toEqual({ kind: 'missing', label: 'Holidays' });
+    ).toEqual({ kind: 'missing', label: 'Holidays', reason: 'readOnly' });
     expect(place({ calendar: { kind: 'apple', source: 'iCloud', title: 'Home' } })).toEqual({
       kind: 'missing',
       label: 'Home',
+      reason: 'absent',
     });
   });
 
@@ -108,7 +109,24 @@ describe('placeDefaultCalendar', () => {
         ],
         settings: { calendar: { kind: 'apple', source: 'iCloud', title: 'Family' } },
       }),
-    ).toEqual({ kind: 'missing', label: 'Family' });
+    ).toEqual({ kind: 'missing', label: 'Family', reason: 'twins' });
+  });
+
+  it('takes the writable one of two Apple calendars named alike, the other read-only', () => {
+    // Your own iCloud "Family" and a view-only one shared with you under the same name.
+    expect(
+      placeDefaultCalendar({
+        accounts,
+        calendars: [
+          ...calendars,
+          calendar(APPLE_CALENDAR_ACCOUNT_ID, 'ek-family-shared', 'Family', {
+            accessRole: 'reader',
+            sourceTitle: 'iCloud',
+          }),
+        ],
+        settings: { calendar: { kind: 'apple', source: 'iCloud', title: 'Family' } },
+      }),
+    ).toEqual({ calendarKey: `${APPLE_CALENDAR_ACCOUNT_ID}:ek-family`, kind: 'here' });
   });
 
   it('finds no Apple calendar while Apple Calendar is not connected', () => {
@@ -118,7 +136,7 @@ describe('placeDefaultCalendar', () => {
         calendars,
         settings: { calendar: { kind: 'apple', source: 'iCloud', title: 'Family' } },
       }),
-    ).toEqual({ kind: 'missing', label: 'Family' });
+    ).toEqual({ kind: 'missing', label: 'Family', reason: 'absent' });
   });
 
   it('finds what portableCalendarRef names, for every writable calendar', () => {

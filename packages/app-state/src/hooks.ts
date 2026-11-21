@@ -679,13 +679,13 @@ export const useOnboarding = (): OnboardingState | null => {
   return Option.getOrNull(AsyncResult.value(result));
 };
 
-/** The device-local view preferences; null until the first read resolves (treat as the defaults). */
 /** Where new events start (the default calendar); null before the first read. */
 export const useNewEventSettings = (): NewEventSettings | null => {
   const result = useAtomValue(useBackendAtoms().newEventSettings);
   return Option.getOrNull(AsyncResult.value(result));
 };
 
+/** The device-local view preferences; null until the first read resolves (treat as the defaults). */
 export const useViewPreferences = (): ViewPreferences | null => {
   const result = useAtomValue(useBackendAtoms().viewPreferences);
   return Option.getOrNull(AsyncResult.value(result));
