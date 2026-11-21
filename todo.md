@@ -231,7 +231,17 @@ was written; re-verify before starting one.
       can make a draft of several days: the answer has no end day). In
       the thread, a full name does not close an open choice of guests
       ("invite Anna", then "invite Anna Lee" leaves Anna to pick from:
-      `flow-lunch-guests` fails on it for every model). Also open: a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded,
+      `flow-lunch-guests` fails on it for every model). For the next
+      run, the calendar said in words ("put it in my Work calendar",
+      "in den Familienkalender", a later "move it to Family"): the draft
+      has no calendar part, the prompt names no calendars, and v2's data
+      holds no such phrase (none of the 11,103 training rows, nor any
+      bench case that is not blind), so only the form's picker changes
+      it. Needs the writable calendars' names in the prompt, a
+      `calendar` part in the answer that the code looks up among them
+      (a lookup, no word list), teacher data with names in the prompt,
+      and bench cases in both languages, first phrase and later turn.
+      Also open: a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded,
       or a smaller base); "next Friday" and deadlines ("before Friday")
       are read as the teacher read them, which wavers; notes over 200
       characters or on several lines are not shown to the model, so the
