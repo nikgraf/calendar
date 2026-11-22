@@ -169,10 +169,12 @@ export interface HeldEvents {
   ) => Effect.Effect<ReadonlyArray<EventRecord>, SqlError>;
   /**
    * Writes the row of a held event again from what is queued for it:
-   * Google's copy with the last waiting change over it, pending. After the
-   * copy moved on without a version to compare (an answer of our own
-   * landed), so the row shows what the waiting changes now send. `except`
-   * is an op about to leave the queue. A queued delete leaves no row.
+   * Google's copy with the last waiting change over it, pending (for an
+   * occurrence Google has no exception for, its series drawn at the slot).
+   * After the copy moved on without a version to compare (an answer of
+   * our own landed, a page brought the series anew), so the row shows what
+   * the waiting changes now send. `except` is an op about to leave the
+   * queue. A queued delete leaves no row.
    */
   readonly show: (
     event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
@@ -204,16 +206,20 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
         eventId: theirs.id,
       };
       const holding = ops.filter((op) => HOLDING.has(op.kind));
-      const old = holding[0]?.beforePayload ?? null;
+      // What the changes were made on: Google's copy, or for an occurrence
+      // Google had no exception for, its series drawn at the slot. An
+      // exception another device made of it since is then news like any
+      // other: what it changed elsewhere shows, and the same thing asks.
+      const old = holding[0]?.beforePayload ?? holding[0]?.basePayload ?? null;
       const now = yield* Clock.currentTimeMillis;
       const first = holding[0];
       if (first) {
         // The copy is Google's, whatever becomes of the changes below.
         yield* pendingOpRepo.setBefore(first.id, theirs);
       }
-      // A cancelled occurrence, or an event Google had none of before (its
-      // override was materialized here): nothing to lay the changes over.
-      // They go as they are and meet Google's answer.
+      // A cancelled occurrence, or an event neither Google nor a series
+      // here had before: nothing to lay the changes over. They go as they
+      // are and meet Google's answer.
       if (theirs.status === 'cancelled' || old === null) {
         return;
       }
@@ -337,7 +343,7 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
     Effect.gen(function* () {
       const ops = (yield* pendingOpRepo.listForEvent(event)).filter((op) => op.id !== except);
       const last = ops.findLast((op) => (op.kind === 'rsvp' || op.kind === 'update') && op.payload);
-      if (!last?.payload || !last.beforePayload || ops.some((op) => op.kind === 'delete')) {
+      if (!last?.payload || !last.basePayload || ops.some((op) => op.kind === 'delete')) {
         return;
       }
       if (yield* eventRepo.getById(event.accountId, event.calendarId, event.eventId)) {

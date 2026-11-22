@@ -43,6 +43,7 @@ import {
   toStructuredRules,
   truncateRecurrence,
   withConsistentGeo,
+  projectInstance,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
@@ -100,7 +101,6 @@ import { makeTaskMutations } from './taskMutations.ts';
 
 export * from './mutationTypes.ts';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
 
 /**
@@ -380,31 +380,6 @@ const copyDraft = (
     title: master.title,
     ...(url ? { url } : {}),
   };
-};
-
-/** The occurrence as it would render, keyed by its Google instance id. */
-const projectInstance = (master: EventRecord, originalStartUtc: number, now: number) => {
-  const durationDays =
-    master.isAllDay && master.startDate && master.endDate
-      ? Math.round((Date.parse(master.endDate) - Date.parse(master.startDate)) / DAY_MS)
-      : 0;
-  return new EventRecord({
-    ...master,
-    endDate: master.isAllDay ? isoDate(originalStartUtc + durationDays * DAY_MS) : undefined,
-    endUtc:
-      originalStartUtc +
-      (master.isAllDay ? durationDays * DAY_MS : master.endUtc - master.startUtc),
-    etag: null,
-    id: googleInstanceId(master.id, originalStartUtc, master.isAllDay),
-    originalStartUtc,
-    recurrence: undefined,
-    recurringEventId: master.id,
-    startDate: master.isAllDay ? isoDate(originalStartUtc) : undefined,
-    startUtc: originalStartUtc,
-    syncedAt: 0,
-    syncStatus: 'pending',
-    updatedAt: now,
-  });
 };
 
 /** What a series or "following" edit has settled before it writes (see updateRecurring). */
@@ -824,6 +799,12 @@ const make: Effect.Effect<
   const finish = (op: PendingOp) =>
     Effect.gen(function* () {
       yield* pendingOpRepo.remove(op.id);
+      // What stood back for it (an occurrence's change behind its series')
+      // goes with the next drain, not once its backoff is over.
+      const woken = yield* pendingOpRepo.wakeWaiting(op);
+      if (woken > 0) {
+        yield* kick;
+      }
       // The source deletes this copy held may go now (applyOp
       // copyGate); a copy that did not land took them back.
       if (op.copySource?.kind === 'held') {

@@ -2360,12 +2360,14 @@ describe('SyncEngine', () => {
               originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
               scope: 'series',
             });
+            yield* mutations.processPendingOps();
+            // The cut waits for the user over Google's rename, which its
+            // row shows: the cut changed the rule, not the title.
             expect(yield* shown).toEqual([
-              '07-02T10:00 Event evt-r',
+              '07-02T10:00 Daily (Google)',
               '07-05T10:00 Run',
               '07-06T10:00 Run',
             ]);
-            yield* mutations.processPendingOps();
             expect(insertion.inserted).toEqual([]);
 
             yield* mutations.resolveConflict({

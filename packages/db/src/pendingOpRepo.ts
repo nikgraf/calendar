@@ -5,8 +5,12 @@ import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import {
+  baseOf,
   CHANGING_KINDS,
   eventChangesOf,
+  eventFromRow,
+  type EventRow,
+  slotOf,
   HOLDING_KINDS,
   parseJson,
   pendingOpFromRow,
@@ -263,16 +267,19 @@ export interface PendingOpRepoShape {
    * overwrites the server copy, and makes the op due immediately.
    */
   readonly unpark: (opId: string, now: number) => Effect.Effect<void, SqlError>;
+  /**
+   * An op of this event (or of its series, or of one of its occurrences)
+   * left the queue: the ones that stood back for it are due now, instead
+   * of waiting out the backoff they collected standing back. How many.
+   */
+  readonly wakeWaiting: (event: {
+    readonly accountId: string;
+    readonly eventId: string;
+  }) => Effect.Effect<number, SqlError>;
 }
 
 /** Ops one drain pass takes on; a larger backlog continues on the next kick. */
 const DRAIN_PAGE_SIZE = 200;
-
-/** Rows of an unknown op kind are skipped: nothing could apply them. */
-const decodedOps = (row: PendingOpRow): Array<PendingOp> => {
-  const op = pendingOpFromRow(row);
-  return op ? [op] : [];
-};
 
 const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | SqlClient> =
   Effect.gen(function* () {
@@ -298,6 +305,29 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       FROM pending_ops p
       LEFT JOIN event_copies c ON c.account_id = p.account_id
         AND c.calendar_id = p.calendar_id AND c.id = p.event_id`;
+    /**
+     * The row of the series a queued change of an occurrence without a
+     * copy belongs to (`slotOf`): what that change is laid over.
+     */
+    const masterOf = (row: PendingOpRow) =>
+      Effect.gen(function* () {
+        const slot = slotOf(row);
+        if (!slot) {
+          return undefined;
+        }
+        const masters = yield* sql<EventRow>`SELECT * FROM events
+          WHERE account_id = ${row.account_id} AND calendar_id = ${row.calendar_id}
+            AND id = ${slot.masterId}`;
+        return masters[0] ? eventFromRow(masters[0]) : undefined;
+      });
+    /** Rows of an unknown op kind are skipped: nothing could apply them. */
+    const decoded = (rows: ReadonlyArray<PendingOpRow>) =>
+      Effect.map(
+        Effect.forEach(rows, (row) =>
+          Effect.map(masterOf(row), (master) => pendingOpFromRow(row, master)),
+        ),
+        (ops) => ops.flatMap((op) => (op ? [op] : [])),
+      );
     const putCopy = (accountId: string, calendarId: string, eventId: string, copy: EventRecord) =>
       sql`INSERT OR REPLACE INTO event_copies (account_id, calendar_id, id, payload)
         VALUES (${accountId}, ${calendarId}, ${eventId},
@@ -324,12 +354,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
      */
     const writeChanges = (opId: string) =>
       Effect.gen(function* () {
-        const rows = yield* sql<{
-          readonly attendees_changed: number;
-          readonly copy_payload: string | null;
-          readonly kind: string;
-          readonly payload: string | null;
-        }>`SELECT p.kind, p.payload, p.attendees_changed, c.payload AS copy_payload
+        const rows = yield* sql<PendingOpRow>`SELECT p.*, c.payload AS copy_payload
           FROM pending_ops p LEFT JOIN event_copies c ON c.account_id = p.account_id
             AND c.calendar_id = p.calendar_id AND c.id = p.event_id
           WHERE p.id = ${opId}`;
@@ -337,7 +362,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         if (!row || !CHANGING_KINDS.has(row.kind)) {
           return;
         }
-        const copy = parseJson(row.copy_payload);
+        const copy = baseOf(row, yield* masterOf(row));
         const payload = parseJson(row.payload);
         const changes =
           typeof copy === 'object' &&
@@ -483,20 +508,19 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           }),
         ),
       getById: (opId) =>
-        Effect.map(sql<PendingOpRow>`${selectOps} WHERE p.id = ${opId}`, (rows) =>
-          rows[0] ? pendingOpFromRow(rows[0]) : undefined,
+        Effect.map(
+          Effect.flatMap(sql<PendingOpRow>`${selectOps} WHERE p.id = ${opId}`, decoded),
+          (ops) => ops[0],
         ),
       listAll: () =>
-        Effect.map(sql<PendingOpRow>`${selectOps} ORDER BY p.created_at, p.rowid`, (rows) =>
-          rows.flatMap(decodedOps),
-        ),
+        Effect.flatMap(sql<PendingOpRow>`${selectOps} ORDER BY p.created_at, p.rowid`, decoded),
       listDeletes: (accountId, calendarId) =>
-        Effect.map(
+        Effect.flatMap(
           sql<PendingOpRow>`${selectOps}
             WHERE p.account_id = ${accountId} AND p.calendar_id = ${calendarId}
               AND p.kind = 'delete'
             ORDER BY p.created_at, p.rowid`,
-          (rows) => rows.flatMap(decodedOps),
+          decoded,
         ),
       // Bounded: one drain handles a page; the next kick takes the rest.
       advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to, landed, options) =>
@@ -543,30 +567,30 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           ),
         ),
       listDue: (now) =>
-        Effect.map(
+        Effect.flatMap(
           // rowid breaks created_at ties in insertion order (two ops of one
           // mutation, or a fixed test clock) — order matters for moves.
           sql<PendingOpRow>`${selectOps}
             WHERE p.next_attempt_at <= ${now} AND p.conflict_at IS NULL
             ORDER BY p.created_at, p.rowid LIMIT ${DRAIN_PAGE_SIZE}`,
-          (rows) => rows.flatMap(decodedOps),
+          decoded,
         ),
       listForEvent: ({ accountId, calendarId, eventId }) =>
-        Effect.map(
+        Effect.flatMap(
           sql<PendingOpRow>`${selectOps}
             WHERE p.account_id = ${accountId} AND p.calendar_id = ${calendarId}
               AND p.event_id = ${eventId}
             ORDER BY p.created_at, p.rowid`,
-          (rows) => rows.flatMap(decodedOps),
+          decoded,
         ),
       listForTask: (accountId, taskId) =>
-        Effect.map(
+        Effect.flatMap(
           sql<PendingOpRow>`${selectOps}
             WHERE p.account_id = ${accountId} AND p.event_id = ${taskId}
               AND p.kind IN ('completeTask', 'createTask', 'deleteTask', 'moveTask',
                 'reorderTask', 'updateTask')
             ORDER BY p.created_at, p.rowid`,
-          (rows) => rows.flatMap(decodedOps),
+          decoded,
         ),
       makeDue: (opId) =>
         invalidating(
@@ -614,6 +638,22 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       remove: (opId) =>
         invalidating(
           Effect.andThen(sql`DELETE FROM pending_ops WHERE id = ${opId}`, dropIdleCopies),
+        ),
+      wakeWaiting: ({ accountId, eventId }) =>
+        invalidating(
+          Effect.gen(function* () {
+            const waiting = yield* sql<{ readonly id: string }>`SELECT id FROM pending_ops
+              WHERE account_id = ${accountId} AND conflict_at IS NULL AND next_attempt_at > 0
+                AND last_error LIKE 'waiting for %'
+                AND (event_id = ${eventId}
+                  OR substr(event_id, 1, length(${eventId}) + 1) = ${eventId} || '_'
+                  OR substr(${eventId}, 1, length(event_id) + 1) = event_id || '_')`;
+            if (waiting.length > 0) {
+              yield* sql`UPDATE pending_ops SET next_attempt_at = 0
+                WHERE id IN ${sql.in(waiting.map((row) => row.id))}`;
+            }
+            return waiting.length;
+          }),
         ),
       // RSVP ops survive content-edit coalescing; stray ones resolve as
       // no-ops through the NotFound path after a delete. A queued move is

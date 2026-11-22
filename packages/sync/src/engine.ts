@@ -546,6 +546,23 @@ const make: Effect.Effect<
                   mode: 'pull',
                   upserts: rows,
                 });
+                // A changed occurrence Google has no exception for is its
+                // series drawn at the slot with the change over it: its row
+                // follows what the page brought for the series.
+                const brought = new Set(kept.map((record) => record.id));
+                const drawn = new Set(
+                  queued
+                    .filter(
+                      (op) =>
+                        op.calendarId === calendarId &&
+                        !op.beforePayload &&
+                        brought.has(op.basePayload?.recurringEventId ?? ''),
+                    )
+                    .map((op) => op.eventId),
+                );
+                for (const eventId of drawn) {
+                  yield* heldEvents.show({ accountId: account.id, calendarId, eventId });
+                }
                 // A series deleted on Google takes its exceptions along: the
                 // synced rows of one whose occurrence has a delete waiting
                 // here too, found through that delete — before its copy

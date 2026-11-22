@@ -12,6 +12,7 @@ import {
   GeoLocation,
   GoogleBirthday,
   PendingOp,
+  projectInstance,
   recurrenceEndUtc,
   ReminderOverride,
   SyncState,
@@ -642,9 +643,9 @@ export const CHANGING_KINDS: ReadonlySet<string> = new Set(['rsvp', 'update']);
  * over it; for the rest (a create, a delete's tombstone, an occurrence
  * Google has no exception for yet) the version it was queued with.
  */
-const payloadOf = (row: PendingOpRow): EventRecord | undefined => {
+const payloadOf = (row: PendingOpRow, base: unknown): EventRecord | undefined => {
   const stored = parseJson(row.payload);
-  const copy = parseJson(row.copy_payload ?? null);
+  const copy = base;
   const changes = parseJson(row.changes);
   // A cancelled copy is a tombstone: Google has the event no more, and
   // there is nothing left of it to lay the changes over.
@@ -672,17 +673,52 @@ const takenOf = (row: PendingOpRow): ReadonlyArray<EventRecord> | undefined => {
 };
 
 /**
+ * The series and slot of a queued change of an occurrence Google has no
+ * exception for: it has no copy, and is laid over its series drawn at that
+ * slot instead (`projectInstance`). Undefined for every other op.
+ */
+export const slotOf = (
+  row: PendingOpRow,
+): { readonly masterId: string; readonly originalStartUtc: number } | undefined => {
+  if (!CHANGING_KINDS.has(row.kind) || (row.copy_payload ?? null) !== null) {
+    return undefined;
+  }
+  const stored = parseJson(row.payload);
+  const masterId = isRecord(stored) ? stored['recurringEventId'] : undefined;
+  const originalStartUtc = isRecord(stored) ? stored['originalStartUtc'] : undefined;
+  return typeof masterId === 'string' && typeof originalStartUtc === 'number'
+    ? { masterId, originalStartUtc }
+    : undefined;
+};
+
+/** What a queued change is laid over, encoded: Google's copy, else its series at the slot. */
+export const baseOf = (row: PendingOpRow, master: EventRecord | undefined): unknown => {
+  const copy = parseJson(row.copy_payload ?? null);
+  if (copy !== undefined && copy !== null) {
+    return copy;
+  }
+  const slot = slotOf(row);
+  return slot && master
+    ? Schema.encodeSync(EventRecord)(projectInstance(master, slot.originalStartUtc, 0))
+    : undefined;
+};
+
+/**
  * Undefined for a row with an unknown op kind (nothing could apply it);
  * an unreadable payload degrades to `payload: undefined`, which applyOp
- * reports as a dropped change rather than crashing the queue.
+ * reports as a dropped change rather than crashing the queue. `master` is
+ * the row of the series an occurrence without a copy belongs to (`slotOf`).
  */
-export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
+export const pendingOpFromRow = (row: PendingOpRow, master?: EventRecord): PendingOp | undefined =>
   OP_KINDS.has(row.kind)
     ? new PendingOp({
         accountId: row.account_id,
         attempts: row.attempts,
         attendeesChanged: row.attendees_changed === 1 ? true : undefined,
         baseEtag: row.base_etag ?? undefined,
+        basePayload: CHANGING_KINDS.has(row.kind)
+          ? decodeOr(EventRecord, baseOf(row, master))
+          : undefined,
         beforeColorHex: row.before_color_hex ?? undefined,
         beforeOverrides: takenOf(row),
         beforePayload: beforePayloadOf(row),
@@ -700,7 +736,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         kind: row.kind as PendingOp['kind'],
         lastError: row.last_error ?? undefined,
         nextAttemptAt: row.next_attempt_at,
-        payload: payloadOf(row),
+        payload: payloadOf(row, baseOf(row, master)),
         recurrenceCleared: row.recurrence_cleared === 1 ? true : undefined,
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
         sourceGone: row.source_gone === 1 ? true : undefined,

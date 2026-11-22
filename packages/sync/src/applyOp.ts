@@ -164,14 +164,16 @@ export const isPulledCopy = (
  * that differ from the body Google's copy makes. A PATCH leaves what it
  * does not name as it is, so a field the user did not change is never
  * written from this device's copy of it, which may be older than Google's.
- * With no copy (an occurrence Google has no exception for) the whole body.
+ * An occurrence Google has no exception for is measured against its series
+ * drawn at the slot: Google fills the rest of the new exception from it.
+ * With neither (the series is not on Google yet) the whole body.
  */
 const changedBody = (op: PendingOp, record: EventRecord): ReturnType<typeof updateBody> => {
   const body = updateBody(op, record);
-  if (!op.beforePayload) {
+  if (!op.basePayload) {
     return body;
   }
-  const theirs = updateBody(op, op.beforePayload) as Record<string, unknown>;
+  const theirs = updateBody(op, op.basePayload) as Record<string, unknown>;
   return Object.fromEntries(
     Object.entries(body).filter(
       ([key, value]) => JSON.stringify(value) !== JSON.stringify(theirs[key]),

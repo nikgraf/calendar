@@ -227,6 +227,8 @@ const wire = (entry: StoredTask): GcalTask => ({
 });
 
 export interface FakeCall {
+  /** The JSON body a write was sent with. */
+  readonly body?: Record<string, unknown>;
   readonly method: string;
   readonly url: string;
 }
@@ -261,7 +263,7 @@ export interface FakeGoogleOptions {
 }
 
 export class FakeGoogle {
-  readonly requests: Array<{ readonly method: string; readonly url: string }> = [];
+  readonly requests: Array<FakeCall> = [];
   private readonly calendars: Array<GcalCalendarListEntry>;
   private readonly calendarCreation: 'allowed' | 'forbidden';
   private calendarSeq = 0;
@@ -613,7 +615,8 @@ export class FakeGoogle {
     for (const [key, value] of new URLSearchParams(UrlParams.toString(request.urlParams))) {
       url.searchParams.set(key, value);
     }
-    return { method: request.method, url: url.toString() };
+    const body = this.bodyOf(request);
+    return { ...(body ? { body } : {}), method: request.method, url: url.toString() };
   }
 
   /** HttpClient + a TokenManager that always has a token. */

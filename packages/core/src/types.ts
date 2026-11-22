@@ -407,6 +407,14 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   attendeesChanged: Schema.optional(Schema.Boolean),
   /** If-Match etag captured when the op was enqueued (update/delete). */
   baseEtag: Schema.optional(Schema.String),
+  /**
+   * What an update or an answer is laid over, read by the repo: Google's
+   * copy of the event, or for an occurrence Google has no exception for,
+   * its series drawn at that slot. `payload` is this with the op's changes
+   * over it, and the PATCH names only what differs from it. Absent where
+   * there is neither (the series is not on Google yet).
+   */
+  basePayload: Schema.optional(EventRecord),
   /** Kind 'calendarColor': the color the calendar had, so a discard puts it back. */
   beforeColorHex: Schema.optional(Schema.String),
   /**

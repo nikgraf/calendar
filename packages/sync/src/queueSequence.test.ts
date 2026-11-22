@@ -4926,6 +4926,132 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
   });
 });
 
+/** The row the client shows for an event of `cal-1`: its title, place and state. */
+const rowOf = (eventId: string) =>
+  Effect.gen(function* () {
+    const rows = yield* (yield* SqlClient)<{
+      readonly location: string | null;
+      readonly sync_status: string;
+      readonly title: string;
+    }>`SELECT title, location, sync_status FROM events
+      WHERE calendar_id = 'cal-1' AND id = ${eventId}`;
+    return rows.map((row) => `${row.title} @ ${row.location ?? '-'} (${row.sync_status})`);
+  });
+
+describe('pending-op queue: a changed occurrence Google has no exception for', () => {
+  const second = R1_START + DAY;
+  const secondId = googleInstanceId('r1', second, false);
+  /** The second day's place set while offline: Google has no exception for it. */
+  const placedOffline = (mutations: EventMutationsShape, network: { down: boolean }) =>
+    Effect.gen(function* () {
+      network.down = true;
+      yield* mutations.updateRecurring({
+        ...R1,
+        changes: { location: 'Room 2' },
+        originalStartUtc: second,
+        scope: 'instance',
+      });
+    });
+
+  it.effect('it is its series with the change over it, also after a pull of the series', () => {
+    // It kept the version it was queued with: a rename of the series on
+    // another device showed on every day but the changed one, and its
+    // PATCH then wrote the old title into the new exception.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* placedOffline(mutations, network);
+        google.patchEventServerSide('cal-1', 'r1', { summary: 'Pilates' });
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* rowOf(secondId)).toEqual(['Pilates @ Room 2 (pending)']);
+        const [op] = yield* (yield* PendingOpRepo).listAll();
+        expect(op?.payload?.title).toBe('Pilates');
+        expect(op?.conflictAt).toBeUndefined();
+
+        network.down = false;
+        yield* drainAll(mutations);
+        // The PATCH names what was changed: Google fills the rest of the
+        // new exception from the series.
+        const sent = google.requests.findLast(
+          (call) => call.method === 'PATCH' && call.url.includes(`/events/${secondId}`),
+        );
+        expect(Object.keys(sent?.body ?? {})).toEqual(['location']);
+        const theirs = google.eventOf('cal-1', secondId);
+        expect([theirs?.summary, theirs?.location]).toEqual(['Pilates', 'Room 2']);
+        expect(yield* rowOf(secondId)).toEqual(['Pilates @ Room 2 (synced)']);
+      }),
+    );
+  });
+
+  it.effect('a rename of its series it never pulled is not written over', () => {
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* placedOffline(mutations, network);
+        google.patchEventServerSide('cal-1', 'r1', { summary: 'Pilates' });
+        network.down = false;
+        yield* drainAll(mutations);
+        const theirs = google.eventOf('cal-1', secondId);
+        expect([theirs?.summary, theirs?.location]).toEqual(['Pilates', 'Room 2']);
+      }),
+    );
+  });
+
+  it.effect('an exception another device made of it shows beside the change, unasked', () => {
+    // With no copy to compare against, the queued version went as it was:
+    // over whatever the other device had changed in the occurrence.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* placedOffline(mutations, network);
+        google.patchEventServerSide('cal-1', secondId, { summary: 'Yoga (bring a mat)' });
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* rowOf(secondId)).toEqual(['Yoga (bring a mat) @ Room 2 (pending)']);
+        const [op] = yield* (yield* PendingOpRepo).listAll();
+        expect(op?.conflictAt).toBeUndefined();
+        expect(op?.beforePayload?.title).toBe('Yoga (bring a mat)');
+
+        network.down = false;
+        yield* drainAll(mutations);
+        const theirs = google.eventOf('cal-1', secondId);
+        expect([theirs?.summary, theirs?.location]).toEqual(['Yoga (bring a mat)', 'Room 2']);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('the same thing changed in an exception another device made of it asks', () => {
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* placedOffline(mutations, network);
+        google.patchEventServerSide('cal-1', secondId, { location: 'Room 9' });
+        yield* (yield* SyncEngine).syncAll();
+        const [op] = yield* (yield* PendingOpRepo).listAll();
+        expect(op?.conflictAt).toBeDefined();
+        expect(op?.beforePayload?.location).toBe('Room 9');
+        expect(yield* rowOf(secondId)).toEqual(['Yoga @ Room 2 (pending)']);
+
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.eventOf('cal-1', secondId)?.location).toBe('Room 9');
+      }),
+    );
+  });
+});
+
 describe("pending-op queue: a series' create that is discarded", () => {
   it.effect("discarding a series' create takes the queued changes of its occurrences along", () => {
     // Sequences 290, 436, 524, 545, 611, 730 and 738 of the first search:
