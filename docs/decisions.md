@@ -470,19 +470,16 @@ was cut (pruned 2026-11-17).
   answers the first objection to skipping such rows (the token never
   resends them). Rejected: holding the drain per page; refusing the move.
   Open: a replica lagging behind a landed delete.
-- **A move Google never makes takes its queued edits back** (2026-10-31, #271)
-  — Opus review of #267: a refused, unfound or discarded move put only
-  the rows back; the edits behind it stayed addressed to the destination,
-  404'd and were dropped. They now go back in place, Google's copies
-  re-keyed with them; a move onwards leaves from the source. A 404, or a discard of a move that
-  was sent, asks the destination first: a lost answer means it may have
-  landed. Rejected: dropping the edits and restoring rows from snapshots
-  (a 403 is no reason to lose an edit); a discard waiting for the drain
-  (it sent the move meanwhile). A discarded sent move Google cannot be
-  asked about stays queued, never sent again, until Google says where
-  the event is (#374: put back at once, a change made meanwhile went to
-  the wrong calendar). Open: a refused sent create takes only one move
-  along.
+- **A move Google never makes takes its queued edits back** (2026-10-31,
+  #271; #374) — a refused, unfound or discarded move put only the rows
+  back; the edits behind it stayed addressed to the destination, 404'd
+  and were dropped. They go back in place, Google's copies re-keyed with
+  them; a move onwards leaves from the source. A 404, or a discard of a
+  sent move, asks the destination first (a lost answer means it may have
+  landed); one Google cannot be asked about stays queued, never sent
+  again, until Google answers. Rejected: dropping the edits; putting a
+  discarded sent move back unasked (a change made meanwhile went to the
+  wrong calendar). Open: a refused sent create takes only one move along.
 - **A waiting series delete holds Google's copies of its exceptions**
   (2026-10-31 to 2026-11-02, #274, #279, #280; #374) — as copies kept per
   exception, which pulls and answers keep current while the master is

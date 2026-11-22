@@ -118,9 +118,12 @@ export interface HeldTasks {
    * to leave the queue. It reads the copy and the queue and then writes
    * the row: run in one transaction with whatever else the caller decides
    * from the queue (a pull's page, an answer's landing, a discard), or a
-   * change made in between is written over. `givenUp`: an edit, a tick or
-   * a delete of the task was given up (not a move, whose rows are its
-   * own): Google's row in another list than the copy's then stays.
+   * change made in between is written over. `givenUp`: a change of the
+   * task was given up or turned down (an edit, a tick, a delete, or a
+   * move put back, whose own rows the caller has moved already): a
+   * synced row in another list than the copy's is then Google's, written
+   * by a pull after another device moved the task there, and stays. Not
+   * after a landing: a synced row left where the task was is stale then.
    */
   readonly refresh: (
     accountId: string,

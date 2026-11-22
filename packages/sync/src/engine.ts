@@ -368,7 +368,9 @@ const make: Effect.Effect<
   /**
    * What a page brings for events a queued move holds, at the calendar
    * their rows are in (`records` are re-keyed to it): one a queued change
-   * holds there takes it into its copy (`heldEvents.receive`); a row only
+   * holds there takes it into its copy (`heldEvents.receive`; an exception
+   * a change of its series holds off the table goes into that change,
+   * `holdPulledExceptions`); a row only
    * the move holds takes it and stays as it was, pending — the move's
    * landing or its release hands it back to sync. An occurrence of the
    * series with no row yet (nothing here changed it; another device made
@@ -379,7 +381,13 @@ const make: Effect.Effect<
    */
   const showMoving = (accountId: string, calendarId: string, records: ReadonlyArray<EventRecord>) =>
     Effect.gen(function* () {
-      for (const record of yield* heldEvents.receive(accountId, calendarId, records)) {
+      // An exception that a queued change of the series holds off the
+      // table (its delete, a cut, a new rule, new times) goes into that
+      // change here too, as on a page of the series' own calendar: written
+      // as a row, it showed past the user's own cut, or was lost to a
+      // waiting delete's older copy.
+      const kept = yield* holdPulledExceptions(taken, accountId, calendarId, records);
+      for (const record of yield* heldEvents.receive(accountId, calendarId, kept)) {
         const row = yield* eventRepo.getById(accountId, calendarId, record.id);
         if (row) {
           yield* eventRepo.upsertMany([new EventRecord({ ...record, syncStatus: row.syncStatus })]);

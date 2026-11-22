@@ -59,13 +59,7 @@ import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
-import {
-  type AppleCopySource,
-  holdsUpdate,
-  isPulledCopy,
-  makeApplyOp,
-  retargetOp,
-} from './applyOp.ts';
+import { type AppleCopySource, isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
 import { makeHeldEvents } from './heldEvents.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
@@ -151,9 +145,7 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
  * override). The repo keeps one copy per event, so this only matters
  * for the first op to hold it. A synced row at a replaced delete's id is
  * Google's copy put back while that delete waited (`isPulledCopy`) and
- * is taken instead. An occurrence's delete that took its row along (a
- * cut's or a rule change's) holds the exception as Google has it until
- * that change lands (`dropsFrom`).
+ * is taken instead.
  */
 const inheritedBefore = (
   queued: ReadonlyArray<PendingOp>,
@@ -1060,12 +1052,18 @@ const make: Effect.Effect<
    * screen that Google has no more, and a change made to one was refused
    * and dropped. Not one that waits for the user's choice (that has its
    * own answers), nor one behind a move or a create, where Google has
-   * nothing to ask about yet.
+   * nothing to ask about yet, nor one of an occurrence Google held no
+   * exception for: asked by its id, Google answers with the series drawn
+   * at that slot, which cannot be told from an exception and is nothing
+   * to store (kept as a row, it stood still when the series changed).
+   * Such a change goes back as never sent, and the next pull brings what
+   * it made if it had landed.
    */
   const asksGoogleOnDiscard = (op: PendingOp) =>
     op.attempts > 0 &&
     op.conflictAt === undefined &&
     op.copySource === undefined &&
+    op.beforePayload != null &&
     (op.kind === 'delete' || op.kind === 'rsvp' || op.kind === 'update')
       ? Effect.map(
           pendingOpRepo.earlierInSeries(op),
@@ -1100,24 +1098,7 @@ const make: Effect.Effect<
           }),
           Effect.catchCause(() => Effect.succeed(undefined)),
         );
-      // An occurrence Google had no exception for: asked by its id, Google
-      // answers with the series drawn at that slot, which is no event of
-      // its own to store (kept as a row, it stood still when the series
-      // changed). It has one now only if the change had landed: its
-      // cancellation, or an exception that holds what the change set.
-      const item = answer?.item;
-      const theirs =
-        item === undefined || item.status === 'cancelled'
-          ? null
-          : mapGcalEvent(item, {
-              accountId: op.accountId,
-              calendarId: op.calendarId,
-              defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
-              syncedAt: yield* Clock.currentTimeMillis,
-            });
-      const drawnBySeries =
-        !op.beforePayload && item?.status !== 'cancelled' && !(theirs && holdsUpdate(op, theirs));
-      if (answer === undefined || drawnBySeries) {
+      if (answer === undefined) {
         yield* discard(opId);
       } else {
         const now = yield* Clock.currentTimeMillis;
@@ -1197,6 +1178,10 @@ const make: Effect.Effect<
         // was sent may have landed: it stays queued for the caller to ask.
         if (op?.kind === 'move' || op?.kind === 'moveTask') {
           if (op.dispatchedAt !== undefined) {
+            // Given up from here on, in this transaction: a drain already
+            // running reads it so and only asks Google where the item is.
+            // Marked after the wait for its gate, it was sent once more.
+            yield* pendingOpRepo.markDiscarded(opId, 'given up; asking Google where it is');
             return op;
           }
           yield* releaseRow(op);
@@ -1214,11 +1199,14 @@ const make: Effect.Effect<
               ? (yield* taskRepo.findCopy(op.accountId, op.eventId))?.parentId
               : undefined;
           yield* releaseRow(op);
-          const { accountId, calendarId } = op;
+          // The parent's delete, in whatever list it waits: moved since
+          // the subtask was deleted, it is queued in the destination, and
+          // left there it took the subtask the user kept along on Google.
+          const { accountId } = op;
           op =
             parentId === undefined
               ? undefined
-              : (yield* opsForEvent(accountId, calendarId, parentId)).find(
+              : (yield* pendingOpRepo.listForTask(accountId, parentId)).find(
                   (queued) => queued.kind === 'deleteTask',
                 );
           if (op) {

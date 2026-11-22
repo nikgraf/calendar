@@ -846,13 +846,8 @@ const learn = (world: World, call: FakeCall, status: number, json: unknown) => {
     // Every answer about one event is kept, also one the client only
     // asked for (the fetch after a 412, a split-off series asking where
     // its source ends, a discard asking what Google has): laid under what
-    // is queued for the event, or the row where nothing is. But an
-    // occurrence Google holds no exception for, asked for by its id, is
-    // its series drawn at that slot: nothing of its own to keep.
-    const where = destination ?? target.container;
-    const drawnBySeries =
-      call.method === 'GET' && world.google.eventOf(where, target.id) === undefined;
-    remember(world, where, target.id, json as GcalEvent, !drawnBySeries);
+    // is queued for the event, or the row where nothing is.
+    remember(world, destination ?? target.container, target.id, json as GcalEvent, true);
     if (url.searchParams.has('destination')) {
       // The event left its calendar: the answer to the move says so.
       world.told.set(`${target.container}|${target.id}`, { item: null, json: 'null' });
@@ -6249,7 +6244,7 @@ describe('pending-op queue: discarding a change that was tried before', () => {
   it.effect('an occurrence Google has no exception for is not stored as one', () => {
     // Sequence 899: asked by the occurrence's id, Google answers with the
     // series drawn at that slot. Stored as the occurrence's row, it kept
-    // the old title when the series was renamed.
+    // the old title when the series was renamed. Its discard does not ask.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -6266,40 +6261,11 @@ describe('pending-op queue: discarding a change that was tried before', () => {
         });
         yield* mutations.processPendingOps();
         network.down = false;
+        google.requests.length = 0;
         yield* discardAll(mutations);
+        expect(google.requests).toEqual([]);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
         expect(yield* shownAt(id)).toEqual([]);
-      }),
-    );
-  });
-
-  it.effect("an occurrence's change that had landed shows as the exception Google has", () => {
-    // Sequence 257: the first change of an occurrence landed with its
-    // answer lost. Asked on the discard, Google answers with the exception
-    // that change made, and it shows: put back as never sent, the day
-    // showed plain until the next pull.
-    const google = newFake();
-    return scripted(
-      google,
-      Effect.gen(function* () {
-        const mutations = yield* EventMutations;
-        const id = googleInstanceId('r1', R1_START + DAY, false);
-        lostThenRefused(google, (call) => call.method === 'PATCH' && call.url.endsWith(id));
-        yield* mutations.updateRecurring({
-          ...R1,
-          changes: { location: 'Studio 2' },
-          originalStartUtc: R1_START + DAY,
-          scope: 'instance',
-        });
-        yield* mutations.processPendingOps();
-        google.fault = undefined;
-        yield* discardAll(mutations);
-        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        const rows = yield* (yield* SqlClient)<{
-          readonly location: string | null;
-          readonly sync_status: string;
-        }>`SELECT location, sync_status FROM events WHERE id = ${id}`;
-        expect(rows).toEqual([{ location: 'Studio 2', sync_status: 'synced' }]);
       }),
     );
   });
@@ -6350,6 +6316,226 @@ describe('pending-op queue: discarding a change that was tried before', () => {
       }),
     );
   });
+});
+
+describe("pending-op queue: a subtask's move undone under its parent's waiting move", () => {
+  it.effect('goes where the parent takes it, and nothing is left without a change', () => {
+    // Sequence 6715 of a search to 7,000: a subtask moved out, its parent
+    // moved after it, the subtask moved back, then its first move
+    // discarded. Google still has the subtask under the parent, so the
+    // parent's move takes it along. Its row was put back in the old list
+    // all the same: its rename went there and met a 404, and a row was
+    // left pending that no change owned.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const move = (taskId: string, title: string, from: string, to: string) =>
+          mutations.moveTask({
+            accountId: ACCOUNT_ID,
+            draft: { dueDate: due(5).slice(0, 10), title },
+            target: { accountId: ACCOUNT_ID, taskListId: to },
+            taskId,
+            taskListId: from,
+          });
+        network.down = true;
+        yield* move('s1', 'Pack', 'list-1', 'list-2');
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { title: 'Pack the bags' },
+          taskId: 's1',
+          taskListId: 'list-2',
+        });
+        yield* move('p', 'Trip', 'list-1', 'list-2');
+        yield* move('s1', 'Pack the bags', 'list-2', 'list-1');
+        yield* mutations.discardPendingOp((yield* ops.listAll())[0]!.id);
+        network.down = false;
+        yield* drainAll(mutations);
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* ops.listAll()).map(describeOp)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly list_id: string;
+          readonly parent_id: string | null;
+          readonly sync_status: string;
+          readonly title: string;
+        }>`SELECT list_id, parent_id, sync_status, title FROM tasks WHERE id = 's1'`;
+        expect(rows).toEqual([
+          { list_id: 'list-2', parent_id: 'p', sync_status: 'synced', title: 'Pack the bags' },
+        ]);
+        expect(google.taskOf('list-2', 's1')).toMatchObject({
+          parent: 'p',
+          title: 'Pack the bags',
+        });
+      }),
+    );
+  });
+});
+
+/** A to-do moved to another list with its own fields (round 11's tests). */
+const moveTask = (taskId: string, title: string, from: string, to: string) =>
+  Effect.flatMap(EventMutations, (mutations) =>
+    mutations.moveTask({
+      accountId: ACCOUNT_ID,
+      draft: { dueDate: due(5).slice(0, 10), title },
+      target: { accountId: ACCOUNT_ID, taskListId: to },
+      taskId,
+      taskListId: from,
+    }),
+  );
+
+describe('pending-op queue: what review round 11 found', () => {
+  it.effect(
+    "a subtask's discarded delete takes its parent's along, also once the parent moved",
+    () => {
+      // The parent's delete was looked for in the list the subtask's delete
+      // names, and waited in the one the parent had moved to since: it
+      // stayed queued and took the subtask the user kept along on Google.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const ops = yield* PendingOpRepo;
+          network.down = true;
+          yield* mutations.deleteTask({
+            accountId: ACCOUNT_ID,
+            taskId: 's2',
+            taskListId: 'list-1',
+          });
+          yield* moveTask('p', 'Trip', 'list-1', 'list-2');
+          yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-2' });
+          const subtaskDelete = (yield* ops.listAll()).find(
+            (op) => op.kind === 'deleteTask' && op.eventId === 's2',
+          );
+          yield* mutations.discardPendingOp(subtaskDelete!.id);
+          // The parent's delete goes; the other subtask's own, queued with
+          // the parent's, stays.
+          expect(
+            (yield* ops.listAll()).filter((op) => op.kind === 'deleteTask').map((op) => op.eventId),
+          ).toEqual(['s1']);
+          network.down = false;
+          yield* drainAll(mutations);
+          expect(google.taskOf('list-2', 'p')?.deleted).not.toBe(true);
+          expect(google.taskOf('list-2', 's2')).toMatchObject({ parent: 'p' });
+        }),
+      );
+    },
+  );
+
+  it.effect(
+    'a move whose source is known gone says so to the move queued behind a move back',
+    () => {
+      // Deleted on another device, moved here, and a pull said it is gone
+      // from its calendar. Then back, there and back again, all offline. The
+      // first move's release told the next move out only when no move back
+      // was queued: that one met its own 404 and left the event's rows as
+      // Google's, for good.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          google.deleteEventServerSide('cal-1', 'e1');
+          network.down = true;
+          yield* moveE1(mutations, 'cal-1', 'cal-2');
+          yield* TestClock.adjust('1 minute');
+          yield* (yield* SyncEngine).syncAll();
+          yield* moveE1(mutations, 'cal-2', 'cal-1');
+          yield* moveE1(mutations, 'cal-1', 'cal-2');
+          yield* moveE1(mutations, 'cal-2', 'cal-1');
+          network.down = false;
+          yield* drainAll(mutations);
+          yield* TestClock.adjust('1 minute');
+          yield* (yield* SyncEngine).syncAll();
+          expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+          expect(yield* shownAt('e1')).toEqual([]);
+        }),
+      );
+    },
+  );
+
+  it.effect('a sent move is given up before its discard waits for the drain', () => {
+    // Marked only once the drain's gate was free, a drain already running
+    // read it as still wanted and sent it once more.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        google.fault = (call) =>
+          call.url.includes('/move') || /\/events\/e1$/.test(new URL(call.url).pathname)
+            ? 'refused'
+            : undefined;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* mutations.processPendingOps();
+        const [move] = yield* ops.listAll();
+        expect([move?.dispatchedAt !== undefined, move?.discarded]).toEqual([true, undefined]);
+        // While something else holds the gate, as a running drain does.
+        const seen = yield* mutations.whileQueueHeld(
+          Effect.gen(function* () {
+            yield* Effect.forkChild(mutations.discardPendingOp(move!.id));
+            yield* Effect.yieldNow;
+            yield* Effect.yieldNow;
+            return (yield* ops.getById(move!.id))?.discarded;
+          }),
+        );
+        expect(seen).toBe(true);
+      }),
+    );
+  });
+
+  it.effect(
+    'news of an exception a queued cut holds goes into the cut while the series moves',
+    () => {
+      // The series' rows are where its queued move takes it, and a page of
+      // the calendar it leaves still names its exceptions. One the user's
+      // cut had dropped was written as a row there: it showed past the cut,
+      // beside the day of the series split off.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const ops = yield* PendingOpRepo;
+          const slot = R1_START + 2 * DAY;
+          const id = googleInstanceId('r1', slot, false);
+          google.patchEventServerSide('cal-1', id, { location: 'Studio 2' });
+          yield* TestClock.adjust('1 minute');
+          yield* (yield* SyncEngine).syncAll();
+          network.down = true;
+          yield* mutations.deleteRecurring({
+            ...R1,
+            originalStartUtc: R1_START + DAY,
+            scope: 'following',
+          });
+          yield* mutations.moveEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            eventId: 'r1',
+            target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+          });
+          google.patchEventServerSide('cal-1', id, { location: 'Studio 3' });
+          yield* TestClock.adjust('1 minute');
+          yield* (yield* SyncEngine).syncAll();
+          expect(yield* shownAt(id)).toEqual([]);
+          const cut = (yield* ops.listAll()).find(
+            (op) => op.kind === 'update' && op.eventId === 'r1',
+          );
+          expect(cut?.beforeOverrides?.map((copy) => [copy.id, copy.location])).toEqual([
+            [id, 'Studio 3'],
+          ]);
+        }),
+      );
+    },
+  );
 });
 
 describe('pending-op queue: a move given up after it was sent', () => {

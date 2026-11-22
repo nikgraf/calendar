@@ -692,6 +692,37 @@ describe('moveTask across providers', () => {
     }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
   });
 
+  it.effect('a move put back leaves the row in the list another device moved the task to', () => {
+    // Review (Opus, round 11): moved to list-2 here, to a third list on
+    // another device, whose row a pull wrote. Put back, the move deleted
+    // that row and showed the task in list-1, where Google no longer has
+    // it: an edit there met a 404 and the task showed nowhere.
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      const tasks = yield* TaskRepo;
+      yield* tasks.upsertLists([list('acc-1', 'list-3', 'google')], 100);
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      const elsewhere = (yield* rowAt('acc-1', 'list-2', 't1'))!;
+      yield* tasks.upsertTasks(
+        [new TaskRecord({ ...elsewhere, listId: 'list-3', updatedAt: 200 })],
+        200,
+        { mode: 'pull' },
+      );
+      const ops = yield* (yield* PendingOpRepo).listAll();
+      expect(ops.map((op) => op.kind)).toEqual(['moveTask']);
+      yield* (yield* EventMutations).discardPendingOp(ops[0]!.id);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'list-3', 't1')).toBeDefined();
+      expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeUndefined();
+      expect(yield* rowAt('acc-1', 'list-2', 't1')).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+  });
+
   it.effect('a 404 after a move that landed unanswered settles it in the destination', () => {
     const fake = fakeWith();
     const landed: GoogleTasksClientShape = {

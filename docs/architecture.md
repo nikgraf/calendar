@@ -675,10 +675,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   the change had landed or not. It is marked given up at once
   (`PendingOp.discarded`), so a drain already running does not send it
   while the discard waits for the gate, and the drain finishes the
-  discard if the app stops in between. An occurrence Google had no
-  exception for is answered with its series drawn at the slot, which is
-  nothing to store: only its cancellation, or an exception that holds
-  what the change set, is taken. Open: with Google out of reach the
+  discard if the app stops in between. Not for an occurrence Google held
+  no exception for: asked by its id, Google answers with the series
+  drawn at that slot, which cannot be told from an exception and is
+  nothing to store, so such a change goes back as never sent and the
+  next pull brings what it made if it had landed. Open: with Google out
+  of reach the
   change is put back as never sent, as the user asked; a cut, a new
   rule, new times or a delete that had landed then leaves on screen what
   Google has no more until the next pull, and a change made to it is
