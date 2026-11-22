@@ -31,6 +31,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vite-plus/test';
 import { EventMutations } from './mutations.ts';
 import { drawsFrom } from './splitSeries.ts';
@@ -155,6 +156,17 @@ const listOps = Effect.gen(function* () {
 const rowOf = (id: string) =>
   Effect.gen(function* () {
     return yield* (yield* EventRepo).getById('acc-1', 'cal-1', id);
+  });
+
+/**
+ * Discards a change as one Google was never sent. A delete or a redraw
+ * that was tried waits for Google's word while Google is out of reach
+ * (`finishDiscard`); these tests are about what a discard puts back.
+ */
+const discardAsUntried = (opId: string) =>
+  Effect.gen(function* () {
+    yield* (yield* SqlClient)`UPDATE pending_ops SET attempts = 0 WHERE id = ${opId}`;
+    yield* (yield* EventMutations).discardPendingOp(opId);
   });
 
 describe('EventMutations recurring scopes', () => {
@@ -930,7 +942,7 @@ describe('discarding a change of a series', () => {
           ['Daily (moved)', 'confirmed'],
         ]);
 
-        yield* mutations.discardPendingOp(op!.id);
+        yield* discardAsUntried(op!.id);
         expect((yield* rowOf(instanceId))?.status).toBe('confirmed');
       }).pipe(Effect.provide(testLayer)),
   );
@@ -1240,7 +1252,7 @@ describe('discarding a change of a series', () => {
         });
         yield* mutations.deleteRecurring({ ...target, scope: 'series' });
         const remove = (yield* listOps).find((op) => op.kind === 'delete');
-        yield* mutations.discardPendingOp(remove!.id);
+        yield* discardAsUntried(remove!.id);
         const row = yield* rowOf(instanceId);
         expect(row?.syncStatus).toBe('pending');
         expect((yield* listOps).map((op) => op.kind)).toEqual(['rsvp']);
@@ -1681,7 +1693,7 @@ describe('an exception of a series whose delete waits', () => {
       expect(yield* shown).toEqual([]);
       expect(remove?.beforeOverrides?.map((row) => row.etag)).toEqual(['"o-2"']);
 
-      yield* mutations.discardPendingOp(remove!.id);
+      yield* discardAsUntried(remove!.id);
       expect(yield* shown).toContain('07-04T11:00 Daily (moved)');
       const row = yield* rowOf(instanceId);
       expect(row?.etag).toBe('"o-2"');

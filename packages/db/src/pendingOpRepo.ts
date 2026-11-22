@@ -130,6 +130,18 @@ export interface PendingOpRepoShape {
     masterId: string,
   ) => Effect.Effect<void, SqlError>;
   readonly getById: (opId: string) => Effect.Effect<PendingOp | undefined, SqlError>;
+  /**
+   * The user changed an event, or an occurrence of a series, whose change
+   * they had given up and which still waits for Google's word
+   * (`markDiscarded`; not a move): that change is kept after all and sent
+   * again. What it left on screen is what the user just built on, and
+   * taken back once Google answered, the new change had nothing to stand on.
+   */
+  readonly keepGivenUp: (event: {
+    readonly accountId: string;
+    readonly calendarId: string;
+    readonly eventId: string;
+  }) => Effect.Effect<void, SqlError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   /**
    * The deletes queued in one calendar of one account: few wait at a
@@ -723,6 +735,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
                 AND substr(id, 1, length(${masterId}) + 1) = ${masterId} || '_'
                 AND substr(id, length(${masterId}) + 2, 1) GLOB '[0-9]'`,
+          ),
+        ),
+      keepGivenUp: ({ accountId, calendarId, eventId }) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET discarded = 0, last_error = NULL
+              WHERE discarded = 1 AND kind IN ('delete', 'rsvp', 'update')
+                AND account_id = ${accountId} AND calendar_id = ${calendarId}
+                AND (event_id = ${eventId} OR substr(${eventId}, 1, length(event_id) + 1) = event_id || '_')`,
           ),
         ),
       listDue: (now) =>

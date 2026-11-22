@@ -42,6 +42,7 @@ import { expect, it } from '@effect/vitest';
 import { Deferred, Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vite-plus/test';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
@@ -331,6 +332,17 @@ const inserting = (online: () => boolean) => {
   };
   return { inserted, insertEvent };
 };
+
+/**
+ * Discards a change as one Google was never sent. A delete or a redraw
+ * that was tried waits for Google's word while Google is out of reach
+ * (`finishDiscard`); these tests are about what a discard puts back.
+ */
+const discardAsUntried = (opId: string) =>
+  Effect.gen(function* () {
+    yield* (yield* SqlClient)`UPDATE pending_ops SET attempts = 0 WHERE id = ${opId}`;
+    yield* (yield* EventMutations).discardPendingOp(opId);
+  });
 
 describe('SyncEngine', () => {
   it.effect(
@@ -940,7 +952,7 @@ describe('SyncEngine', () => {
           expect((yield* (yield* PendingOpRepo).listAll()).map((op) => op.eventId)).toEqual([
             'evt-r',
           ]);
-          yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
+          yield* discardAsUntried((yield* seriesDelete)!.id);
           const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-r_20260703T100000Z');
           expect(row?.title).toBe('Moved again');
           expect(row?.etag).toBe('"x-2"');
@@ -1017,7 +1029,7 @@ describe('SyncEngine', () => {
         expect(yield* shown).toEqual([]);
 
         // A discard brings it back as Google sent it.
-        yield* (yield* EventMutations).discardPendingOp((yield* seriesDelete)!.id);
+        yield* discardAsUntried((yield* seriesDelete)!.id);
         expect(yield* shown).toEqual([
           '07-02T10:00 Event evt-r',
           '07-03T12:00 Moved again',
@@ -1840,7 +1852,7 @@ describe('SyncEngine', () => {
               '07-06T10:00 Run',
             ]);
 
-            yield* mutations.discardPendingOp((yield* opOf('evt-r', 'update'))!.id);
+            yield* discardAsUntried((yield* opOf('evt-r', 'update'))!.id);
             expect(yield* shown).toEqual(firstSeries);
             expect(
               yield* (yield* EventRepo).listOverrides('acc-1', 'cal-1', created.eventId),
@@ -2714,8 +2726,7 @@ describe('SyncEngine', () => {
             yield* engine.syncAll();
             yield* cutJuly3;
             yield* engine.syncAll();
-            const mutations = yield* EventMutations;
-            yield* mutations.discardPendingOp((yield* opOf('evt-r', 'update'))!.id);
+            yield* discardAsUntried((yield* opOf('evt-r', 'update'))!.id);
             expect(yield* shown).toEqual([
               '07-02T10:00 Event evt-r',
               '07-03T12:00 Moved again',
@@ -3436,7 +3447,7 @@ describe('SyncEngine', () => {
             retime?.dropsFrom,
             retime?.beforeOverrides?.map((copy) => copy.id).sort(),
           ]).toEqual([0, [july3, 'evt-r_20260704T100000Z']]);
-          yield* mutations.discardPendingOp(retime!.id);
+          yield* discardAsUntried(retime!.id);
           expect(yield* shown).toEqual(kept);
           expect(yield* strays).toEqual([]);
         }).pipe(Effect.provide(engineLayer(client)));
@@ -3517,7 +3528,7 @@ describe('SyncEngine', () => {
             expect(yield* shown).toEqual(skipped);
             expect(yield* strays).toEqual([]);
 
-            yield* (yield* EventMutations).discardPendingOp((yield* opOf('evt-r', 'update'))!.id);
+            yield* discardAsUntried((yield* opOf('evt-r', 'update'))!.id);
             expect(yield* shown).toEqual([
               '07-02T10:00 Event evt-r',
               '07-03T12:00 Moved again',

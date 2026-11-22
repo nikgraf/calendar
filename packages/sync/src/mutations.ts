@@ -1119,15 +1119,21 @@ const make: Effect.Effect<
    * Finishes the discard of a change marked given up (`PendingOp.discarded`),
    * with no request of it out (under the drain's gate): Google says what it
    * has, and that is what shows, as take-theirs does, whether the change
-   * had landed or not. When Google cannot be reached the change is put
-   * back as never sent, as the user asked, and the next pull corrects it
-   * if it had landed (todo.md, Tier 0).
+   * had landed or not. When Google cannot be reached, a change that takes
+   * something away where it lands (a delete; a cut, a new rule or new
+   * times, which drop occurrences) stays as it is, given up and never
+   * sent again, until Google answers: put back at once, the app drew an
+   * event or occurrences Google might have no more, and a change made to
+   * one was refused and dropped. Any other change is put back as never
+   * sent, as the user asked: had it landed, the next pull brings it, and
+   * what was made on top of it meanwhile is laid over that.
    */
   const finishDiscard = (opId: string) =>
     Effect.gen(function* () {
       const op = yield* pendingOpRepo.getById(opId);
       // Landed, or settled otherwise, while this waited: nothing to undo.
-      if (!op) {
+      // Or kept after all: the user built on what it left (`keepGivenUp`).
+      if (!op || op.discarded !== true) {
         return;
       }
       // Any failure but "gone" is no answer, a defect of the client's
@@ -1142,6 +1148,9 @@ const make: Effect.Effect<
           }),
           Effect.catchCause(() => Effect.succeed(undefined)),
         );
+      if (answer === undefined && (op.kind === 'delete' || op.dropsFrom !== undefined)) {
+        return yield* pendingOpRepo.markDiscarded(opId, 'given up; asking Google what it has');
+      }
       if (answer === undefined) {
         yield* discard(opId);
       } else {
@@ -2349,23 +2358,33 @@ const make: Effect.Effect<
     whileQueueHeld: (effect) => gate.withPermits(1)(effect),
   };
 
+  /**
+   * A change of an event, or of an occurrence of its series, keeps a
+   * change of it the user had given up and that still waits for Google's
+   * word (`PendingOpRepo.keepGivenUp`).
+   */
+  const kept = (
+    { accountId, calendarId }: { readonly accountId: string; readonly calendarId: string },
+    eventId: string,
+  ) => pendingOpRepo.keepGivenUp({ accountId, calendarId, eventId });
+
   // Every queue-backed method runs inside one transaction (see
   // `transactional`); the EventKit paths (Reminders, Apple Calendar)
   // write the local store synchronously and need none.
   const google = {
     createEvent: (draft: EventDraft) => transactional(shape.createEvent(draft)),
     deleteEvent: (params: Parameters<EventMutationsShape['deleteEvent']>[0]) =>
-      transactional(shape.deleteEvent(params)),
+      transactional(Effect.andThen(kept(params, params.eventId), shape.deleteEvent(params))),
     deleteRecurring: (params: Parameters<EventMutationsShape['deleteRecurring']>[0]) =>
-      transactional(shape.deleteRecurring(params)),
+      transactional(Effect.andThen(kept(params, params.masterId), shape.deleteRecurring(params))),
     respondToEvent: (params: Parameters<EventMutationsShape['respondToEvent']>[0]) =>
-      transactional(shape.respondToEvent(params)),
+      transactional(Effect.andThen(kept(params, params.eventId), shape.respondToEvent(params))),
     setCalendarColor: (params: Parameters<EventMutationsShape['setCalendarColor']>[0]) =>
       transactional(shape.setCalendarColor(params)),
     updateEvent: (params: Parameters<EventMutationsShape['updateEvent']>[0]) =>
-      transactional(shape.updateEvent(params)),
+      transactional(Effect.andThen(kept(params, params.eventId), shape.updateEvent(params))),
     updateRecurring: (params: Parameters<EventMutationsShape['updateRecurring']>[0]) =>
-      transactional(shape.updateRecurring(params)),
+      transactional(Effect.andThen(kept(params, params.masterId), shape.updateRecurring(params))),
   };
   const apple = makeAppleEventMutations({
     accountRepo,
@@ -2523,6 +2542,7 @@ const make: Effect.Effect<
       const { master } = yield* loadSource(params, 'google');
       const account = yield* accountRepo.get(accountId);
       yield* ensureOrganizer(master, account?.email, calendarId);
+      yield* pendingOpRepo.keepGivenUp({ accountId, calendarId, eventId: master.id });
       // The destination's own event of that id: this one's row would
       // replace it, and a page that names it there would read as the move
       // landed (`landedInPull`).

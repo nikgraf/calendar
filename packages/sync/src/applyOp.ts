@@ -1052,13 +1052,22 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       const carried = (yield* taskRepo.listCopies(op.accountId)).filter(
         (copy) => copy.listId === op.taskListId && copy.parentId === op.eventId,
       );
-      const ids = new Set([
-        op.eventId,
-        ...carried.map((copy) => copy.id),
-        ...(yield* taskRepo.listSubtasks(op.accountId, destination, op.eventId)).map(
-          (subtask) => subtask.id,
-        ),
-      ]);
+      // Where the task's rows are: the destination, or the list a move of
+      // the user's since took them on to, the subtasks' rows along (a move
+      // back among them: only the task's own row went then, and its
+      // subtasks stayed in the source, unsynced, with nothing queued).
+      const lists = new Set([destination]);
+      for (const queued of yield* pendingOpRepo.listForTask(op.accountId, op.eventId)) {
+        if (queued.id !== op.id && queued.kind === 'moveTask' && queued.targetTaskListId) {
+          lists.add(queued.targetTaskListId);
+        }
+      }
+      const ids = new Set([op.eventId, ...carried.map((copy) => copy.id)]);
+      for (const listId of lists) {
+        for (const subtask of yield* taskRepo.listSubtasks(op.accountId, listId, op.eventId)) {
+          ids.add(subtask.id);
+        }
+      }
       for (const id of ids) {
         for (const queued of yield* pendingOpRepo.listForTask(op.accountId, id)) {
           if (queued.id === op.id) {
@@ -1070,7 +1079,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             yield* taskRepo.removeTask(op.accountId, queued.targetTaskListId, id);
           }
         }
-        yield* taskRepo.removeTask(op.accountId, destination, id);
+        for (const listId of lists) {
+          yield* taskRepo.removeTask(op.accountId, listId, id);
+        }
         const copy = yield* held.copyOf(op.accountId, id);
         if (copy) {
           yield* taskRepo.removeCopies(op.accountId, copy.listId, [id]);

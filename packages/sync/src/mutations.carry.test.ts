@@ -22,7 +22,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
@@ -169,6 +169,13 @@ const layer = (google: Google) =>
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, googleClient(google))),
     Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
   );
+
+/**
+ * Keeps the drain a mutation forks from running before the next call: it
+ * would send the first of two changes a test queues before the second.
+ */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 const series = (changes: { location?: string; title?: string }) =>
   Effect.gen(function* () {
@@ -607,7 +614,7 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         master.startUtc,
         'synced',
       ]);
-    }).pipe(Effect.provide(layer({ patch: 'reject-once' }))),
+    }).pipe(noYield, Effect.provide(layer({ patch: 'reject-once' }))),
   );
 
   it.effect('a new rule made while the first rule is on its way is still sent', () => {

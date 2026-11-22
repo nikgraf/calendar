@@ -722,7 +722,9 @@ const make: Effect.Effect<
         // names: Google deleted it (another device, or this delete landed
         // with its answer lost), and no later page will say so. Its copy
         // goes, so a discard has nothing to put back. One a queued move
-        // brings here is listed where it still is.
+        // brings here is listed where it still is, and one whose create
+        // is still queued is listed nowhere yet: its copy is what that
+        // create sends, which an edit discarded behind it goes back to.
         const still = new Set((yield* pendingOpRepo.listAll()).map((op) => op.id));
         // (every queued move, not each event's next: at the end of a chain
         // of moves Google has the event in the first calendar still).
@@ -730,9 +732,9 @@ const make: Effect.Effect<
           (yield* pendingOpRepo.listAll())
             .filter(
               (op) =>
-                op.kind === 'move' &&
                 op.accountId === account.id &&
-                op.targetCalendarId === calendarId,
+                ((op.kind === 'move' && op.targetCalendarId === calendarId) ||
+                  (op.kind === 'create' && op.calendarId === calendarId)),
             )
             .map((op) => op.eventId),
         );

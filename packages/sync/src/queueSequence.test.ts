@@ -664,12 +664,6 @@ interface World {
   /** Items another device removed, or a lost delete or move of ours took away: a 404 there is no surprise. */
   readonly removed: Set<string>;
   /**
-   * Series a PATCH of ours changed with its answer lost: a new rule or a
-   * cut may have taken occurrences away behind the client's back, so a
-   * 404 or 410 at one of them is no surprise either.
-   */
-  readonly reshaped: Set<string>;
-  /**
    * Series a PATCH of ours reached, answered or not: Google gave each of
    * their exceptions a new etag (verified live), which the client's rows
    * learn at the next pull. A delete of such an occurrence that goes on
@@ -889,7 +883,6 @@ const makeWorld = (seed: number, google: FakeGoogle): World => {
     nextWrites: [],
     random,
     removed: new Set(),
-    reshaped: new Set(),
     retagged: new Set(),
     splitSources: new Map(),
     step: 0,
@@ -952,7 +945,6 @@ const makeWorld = (seed: number, google: FakeGoogle): World => {
       target !== undefined &&
       (status === 404 || status === 410) &&
       (touches(world.removed, target.key) ||
-        (series !== undefined && world.reshaped.has(series)) ||
         // An occurrence's delete may follow its series' (the drain does
         // not order the two): the series took it.
         (call.method === 'DELETE' && series !== undefined && world.deletedSeries.has(series)));
@@ -986,36 +978,6 @@ const lostLanded = (world: World, call: FakeCall) => {
   for (const key of keys) {
     world.disturbed.add(key);
   }
-  // A PATCH of a series: see World.reshaped.
-  if (call.method === 'PATCH' && target.key.startsWith('event:')) {
-    world.reshaped.add(target.key);
-  }
-};
-
-/**
- * Whether the key is an occurrence Google no longer draws because a PATCH
- * of ours redrew its series there with the answer lost (World.reshaped: a
- * cut, a new rule, new times). The client learns of it with the next
- * pull; until then, and above all once the user discarded that change,
- * it draws the occurrence, and a change of it is refused and dropped. A
- * documented limit (todo.md, Tier 0): no edit keeps such an occurrence.
- */
-const reshapedAway = (world: World, key: string): boolean => {
-  const series = seriesKeyOf(key);
-  const id = key.slice('event:'.length);
-  const masterId = masterIdOf(id);
-  const slot = slotOfId(id);
-  if (series === undefined || masterId === undefined || slot === undefined) {
-    return false;
-  }
-  return (
-    world.reshaped.has(series) &&
-    !CALENDARS.some((calendarId) =>
-      world.google
-        .instancesOf(calendarId, masterId, slot - DAY, slot + DAY)
-        .some((instance) => instance.id === id),
-    )
-  );
 };
 
 const setIntent = (
@@ -1024,7 +986,7 @@ const setIntent = (
   change: Partial<Omit<Intent & { kind: 'set' }, 'kind'>>,
 ) => {
   // Gone from Google behind the user's back: no later edit brings it back.
-  if (touches(world.vanished, key) || reshapedAway(world, key)) {
+  if (touches(world.vanished, key)) {
     return;
   }
   const before = world.intents.get(key);
@@ -4068,6 +4030,36 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
     },
   );
 
+  it.effect(
+    'a move back over a lost move, the task deleted elsewhere, leaves no row behind',
+    () => {
+      // Sequence 829 at 80 steps: the move landed with its answer lost,
+      // another device deleted the task where it had landed (Google takes
+      // its subtasks along), and the user moved it back. The first move's
+      // retry met a 404 and found the task deleted there.
+      const google = newFake();
+      const network = losingFirstMove(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+          yield* mutations.processPendingOps();
+          for (const id of ['s1', 's2', 'p']) {
+            google.deleteTaskServerSide('list-2', id);
+          }
+          yield* moveOf(mutations, TRIP, 'list-2', 'list-1');
+          network.down = false;
+          yield* drainAll(mutations);
+          expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+          expect(
+            yield* (yield* SqlClient)`SELECT id, list_id, sync_status FROM tasks WHERE id IN ('p', 's1', 's2') AND sync_status = 'pending'`,
+          ).toEqual([]);
+        }),
+      );
+    },
+  );
+
   it.effect('a pull leaves a deleted task gone where a move with a lost answer took it', () => {
     // Sequence 693: the move landed with its answer lost, the user deleted
     // the task in its new list, and a pull of that list — Google lists the
@@ -6407,6 +6399,80 @@ describe('pending-op queue: discarding a change that was tried before', () => {
     );
   });
 
+  it.effect('a delete that had landed, discarded while Google is out of reach, waits', () => {
+    // Put back at once as never sent, the event showed though Google had
+    // it no more, and a change made to it then was refused and dropped.
+    // It stays as the delete left it until Google says what it has.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        let lost = false;
+        google.fault = (call) => {
+          if (!call.url.includes('/events/e1')) {
+            return undefined;
+          }
+          if (call.method === 'DELETE' && !lost) {
+            lost = true;
+            return 'lost';
+          }
+          return 'refused';
+        };
+        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: 'e1' });
+        yield* mutations.processPendingOps();
+        yield* discardAll(mutations);
+        expect((yield* ops.listAll()).map((op) => [op.kind, op.discarded])).toEqual([
+          ['delete', true],
+        ]);
+        expect(yield* shownAt('e1')).toEqual([]);
+        // Never sent again, however often the queue drains.
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        expect(writes(google)).toEqual([]);
+        google.fault = undefined;
+        yield* drainAll(mutations);
+        expect(writes(google)).toEqual([]);
+        expect(yield* ops.listAll()).toEqual([]);
+        expect(yield* shownAt('e1')).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect(
+    'a delete Google never got, discarded while it is out of reach, comes back once it answers',
+    () => {
+      const google = newFake();
+      const network = { down: true };
+      google.fault = (call) =>
+        network.down && call.url.includes('/events/e1') ? 'refused' : undefined;
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const ops = yield* PendingOpRepo;
+          yield* mutations.deleteEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            eventId: 'e1',
+          });
+          yield* mutations.processPendingOps();
+          yield* discardAll(mutations);
+          expect((yield* ops.listAll()).map((op) => op.discarded)).toEqual([true]);
+          expect(yield* shownAt('e1')).toEqual([]);
+          network.down = false;
+          google.requests.length = 0;
+          yield* drainAll(mutations);
+          expect(writes(google)).toEqual([]);
+          expect(yield* ops.listAll()).toEqual([]);
+          expect(yield* shownAt('e1')).toEqual(['cal-1 synced']);
+          expect(google.eventOf('cal-1', 'e1')?.status).not.toBe('cancelled');
+        }),
+      );
+    },
+  );
+
   it.effect('a delete that had landed stays gone', () => {
     const google = newFake();
     return scripted(
@@ -6453,14 +6519,129 @@ describe('pending-op queue: discarding a change that was tried before', () => {
     );
   });
 
-  it.effect('with Google out of reach it goes back as never sent, as before', () => {
+  it.effect('an edit made on what a waiting discard left keeps the change it gave up', () => {
+    // Sequences 1047 and 3746: new times for all events, tried, given up
+    // with Google out of reach, and so still on screen. An occurrence
+    // edited there stands on those times: taken back once Google said it
+    // never got them, the edit named a slot the series did not draw, and
+    // went with them. The new times are sent after all.
+    const google = newFake();
+    const network = { down: true };
+    google.fault = (call) =>
+      network.down && call.url.includes('/events/r1') ? 'refused' : undefined;
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { endUtc: R1_START + 2 * HOUR, startUtc: R1_START + HOUR },
+          originalStartUtc: R1_START,
+          scope: 'series',
+        });
+        yield* mutations.processPendingOps();
+        yield* discardAll(mutations);
+        expect((yield* ops.listAll()).map((op) => [op.kind, op.discarded])).toEqual([
+          ['update', true],
+        ]);
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { title: 'Only this one' },
+          originalStartUtc: R1_START + DAY + HOUR,
+          scope: 'instance',
+        });
+        expect((yield* ops.listAll()).map((op) => op.discarded)).toEqual([undefined, undefined]);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(yield* ops.listAll()).toEqual([]);
+        expect(drawnOnGoogle(google, 'cal-1', 'r1')[0]).toBe(R1_START + HOUR);
+        expect(
+          google
+            .instancesOf('cal-1', 'r1', WINDOW_FROM, WINDOW_TO)
+            .map((instance) => instance.summary),
+        ).toContain('Only this one');
+      }),
+    );
+  });
+
+  it.effect('an edit behind a create that is still out goes back to what the create sent', () => {
+    // Sequence 883 at 80 steps: a new series, its create out, then a
+    // place, a title and a rule for all events. A full list, which does
+    // not name an event Google has not got yet, took the edit's copy for
+    // one of an event deleted on Google. Discarded, the edit had nothing
+    // to go back to and stayed in the row, marked synced; the next edit
+    // took that row for Google's version, and the pull that brought the
+    // series as created asked the user to choose.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const sql = yield* SqlClient;
+        network.down = true;
+        const startUtc = START + 3 * DAY + 3 * HOUR;
+        const created = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          endUtc: startUtc + HOUR,
+          isAllDay: false,
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=5'],
+          startTimeZone: 'UTC',
+          startUtc,
+          title: 'Standup',
+        });
+        yield* mutations.processPendingOps();
+        const series = {
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          masterId: created.id,
+          originalStartUtc: startUtc,
+          scope: 'series' as const,
+        };
+        yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 1' } });
+        yield* mutations.updateRecurring({ ...series, changes: { title: 'Daily' } });
+        yield* mutations.processPendingOps();
+        yield* mutations.updateRecurring({ ...series, changes: { recurrence: EVERY_OTHER_DAY } });
+        google.expireSyncTokens('cal-1');
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        const edit = (yield* ops.listAll()).find((op) => op.kind === 'update');
+        yield* mutations.discardPendingOp(edit!.id);
+        expect(
+          yield* sql`SELECT title, location, recurrence FROM events WHERE id = ${created.id}`,
+        ).toEqual([
+          { location: null, recurrence: '["RRULE:FREQ=DAILY;COUNT=5"]', title: 'Standup' },
+        ]);
+        yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 2' } });
+        network.down = false;
+        yield* drainAll(mutations);
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* ops.listAll()).map(describeOp)).toEqual([]);
+        const theirs = google.eventOf('cal-1', created.id);
+        expect([theirs?.summary, theirs?.location]).toEqual(['Standup', 'Room 2']);
+      }),
+    );
+  });
+
+  it.effect('with Google out of reach an edit goes back as never sent, as before', () => {
+    // Nothing is taken away where it lands: had it landed, the next pull
+    // brings it, and whatever was made on top is laid over that.
     const google = newFake();
     return scripted(
       google,
       Effect.gen(function* () {
         const mutations = yield* EventMutations;
         google.fault = (call) => (call.url.includes('/events/e1') ? 'refused' : undefined);
-        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: 'e1' });
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Renamed' },
+          eventId: 'e1',
+        });
         yield* mutations.processPendingOps();
         yield* discardAll(mutations);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
