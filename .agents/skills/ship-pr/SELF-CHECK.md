@@ -111,6 +111,17 @@ The class found in the most PRs (54), almost all by Opus.
 - Does any write rebuild the item from a subset of its fields and drop
   the rest (guests' optional fields, a Meet link, attachments, every alert
   but the first)?
+- Does any path make something Google's copy of an item (the reply to a
+  write sent without If-Match, a move's or a create's answer, a page's
+  record) while another change of the item still waits? Is that change
+  laid over it first (`heldEvents.take`), or does the copy just move on
+  (`advanceBefore`) and leave the change's stale fields to read as the
+  user's own, sent back over another device's? Test it with a value
+  already on Google: a stale field that is absent is not sent by a PATCH,
+  and hides the bug (#374, six findings of this one shape).
+- Does anything read the queue or a copy and then write a row in two
+  steps outside a transaction? The desktop's store answers within the
+  fiber's turn; the iPhone's does not, and a discard gets in between.
 - Does every write path (Save, Add all, an Assistant turn, a finder
   phrase, Mark as Done, a title trim) apply Save's gate:
   `UnsupportedForProviderError`, the Reminders-only fields, validation?
