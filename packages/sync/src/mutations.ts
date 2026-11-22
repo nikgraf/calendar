@@ -1827,6 +1827,78 @@ const make: Effect.Effect<
       );
     });
 
+  /**
+   * Deletes an event with the exceptions it has. Google deletes a series'
+   * exceptions with its master: they go with it locally and come back
+   * with it on a discard, as Google has them — one edited offline in its
+   * acknowledged state (its op goes with it here), one this device only
+   * materialized not at all. The same for an event that repeats no more
+   * here (a series cleared while offline): the rows and queued changes of
+   * its occurrences are still there, and left queued, the delete of an
+   * occurrence only a rule Google never got drew went out on its own.
+   */
+  const deleteWithExceptions = (
+    master: EventRecord,
+    unsentCreate: PendingOp | undefined,
+    now: number,
+  ) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, id: masterId } = master;
+      const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+      const queued = yield* opsForEvent(accountId, calendarId, masterId);
+      // A queued series edit carried its text onto them locally; that
+      // op goes with the master too, so their own text is taken now.
+      const seriesEdits = seriesEditsOf(queued);
+      // What a cut, a new rule or new times still queued had dropped
+      // is Google's too, and this delete's now.
+      const beforeOverrides: Array<EventRecord> = [
+        ...(heldWith(
+          queued.findLast((op) => op.kind === 'update'),
+          [],
+        ) ?? []),
+      ];
+      for (const override of overrides) {
+        // Google's copy of each: the one its own queued ops hold, else
+        // the row itself, which nothing changed here.
+        const own = yield* opsForEvent(accountId, calendarId, override.id);
+        const holder = own.find(
+          (op) => op.kind === 'delete' || op.kind === 'rsvp' || op.kind === 'update',
+        );
+        const acked =
+          holder === undefined || isPulledCopy(own, override) ? override : holder.beforePayload;
+        if (acked) {
+          beforeOverrides.push(ownTextOf(acked, seriesEdits));
+        }
+        yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
+        yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+      }
+      yield* eventRepo.deleteEvent(accountId, calendarId, masterId);
+      if (unsentCreate) {
+        // Never sent: dropping its create is the whole delete.
+        return yield* pendingOpRepo.removeForEvent(accountId, calendarId, masterId);
+      }
+      // A sent create stays ahead: the delete follows whatever it did.
+      yield* supersedeQueued(accountId, calendarId, masterId);
+      yield* enqueue(
+        new PendingOp({
+          accountId,
+          attempts: 0,
+          ...inheritedPark(queued),
+          baseEtag: master.etag ?? undefined,
+          ...(beforeOverrides.length > 0 ? { beforeOverrides } : {}),
+          beforePayload: inheritedBefore(queued, master),
+          calendarId,
+          createdAt: now,
+          eventId: masterId,
+          id: generateEventId(),
+          kind: 'delete',
+          nextAttemptAt: 0,
+          // Snapshot of what was deleted: names a parked 412 in the UI.
+          payload: master,
+        }),
+      );
+    });
+
   const shape: Omit<
     EventMutationsShape,
     | 'convertEventToTask'
@@ -1898,43 +1970,8 @@ const make: Effect.Effect<
         if (existing.recurringEventId || existing.recurrence) {
           return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
         }
-        const queued = yield* opsForEvent(accountId, calendarId, eventId);
-        const unsentCreate = queued.find(
-          (op) => op.kind === 'create' && op.dispatchedAt === undefined,
-        );
-        yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
-        if (unsentCreate) {
-          // Never sent: dropping its create is the whole delete.
-          yield* pendingOpRepo.removeForEvent(accountId, calendarId, eventId);
-        } else {
-          // A sent create stays ahead: the delete follows whatever it did.
-          yield* supersedeQueued(accountId, calendarId, eventId);
-          const now = yield* Clock.currentTimeMillis;
-          yield* enqueue(
-            new PendingOp({
-              accountId,
-              attempts: 0,
-              ...inheritedPark(queued),
-              baseEtag: existing.etag ?? undefined,
-              // A series cleared while offline holds the exceptions that
-              // change dropped: Google cancels them with the event, and
-              // they are this delete's now, to put back if it is given up.
-              beforeOverrides: heldWith(
-                queued.findLast((op) => op.kind === 'update'),
-                [],
-              ),
-              beforePayload: inheritedBefore(queued, existing),
-              calendarId,
-              createdAt: now,
-              eventId,
-              id: generateEventId(),
-              kind: 'delete',
-              nextAttemptAt: 0,
-              // Snapshot of what was deleted: names a parked 412 in the UI.
-              payload: existing,
-            }),
-          );
-        }
+        const unsentCreate = yield* unsentCreateOf(accountId, calendarId, eventId);
+        yield* deleteWithExceptions(existing, unsentCreate, yield* Clock.currentTimeMillis);
       }),
 
     deleteRecurring: ({ accountId, calendarId, masterId, originalStartUtc, scope }) =>
@@ -1981,64 +2018,7 @@ const make: Effect.Effect<
         yield* restoreTakenExceptions(accountId, calendarId, masterId);
         const unsentCreate = yield* unsentCreateOf(accountId, calendarId, masterId);
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
-          // Deleting the master cascades to its exceptions server-side.
-          // They go with the master locally and come back with it on a
-          // discard — as Google has them: an exception edited offline goes
-          // back to its acknowledged state (its op goes with it here), one
-          // this device only materialized does not come back at all.
-          const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
-          const queued = yield* opsForEvent(accountId, calendarId, masterId);
-          // A queued series edit carried its text onto them locally; that
-          // op goes with the master too, so their own text is taken now.
-          const seriesEdits = seriesEditsOf(queued);
-          // What a cut, a new rule or new times still queued had dropped
-          // is Google's too, and this delete's now.
-          const beforeOverrides: Array<EventRecord> = [
-            ...(heldWith(
-              queued.findLast((op) => op.kind === 'update'),
-              [],
-            ) ?? []),
-          ];
-          for (const override of overrides) {
-            // Google's copy of each: the one its own queued ops hold, else
-            // the row itself, which nothing changed here.
-            const own = yield* opsForEvent(accountId, calendarId, override.id);
-            const holder = own.find(
-              (op) => op.kind === 'delete' || op.kind === 'rsvp' || op.kind === 'update',
-            );
-            const acked =
-              holder === undefined || isPulledCopy(own, override) ? override : holder.beforePayload;
-            if (acked) {
-              beforeOverrides.push(ownTextOf(acked, seriesEdits));
-            }
-            yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
-            yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
-          }
-          yield* eventRepo.deleteEvent(accountId, calendarId, masterId);
-          if (unsentCreate) {
-            // Never sent: dropping its create is the whole delete.
-            return yield* pendingOpRepo.removeForEvent(accountId, calendarId, masterId);
-          }
-          // A sent create stays ahead: the delete follows whatever it did.
-          yield* supersedeQueued(accountId, calendarId, masterId);
-          yield* enqueue(
-            new PendingOp({
-              accountId,
-              attempts: 0,
-              ...inheritedPark(queued),
-              baseEtag: master.etag ?? undefined,
-              beforeOverrides,
-              beforePayload: inheritedBefore(queued, master),
-              calendarId,
-              createdAt: now,
-              eventId: masterId,
-              id: generateEventId(),
-              kind: 'delete',
-              nextAttemptAt: 0,
-              payload: master,
-            }),
-          );
-          return;
+          return yield* deleteWithExceptions(master, unsentCreate, now);
         }
 
         // this-and-following: end the series just before the occurrence.

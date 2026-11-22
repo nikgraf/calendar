@@ -640,6 +640,8 @@ interface World {
   network: { readonly lost: number; readonly name: string; readonly refused: number };
   /** Faults the next writes meet, in order, before the network's odds apply. */
   readonly nextWrites: Array<FakeFault>;
+  /** The request that took the sequence off what is recorded of Google (see OFF_GROUND). */
+  offGround?: string;
   readonly random: () => number;
   /** Items another device removed, or a lost delete or move of ours took away: a 404 there is no surprise. */
   readonly removed: Set<string>;
@@ -1244,9 +1246,23 @@ const checkParks = (world: World, snapshot: Snapshot) => {
   }
 };
 
+/**
+ * A write on the etag an exception had before its series moved: whether
+ * Google gives the exceptions new etags with `events.move` is not
+ * recorded (the fake does, and says so). The app is safe either way (a
+ * 412 fetches Google's version and lays the change over it, or asks), but
+ * what the fake answers from there on is its own guess, so the sequence
+ * ends there, judged up to that step and no further.
+ */
+const OFF_GROUND = 'on its etag from before its series moved';
+
 /** The sequence is judged by what is recorded of Google only (see FakeGoogle.unverified). */
 const checkRecorded = (world: World) => {
   for (const request of world.google.unverified.splice(0)) {
+    if (request.includes(OFF_GROUND)) {
+      world.offGround = request;
+      continue;
+    }
     world.violations.push(
       `the sequence left what is recorded of Google: ${request} (a step to leave out, not a bug)`,
     );
@@ -2514,6 +2530,9 @@ const runSequence = (seed: number) => {
       if (world.violations.length > 0) {
         return yield* Effect.die(report(seed, world, snapshot));
       }
+      if (world.offGround !== undefined) {
+        return yield* Effect.fail('off ground' as const);
+      }
       return snapshot;
     });
 
@@ -2574,7 +2593,13 @@ const runSequence = (seed: number) => {
     if (world.violations.length > 0) {
       return yield* Effect.die(report(seed, world, snapshot));
     }
-  }).pipe(noYield, Effect.provide(layerFor(google)), withSeededIds(seed));
+  }).pipe(
+    // Off recorded ground: judged up to there (see OFF_GROUND).
+    Effect.catch(() => Effect.void),
+    noYield,
+    Effect.provide(layerFor(google)),
+    withSeededIds(seed),
+  );
 };
 
 /**
@@ -6342,15 +6367,21 @@ describe("pending-op queue: a subtask's move undone under its parent's waiting m
             taskListId: from,
           });
         network.down = true;
+        // Seconds apart: the subtask's rename is older than its parent's
+        // move, and must still go out behind it.
         yield* move('s1', 'Pack', 'list-1', 'list-2');
+        yield* TestClock.adjust('1 second');
         yield* mutations.updateTask({
           accountId: ACCOUNT_ID,
           changes: { title: 'Pack the bags' },
           taskId: 's1',
           taskListId: 'list-2',
         });
+        yield* TestClock.adjust('1 second');
         yield* move('p', 'Trip', 'list-1', 'list-2');
+        yield* TestClock.adjust('1 second');
         yield* move('s1', 'Pack the bags', 'list-2', 'list-1');
+        yield* TestClock.adjust('1 second');
         yield* mutations.discardPendingOp((yield* ops.listAll())[0]!.id);
         network.down = false;
         yield* drainAll(mutations);
@@ -6579,6 +6610,43 @@ describe('pending-op queue: what review round 11 found', () => {
       );
     },
   );
+});
+
+describe('pending-op queue: deleting an event that repeats no more here', () => {
+  it.effect('takes the queued changes of its occurrences along', () => {
+    // Sequence 35 at 80 steps: more days for a series, one of the new
+    // days deleted, then "does not repeat", then the event deleted, all
+    // offline. The single event's delete left the occurrence's own delete
+    // queued: it went out on its own, for a day Google never drew.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const series = { ...R1, originalStartUtc: R1_START, scope: 'series' as const };
+        network.down = true;
+        yield* mutations.updateRecurring({
+          ...series,
+          changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] },
+        });
+        yield* mutations.deleteRecurring({
+          ...R1,
+          originalStartUtc: R1_START + 10 * DAY,
+          scope: 'instance',
+        });
+        yield* mutations.updateRecurring({ ...series, changes: { recurrence: null } });
+        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: 'r1' });
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([
+          'delete r1 in cal-1',
+        ]);
+        network.down = false;
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        expect(writes(google)).toEqual(['DELETE calendars/cal-1/events/r1']);
+      }),
+    );
+  });
 });
 
 describe('pending-op queue: a move given up after it was sent', () => {

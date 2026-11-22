@@ -731,8 +731,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           for (const other of yield* pendingOpRepo.listForTask(op.accountId, moving.id)) {
             if (other.id !== op.id && other.calendarId === to && other.kind !== 'moveTask') {
               yield* pendingOpRepo.remove(other.id);
+              // Behind the parent's move that takes it there.
+              const behindAll = Math.max(...queued.map((entry) => entry.createdAt)) + 1;
               yield* pendingOpRepo.enqueue(
-                new PendingOp({ ...other, calendarId: listId, taskListId: listId }),
+                new PendingOp({
+                  ...other,
+                  calendarId: listId,
+                  createdAt: Math.max(other.createdAt, behindAll),
+                  taskListId: listId,
+                }),
               );
             }
           }
@@ -847,10 +854,18 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         // waits, where that move takes it (Google takes it along). Keyed
         // to the source there, its change went out after the parent's move
         // and met a 404.
+        // (and behind that move: queued when its own move was, the change
+        // sorted ahead of the parent's later one and went out first).
+        const behindAll = Math.max(...all.map((queued) => queued.createdAt)) + 1;
         for (const other of goingBack) {
           const where = (yield* held.placeOf(op.accountId, other.eventId, op.id))?.listId ?? to;
           yield* pendingOpRepo.enqueue(
-            new PendingOp({ ...other, calendarId: where, taskListId: where }),
+            new PendingOp({
+              ...other,
+              calendarId: where,
+              ...(where === to ? {} : { createdAt: behindAll }),
+              taskListId: where,
+            }),
           );
         }
         // Moved on or deleted since: the later ops own the task's row.
