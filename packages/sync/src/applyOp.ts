@@ -700,7 +700,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
     });
 
-  const revertTaskMove = (op: PendingOp) =>
+  /**
+   * Puts a task's move back. `keepsParent: false` when Google has the
+   * task no more (a 404 nobody asked for, the task deleted elsewhere):
+   * back under a parent whose delete waits, it is no reason to keep that
+   * parent.
+   */
+  const revertTaskMove = (op: PendingOp, keepsParent = true) =>
     transaction(
       Effect.gen(function* () {
         const from = op.targetTaskListId;
@@ -735,6 +741,18 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         // it for the task still places it.
         const parentWithout = (taskId: string) =>
           Effect.map(held.placeOf(op.accountId, taskId, op.id), (place) => place?.parentId);
+        // The subtasks this move carried: under the task, in its source, when
+        // the move was queued. One that had left it on its own before is
+        // not: Google still has it under the task, but its later moves are
+        // its own, and stay.
+        const carried = new Set<string>();
+        for (const [id, parent] of parentOf) {
+          const place =
+            parent === op.eventId ? yield* held.placeBefore(op.accountId, id, op.id) : undefined;
+          if (place?.parentId === op.eventId && place.listId === to) {
+            carried.add(id);
+          }
+        }
         const owned = new Set<string>();
         // Moved back to the source since (the task, or a subtask on its own),
         // with the parent Google still has it under.
@@ -744,7 +762,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             other.id === op.id ||
             other.accountId !== op.accountId ||
             other.calendarId !== from ||
-            !(ids.has(other.eventId) || parentOf.get(other.eventId) === op.eventId)
+            !(ids.has(other.eventId) || carried.has(other.eventId))
           ) {
             continue;
           }
@@ -797,7 +815,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           // Google's copy with what still waits for it; Google's alone otherwise.
           yield* held.refresh(op.accountId, row.id, op.id);
         }
-        if (backUnder !== undefined) {
+        if (backUnder !== undefined && keepsParent) {
           yield* keepParent(op.accountId, to, backUnder);
         }
         yield* settleCameBack(op, to, cameBack, now);
@@ -863,8 +881,37 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           return 'done' as const;
         }
       }
-      yield* Effect.ignore(revertTaskMove(op));
+      // Nobody asked for this: a 404 that is the task gone from its source
+      // too (deleted on another device) puts nothing back under a parent.
+      const gone =
+        unanswered === 'retry' && op.taskListId !== undefined
+          ? yield* deletedIn(op, op.taskListId)
+          : false;
+      yield* Effect.ignore(revertTaskMove(op, !gone));
       return 'done' as const;
+    });
+
+  /** Whether a list names the op's task as deleted since the op was queued; no answer is a no. */
+  const deletedIn = (op: PendingOp, taskListId: string) =>
+    Effect.gen(function* () {
+      let pageToken: string | undefined;
+      do {
+        const page = yield* Effect.result(
+          tasksClient.listTasks({
+            accountId: op.accountId,
+            params: { pageToken, updatedMin: new Date(op.createdAt - 60_000).toISOString() },
+            taskListId,
+          }),
+        );
+        if (page._tag === 'Failure') {
+          return false;
+        }
+        if (page.success.items?.some((item) => item.id === op.eventId && item.deleted === true)) {
+          return true;
+        }
+        pageToken = page.success.nextPageToken;
+      } while (pageToken !== undefined);
+      return false;
     });
 
   /**

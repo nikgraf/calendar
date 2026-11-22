@@ -84,6 +84,19 @@ export interface HeldTasks {
    */
   readonly land: (landed: PendingOp, synced: TaskRecord) => Effect.Effect<void, SqlError>;
   /**
+   * Where a held task was when the op `before` was queued: placed by the
+   * moves and reorders queued ahead of that op alone. Undefined for a task
+   * with no copy.
+   */
+  readonly placeBefore: (
+    accountId: string,
+    taskId: string,
+    before: string,
+  ) => Effect.Effect<
+    { readonly listId: string; readonly parentId: string | undefined } | undefined,
+    SqlError
+  >;
+  /**
    * Where a held task is shown while its queued moves and reorders wait:
    * the list they leave its row in and the task it is under there.
    * Undefined for a task with no copy.
@@ -170,6 +183,22 @@ export const makeHeldTasks = (deps: HeldTaskDeps): HeldTasks => {
       }
       const ops = (yield* holdersOf(copy, accountId, taskId)).filter((op) => op.id !== except);
       return placeAfter(copy, ops);
+    });
+
+  const placeBefore: HeldTasks['placeBefore'] = (accountId, taskId, before) =>
+    Effect.gen(function* () {
+      const copy = yield* copyOf(accountId, taskId);
+      if (!copy) {
+        return undefined;
+      }
+      const all = yield* pendingOpRepo.listAll();
+      const at = all.findIndex((op) => op.id === before);
+      return placeAfter(
+        copy,
+        (at === -1 ? all : all.slice(0, at)).filter(
+          (op) => op.accountId === accountId && op.taskListId !== undefined,
+        ),
+      );
     });
 
   const holders: HeldTasks['holders'] = (accountId, taskId, except) =>
@@ -287,5 +316,5 @@ export const makeHeldTasks = (deps: HeldTaskDeps): HeldTasks => {
       yield* refresh(landed.accountId, synced.id, landed.id);
     });
 
-  return { copyOf, forgetDeleted, holders, land, placeOf, refresh };
+  return { copyOf, forgetDeleted, holders, land, placeBefore, placeOf, refresh };
 };

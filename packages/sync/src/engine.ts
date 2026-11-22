@@ -411,6 +411,13 @@ const make: Effect.Effect<
       // the pass began: one queued while it pages may follow the page that
       // named its event, and is told nothing by not being seen leaving.
       const listedLeaving = new Set<string>();
+      // Every event a page of this pass named, and the changes that held an
+      // event here when it began: after a full list, one of those the list
+      // no longer names is gone on Google (below).
+      const listed = new Set<string>();
+      const heldBefore = (yield* pendingOpRepo.listAll()).filter(
+        (op) => op.accountId === account.id && op.calendarId === calendarId && op.beforePayload,
+      );
       const movesBefore = new Set(
         [...(yield* nextMoves(account.id)).values()].map((move) => move.id),
       );
@@ -639,6 +646,9 @@ const make: Effect.Effect<
                 params: syncToken ? { pageToken, syncToken } : { pageToken },
               }),
             );
+            for (const item of page.items ?? []) {
+              listed.add(item.id ?? '');
+            }
             yield* applyItems(page.items ?? [], page.timeZone);
             pageToken = page.nextPageToken;
             nextSyncToken = page.nextSyncToken ?? nextSyncToken;
@@ -692,6 +702,29 @@ const make: Effect.Effect<
             !listedLeaving.has(move.eventId),
         );
         yield* pendingOpRepo.markSourceGone(absent.map((move) => move.id));
+        // An event a queued change holds that the full list no longer
+        // names: Google deleted it (another device, or this delete landed
+        // with its answer lost), and no later page will say so. Its copy
+        // goes, so a discard has nothing to put back. One a queued move
+        // brings here is listed where it still is.
+        const still = new Set((yield* pendingOpRepo.listAll()).map((op) => op.id));
+        const arriving = new Set(
+          [...(yield* nextMoves(account.id)).values()]
+            .filter((move) => move.targetCalendarId === calendarId)
+            .map((move) => move.eventId),
+        );
+        yield* pendingOpRepo.forgetDeleted(account.id, calendarId, [
+          ...new Set(
+            heldBefore
+              .filter(
+                (op) =>
+                  still.has(op.id) &&
+                  !listed.has(op.eventId) &&
+                  !arriving.has(op.beforePayload?.recurringEventId ?? op.eventId),
+              )
+              .map((op) => op.eventId),
+          ),
+        ]);
       }
 
       yield* writeState('idle', nextSyncToken, fullPass);

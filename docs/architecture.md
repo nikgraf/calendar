@@ -654,9 +654,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   shows the op's own (calendar-list pulls do not skip a queued color).
   An op replaced while its request was in flight puts nothing back when
   that request is refused — the replacement owns the row. A 2xx whose
-  body did not decode (the write landed) keeps the row's content. Known
-  gap: a full re-list after an expired sync token confirms a deletion
-  only by absence, which removes no copy. Open gaps of repeating events,
+  body did not decode (the write landed) keeps the row's content. A full
+  re-list after an expired sync token confirms a deletion only by
+  absence: the copy of a held event the list no longer names goes then
+  too, as a queued move's source is marked gone. Open gaps of repeating events,
   each a skipped test in `queueSequence.test.ts` (the first a seed in its
   `KNOWN_FAILING` too): the deletes a rule change queued outlive a delete
   that replaces it; a move of an event whose rule was cleared leaves an

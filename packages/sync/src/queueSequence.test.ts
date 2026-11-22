@@ -3849,6 +3849,61 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
     },
   );
 
+  it.effect('a subtask gone on Google does not keep the parent the user deleted', () => {
+    // Review (Opus, round 7): a subtask moved out while offline, deleted on
+    // another device, and its parent deleted here. The move met a 404 and
+    // was put back, which read as "the subtask is back under its parent":
+    // the parent's delete was dropped, and the parent stayed for good.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveOf(mutations, PACK, 'list-1', 'list-2');
+        google.now += MINUTE;
+        google.deleteTaskServerSide('list-1', 's1');
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.taskOf('list-1', 'p')?.deleted).toBe(true);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect("discarding a parent's move leaves a subtask's own move back alone", () => {
+    // Review (Opus, round 7): a subtask moved to the other list, its parent
+    // moved after it, the subtask moved back, then the parent's move
+    // discarded. Google still has the subtask under that parent, so its
+    // move back was taken for one the parent's move had carried, and went:
+    // the subtask ended in the other list, against the user's last move.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveOf(mutations, PACK, 'list-1', 'list-2');
+        yield* TestClock.adjust('1 second');
+        yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+        yield* TestClock.adjust('1 second');
+        yield* moveOf(mutations, PACK, 'list-2', 'list-1');
+        const parentMove = (yield* (yield* PendingOpRepo).listAll()).find(
+          (op) => op.kind === 'moveTask' && op.eventId === 'p',
+        );
+        yield* mutations.discardPendingOp(parentMove!.id);
+        expect((yield* placed).filter((row) => row.includes('/s1'))).toEqual(['list-1/s1']);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.taskOf('list-1', 's1')?.deleted).toBeUndefined();
+        expect(google.taskOf('list-2', 's1')).toBeUndefined();
+      }),
+    );
+  });
+
   it.effect('a subtask an earlier reorder puts back under its parent keeps the parent too', () => {
     // Review (Codex, round 3): the subtask reordered under its parent, then
     // taken out of it, the parent deleted without it, and the second
@@ -4222,6 +4277,34 @@ describe('pending-op queue: what a pull tells of a queued create or move', () =>
         yield* discardAll(mutations);
         expect(yield* shownAt(created.id)).toEqual(['cal-1 synced']);
         expect(google.eventOf('cal-1', created.id)?.summary).toBe('Dentist');
+      }),
+    );
+  });
+
+  it.effect('a full list that no longer names a held event leaves nothing to put back', () => {
+    // Review (Opus, round 7): an event with an edit queued, deleted on
+    // another device, and the sync token expired. The full list just left
+    // the event out; Google's copy stayed with the edit, and discarding it
+    // put the event back as synced, for good: no page reports it again.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Standup (new room)' },
+          eventId: 'e1',
+        });
+        google.deleteEventServerSide('cal-1', 'e1');
+        google.expireSyncTokens('cal-1');
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        yield* discardAll(mutations);
+        expect(yield* shownAt('e1')).toEqual([]);
       }),
     );
   });
