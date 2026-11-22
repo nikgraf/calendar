@@ -472,7 +472,12 @@ const make: Effect.Effect<
                       (op) =>
                         op.eventId === record.id &&
                         ((op.kind === 'create' && op.calendarId === calendarId) ||
-                          (op.id === move?.id && op.targetCalendarId === calendarId)),
+                          // A move that was sent: one still waiting cannot have
+                          // landed, and the event there is the destination's own
+                          // of that id (Google's ids repeat across calendars).
+                          (op.id === move?.id &&
+                            op.targetCalendarId === calendarId &&
+                            op.dispatchedAt !== undefined)),
                     )
                     .map((op) => ({ opId: op.id, record }));
                 });

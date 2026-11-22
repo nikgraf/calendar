@@ -2407,12 +2407,35 @@ const make: Effect.Effect<
       // The destination's own event of that id: this one's row would
       // replace it, and a page that names it there would read as the move
       // landed (`landedInPull`).
-      if (yield* eventRepo.getById(accountId, target.calendarId, eventId)) {
+      // Deleted here, it is still there for Google while that delete waits.
+      // And another event of the id that is moving between other calendars:
+      // what a page brings for a moving event finds its rows by its id.
+      const there = { accountId, calendarId: target.calendarId, eventId };
+      const moves = (yield* pendingOpRepo.listAll()).filter(
+        (op) => op.kind === 'move' && op.accountId === accountId && op.eventId === eventId,
+      );
+      // This event's own way here: the calendars its queued moves took it
+      // through, followed back from where it is.
+      const own = new Set([calendarId]);
+      for (const op of moves.toReversed()) {
+        if (own.has(op.targetCalendarId ?? '')) {
+          own.add(op.calendarId);
+        }
+      }
+      const elsewhere = moves.some((op) => !own.has(op.targetCalendarId ?? ''));
+      if (
+        elsewhere ||
+        (yield* eventRepo.getById(accountId, target.calendarId, eventId)) ||
+        // (A move queued there is this event's own way out of it or back.)
+        (yield* pendingOpRepo.listForEvent(there)).some((op) => op.kind !== 'move')
+      ) {
         return yield* Effect.fail(
           new EventAlreadyThereError({
             calendarId: target.calendarId,
             eventId,
-            message: 'That calendar already has this event.',
+            message: elsewhere
+              ? 'Another event with this id is still moving. Try again once it synced.'
+              : 'That calendar already has this event.',
           }),
         );
       }

@@ -6,7 +6,7 @@ import {
   expandRecurringEvent,
   failureText,
   googleInstanceId,
-  type PendingOp,
+  PendingOp,
   type RecurrenceMaster,
   recurrenceMasterOf,
 } from '@calendar/core';
@@ -4222,6 +4222,41 @@ describe('pending-op queue: what a pull tells of a queued create or move', () =>
         yield* discardAll(mutations);
         expect(yield* shownAt(created.id)).toEqual(['cal-1 synced']);
         expect(google.eventOf('cal-1', created.id)?.summary).toBe('Dentist');
+      }),
+    );
+  });
+
+  it.effect('a move never sent is not settled by an event of its id the destination has', () => {
+    // Review (Codex, round 6): Google's ids repeat across calendars. A
+    // move that had not gone out yet was taken as landed when a page of
+    // its destination named an event of that id — the destination's own —
+    // and left the queue, with the event still in its source on Google.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const ops = yield* PendingOpRepo;
+        // As a move waiting behind another change leaves it: queued, unsent.
+        yield* ops.enqueue(
+          new PendingOp({
+            accountId: ACCOUNT_ID,
+            attempts: 0,
+            calendarId: 'cal-1',
+            createdAt: START,
+            eventId: 'e1',
+            id: 'unsent-move',
+            kind: 'move',
+            nextAttemptAt: START + 60 * MINUTE,
+            targetCalendarId: 'cal-2',
+          }),
+        );
+        google.putEvent('cal-2', {
+          ...google.eventOf('cal-1', 'e1')!,
+          summary: 'Standup (theirs)',
+        });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* ops.listAll()).map((op) => op.id)).toEqual(['unsent-move']);
       }),
     );
   });

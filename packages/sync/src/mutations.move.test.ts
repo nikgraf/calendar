@@ -311,6 +311,41 @@ describe('moveEvent inside one Google account', () => {
     }).pipe(Effect.provide(testLayer(recordingGoogle([]), appleFake()))),
   );
 
+  it.effect('refuses it while the destination still has a change of that id queued', () =>
+    // Review (Codex, round 6): with the destination's own event deleted
+    // offline there is no row to see, but its delete still waits.
+    Effect.gen(function* () {
+      yield* seed([googleEvent(), googleEvent({ calendarId: 'cal-2', etag: '"other"' })]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-2', eventId: 'evt-a' });
+      const result = yield* Effect.result(
+        mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2'])),
+      );
+      expect(Result.isFailure(result) && result.failure._tag).toBe('EventAlreadyThereError');
+      expect((yield* queued).map((op) => op.kind)).toEqual(['delete']);
+    }).pipe(Effect.provide(testLayer(recordingGoogle([]), appleFake()))),
+  );
+
+  it.effect('refuses it while another event of that id is moving between other calendars', () =>
+    // Review (Codex, round 6): what a page brings for a moving event goes
+    // to its rows by its id; two of one id moving at once took each
+    // other's news.
+    Effect.gen(function* () {
+      yield* seed([googleEvent(), googleEvent({ calendarId: 'cal-2', etag: '"other"' })]);
+      yield* (yield* CalendarRepo).upsertMany([
+        calendar('acc-1', 'cal-3'),
+        calendar('acc-1', 'cal-4'),
+      ]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-3']));
+      const result = yield* Effect.result(
+        mutations.moveEvent(move(['acc-1', 'cal-2', 'evt-a'], ['acc-1', 'cal-4'])),
+      );
+      expect(Result.isFailure(result) && result.failure._tag).toBe('EventAlreadyThereError');
+      expect((yield* queued).map((op) => `${op.kind} ${op.calendarId}`)).toEqual(['move cal-1']);
+    }).pipe(Effect.provide(testLayer(recordingGoogle([]), appleFake()))),
+  );
+
   it.effect('an edit queued behind a move waits while the move is in backoff', () => {
     const calls: Array<Call> = [];
     const google = recordingGoogle(calls, {
