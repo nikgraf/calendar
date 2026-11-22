@@ -653,7 +653,7 @@ separate: it also covers tasks, moves, discards and other-device writes.
   failure (`World.retagged`). Seeds that still fail are listed in
   `KNOWN_FAILING` with the gap each meets, skipped
   (`QUEUE_SEQUENCE_KNOWN=1` runs them; none in the first thousand since
-  #374, five in 3,000); a change to the steps, or to the
+  #374, eleven in 7,000); a change to the steps, or to the
   requests the app sends, reshuffles every sequence, so search again
   after one. A bug a sequence finds gets
   a scripted test of its own beside them (`writesDown` holds every write

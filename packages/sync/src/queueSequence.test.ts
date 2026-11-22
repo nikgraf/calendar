@@ -2701,9 +2701,11 @@ const runSequence = (seed: number) => {
 /**
  * Seeds that still fail, with the open gap each one meets (the skipped
  * tests at the end show each gap on its own): none in the first thousand.
- * Past it, 1347 and 2936 (the deletes a cut queued, sent after a delete of
- * the series replaced it) and 1876, 2506 and 2901 (a change discarded
- * after it had landed with its answer lost). Found with QUEUE_SEQUENCE_RUNS=3000;
+ * Past it, to 7,000: 1347, 2936, 3309 and 3904 (the deletes a cut queued,
+ * sent after a delete of the series replaced it), 1876, 2506, 2901, 3116
+ * and 5388 (a change discarded after it had landed with its answer lost),
+ * 3532 (another device's exception past a queued cut, todo.md) and 3748
+ * (a step that leaves what is recorded of Google). Found with QUEUE_SEQUENCE_RUNS=7000;
  * a change to the steps, their odds or the requests the app sends
  * reshuffles every sequence, so search again rather than trust these
  * after one.

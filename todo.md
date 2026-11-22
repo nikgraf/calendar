@@ -20,6 +20,19 @@ was written; re-verify before starting one.
       series whose delete waits › after a cut"): handing them to it
       changes nine of those tests. Seeds 1347 and 2936 of
       `queueSequence.test.ts`.
+- [ ] A pull writes another device's exception past a queued cut as a
+      visible row (on `main` too; Opus round 9 of #374). Offline, "this
+      and following" from day X; another device changes that series'
+      occurrence at X; the pull shows it beside the new series' until the
+      cut lands, and an edit of it parks on our own cut. Hold such an
+      exception as a copy the cut's discard puts back
+      (`holdPulledExceptions`). Seeds 3532, 8967, 11424 of
+      `queueSequence.test.ts`.
+- [ ] A move of a series marks its landed occurrence deletes pending
+      again, and a cut made and discarded after it re-sends one (a 410,
+      harmless on Google; on `main` too). Tell the user's own occurrence
+      deletes by a flag on the op, not by the tombstone's sync status
+      (`isOwnDelete`). Seed 9760.
 - [ ] A change that had landed with its answer lost, then discarded, is
       put back as if Google never got it until the next pull says
       otherwise: a discarded move goes back to its source when Google
