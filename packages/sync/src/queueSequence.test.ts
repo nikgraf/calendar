@@ -10,7 +10,7 @@ import {
   type RecurrenceMaster,
   recurrenceMasterOf,
 } from '@calendar/core';
-import { AccountRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
+import { AccountRepo, EventRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
 import {
   type GcalEvent,
   type GcalTask,
@@ -254,6 +254,8 @@ const newFake = (
  */
 interface Pause {
   current: Effect.Effect<void>;
+  /** The same before every write of event rows. */
+  events?: Effect.Effect<void>;
 }
 
 const pausingReads = (pause: Pause) =>
@@ -270,11 +272,27 @@ const pausingReads = (pause: Pause) =>
     }),
   );
 
+const pausingWrites = (pause: Pause) =>
+  Layer.effect(EventRepo)(
+    Effect.gen(function* () {
+      const repo = yield* EventRepo;
+      return {
+        ...repo,
+        upsertMany: (...args: Parameters<typeof repo.upsertMany>) =>
+          Effect.andThen(
+            Effect.suspend(() => pause.events ?? Effect.void),
+            repo.upsertMany(...args),
+          ),
+      };
+    }),
+  );
+
 const layerFor = (google: FakeGoogle, pause: Pause = { current: Effect.void }) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
     Layer.provideMerge(pausingReads(pause)),
+    Layer.provideMerge(pausingWrites(pause)),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
@@ -4797,6 +4815,74 @@ describe("pending-op queue: Google's copy and the changes laid over it", () => {
       }),
     );
   });
+
+  it.effect(
+    'a delete made while a landed move rebuilds the row leaves no pending row behind',
+    () => {
+      // The move's answer held another device's change, and the rename
+      // behind it was laid over it: its row read from the queue and written
+      // apart. A delete in between took the row; the write put it back,
+      // pending, and the delete's landing left it there with no op.
+      const google = newFake();
+      const network = writesDown(google);
+      const pause: Pause = { current: Effect.void };
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(START);
+        yield* (yield* AccountRepo).upsert(
+          new Account({
+            contactsEnabled: false,
+            createdAt: 1,
+            email: EMAIL,
+            id: ACCOUNT_ID,
+            provider: 'google',
+            status: 'ok',
+            tasksEnabled: true,
+          }),
+        );
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-2',
+          changes: { title: 'Standup (mine)' },
+          eventId: 'e1',
+        });
+        google.patchEventServerSide('cal-1', 'e1', { description: 'Dial-in 456' });
+        network.down = false;
+        // The delete starts when the landing is about to write the row.
+        const sql = yield* SqlClient;
+        const reading = yield* Deferred.make<void>();
+        pause.events = Effect.suspend(() => {
+          pause.events = Effect.void;
+          return Effect.andThen(
+            Deferred.succeed(reading, undefined),
+            Effect.forEach(Array.from({ length: 20 }), () => Effect.yieldNow, { discard: true }),
+          );
+        });
+        const deleting = yield* Effect.forkChild(
+          Effect.andThen(
+            Deferred.await(reading),
+            mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-2', eventId: 'e1' }),
+          ),
+        );
+        yield* mutations.processPendingOps();
+        yield* Fiber.join(deleting);
+        yield* drainAll(mutations);
+        for (const op of yield* (yield* PendingOpRepo).listAll()) {
+          if (op.conflictAt !== undefined) {
+            yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
+          }
+        }
+        yield* drainAll(mutations);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        expect(
+          yield* sql`SELECT calendar_id, sync_status FROM events WHERE id = 'e1' AND status != 'cancelled'`,
+        ).toEqual([]);
+      }).pipe(Effect.provide(layerFor(google, pause)));
+    },
+  );
 
   it.effect('an edit behind a create keeps what the page that settles the create brought', () => {
     // The create's answer was lost, another device rewrote the new event's

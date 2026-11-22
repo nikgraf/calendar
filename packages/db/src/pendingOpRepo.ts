@@ -1,4 +1,9 @@
-import { type CopySource, type EventRecord, type PendingOp } from '@calendar/core';
+import {
+  type CarriedText,
+  type CopySource,
+  type EventRecord,
+  type PendingOp,
+} from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
@@ -258,6 +263,14 @@ export interface PendingOpRepoShape {
   readonly setBeforeOverrides: (
     opId: string,
     overrides: ReadonlyArray<EventRecord> | undefined,
+  ) => Effect.Effect<void, SqlError>;
+  /**
+   * Replaces what a series edit records of the text it carried onto its
+   * exceptions (`undefined`: nothing).
+   */
+  readonly setCarriedText: (
+    opId: string,
+    carriedText: CarriedText | undefined,
   ) => Effect.Effect<void, SqlError>;
   /**
    * Names what the copies a move or a conversion queued were copied from
@@ -903,6 +916,14 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               yield* putCopy(row.account_id, row.calendar_id, taken.id, taken);
             }
           }),
+        ),
+      setCarriedText: (opId, carriedText) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET carried_text = ${
+              carriedText ? JSON.stringify(carriedTextJson(carriedText)) : null
+            } WHERE id = ${opId}`,
+          ),
         ),
       setCopySource: (opIds, source) =>
         invalidating(

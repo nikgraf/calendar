@@ -66,6 +66,7 @@ import { makeAppleEventMutations } from './appleEventMutations.ts';
 import { countAppleChangedOccurrences, findAppleOccurrence } from './appleOccurrence.ts';
 import {
   carriedFields,
+  ownFields,
   planCarry,
   restoreCarriedChanges,
   restoreCarriedText,
@@ -1519,6 +1520,14 @@ const make: Effect.Effect<
         }),
       );
       yield* eventRepo.upsertMany([merged]);
+      // The text this edit sets is the occurrence's own from here on.
+      const seriesEdits = seriesEditsOf(yield* opsForEvent(accountId, calendarId, masterId));
+      yield* ownFields(
+        pendingOpRepo,
+        seriesEdits,
+        instanceId,
+        TEXT_FIELDS.filter((field) => (merged[field] ?? '') !== (base[field] ?? '')),
+      );
       const queued = yield* opsForEvent(accountId, calendarId, instanceId);
       yield* pendingOpRepo.removeForEvent(accountId, calendarId, instanceId);
       yield* enqueue(
@@ -1529,10 +1538,7 @@ const make: Effect.Effect<
           ...inheritedPark(queued),
           baseEtag: existing?.etag ?? undefined,
           // Its own text, not what a queued series edit carried onto it.
-          beforePayload: ownTextOf(
-            inheritedBefore(queued, existing),
-            seriesEditsOf(yield* opsForEvent(accountId, calendarId, masterId)),
-          ),
+          beforePayload: ownTextOf(inheritedBefore(queued, existing), seriesEdits),
           calendarId,
           changed: inheritedChanged(queued),
           // Never ahead of a change of its series it was made under.

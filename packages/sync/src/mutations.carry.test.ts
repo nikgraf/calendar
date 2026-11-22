@@ -482,6 +482,40 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
     }).pipe(Effect.provide(layer(google)));
   });
 
+  it.effect(
+    "an exception named like its series by hand keeps that name when the series' rename goes",
+    () => {
+      // Its title equal to the series' read as the series' carry, and the
+      // discard of the series' rename put the exception's old title into
+      // its row and its queued change: the user's own rename was lost.
+      const google: Google = { patch: 'offline', sent: [] };
+      return Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const rename = (title: string) =>
+          mutations.updateRecurring({
+            accountId: 'acc-1',
+            calendarId: 'cal-1',
+            changes: { title },
+            masterId: 'master1',
+            originalStartUtc: moved.originalStartUtc!,
+            scope: 'instance',
+          });
+        yield* series({ title: 'Standup' });
+        yield* rename('Custom');
+        yield* rename('Standup');
+        const [seriesOp] = yield* masterOp;
+        yield* mutations.discardPendingOp(seriesOp!.id);
+        const own = (yield* (yield* PendingOpRepo).listAll()).find((op) => op.eventId === moved.id);
+        expect([own?.payload?.title, (yield* text(moved.id)).title]).toEqual([
+          'Standup',
+          'Standup',
+        ]);
+        // The exception the series' rename alone had reached has its own back.
+        expect((yield* text(plain.id)).title).toBe('Daily');
+      }).pipe(Effect.provide(layer(google)));
+    },
+  );
+
   it.effect('an exception edited under a queued rename keeps only its own change', () => {
     // Its change was measured against Google's copy of it, which has its
     // own title: the carried one counted as the exception's, and went to

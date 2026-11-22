@@ -193,6 +193,44 @@ export const withOwnText = (row: EventRecord, op: PendingOp): EventRecord => {
 };
 
 /**
+ * An exception's own edit set `fields` itself: they are the user's from
+ * here on, whatever the series carried there, so the series edits queued
+ * for it record no carry of them onto that exception. A title set by
+ * hand to the series' own read as the carry otherwise, and giving the
+ * series' rename up took it away, in the row and in what its change sends.
+ */
+export const ownFields = (
+  pendingOpRepo: PendingOpRepoShape,
+  seriesEdits: ReadonlyArray<PendingOp>,
+  exceptionId: string,
+  fields: ReadonlyArray<Field>,
+): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    for (const op of seriesEdits) {
+      const carried = op.carriedText;
+      const entry = carried?.overrides.find((one) => one.eventId === exceptionId);
+      if (!carried || !entry || !fields.some((field) => entry[field] !== undefined)) {
+        continue;
+      }
+      const { description, geo, location, title, ...rest } = entry;
+      const kept: Entry = {
+        ...rest,
+        ...(description === undefined || fields.includes('description') ? {} : { description }),
+        ...(location === undefined || fields.includes('location') ? {} : { location }),
+        ...(geo === undefined || fields.includes('location') ? {} : { geo }),
+        ...(title === undefined || fields.includes('title') ? {} : { title }),
+      };
+      yield* pendingOpRepo.setCarriedText(
+        op.id,
+        new CarriedText({
+          base: carried.base,
+          overrides: carried.overrides.map((one) => (one === entry ? kept : one)),
+        }),
+      );
+    }
+  });
+
+/**
  * The queued changes of the exceptions `op` (a series edit) carried text
  * onto send what they had set themselves again, in `fields`: they had
  * taken the series' text there when the edit set it (`carryOntoQueued` in

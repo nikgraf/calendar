@@ -1691,65 +1691,70 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     answer: GcalEvent | undefined,
     pulled?: EventRecord,
   ) =>
-    Effect.gen(function* () {
-      const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
-      const now = yield* Clock.currentTimeMillis;
-      // Google's version in the destination: the record a pull's page of
-      // that calendar brought (`acknowledge`), or the move's own answer.
-      const theirsIn = (zone: string): EventRecord | null =>
-        pulled ??
-        (answer === undefined
-          ? null
-          : mapGcalEvent(answer, {
-              accountId: op.accountId,
-              calendarId: destination,
-              defaultTimeZone: zone,
-              syncedAt: now,
-            }));
-      const response = pulled ?? answer;
-      const unchanged = response !== undefined && (yield* onlyMoved(op, destination, theirsIn));
-      if (response) {
-        const event = { accountId: op.accountId, calendarId: destination, eventId: op.eventId };
-        const holding = (yield* pendingOpRepo.listForEvent(event)).find(
-          (other) => other.id !== op.id && other.beforePayload != null,
+    // One transaction: read and written apart, a delete made in between
+    // (the iPhone's store answers asynchronously) had its row written
+    // back, pending, with no change behind it.
+    transaction(
+      Effect.gen(function* () {
+        const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
+        const now = yield* Clock.currentTimeMillis;
+        // Google's version in the destination: the record a pull's page of
+        // that calendar brought (`acknowledge`), or the move's own answer.
+        const theirsIn = (zone: string): EventRecord | null =>
+          pulled ??
+          (answer === undefined
+            ? null
+            : mapGcalEvent(answer, {
+                accountId: op.accountId,
+                calendarId: destination,
+                defaultTimeZone: zone,
+                syncedAt: now,
+              }));
+        const response = pulled ?? answer;
+        const unchanged = response !== undefined && (yield* onlyMoved(op, destination, theirsIn));
+        if (response) {
+          const event = { accountId: op.accountId, calendarId: destination, eventId: op.eventId };
+          const holding = (yield* pendingOpRepo.listForEvent(event)).find(
+            (other) => other.id !== op.id && other.beforePayload != null,
+          );
+          const synced = theirsIn(
+            local?.startTimeZone ?? holding?.beforePayload?.startTimeZone ?? 'UTC',
+          );
+          // Another device changed the event before the move landed. What
+          // is queued behind the move is laid over Google's version while
+          // its copy is still the one it was made on: advanced first, a
+          // field that device changed read as the user's own, and was sent
+          // back over it.
+          if (synced && !unchanged) {
+            yield* heldEvents.take(synced);
+          }
+          if (local) {
+            yield* settle(op, synced, { calendarId: destination });
+          } else if (synced && holding) {
+            // Deleted here while the move waited: no row to settle, but what
+            // that delete replaces is Google's copy in the destination now.
+            yield* pendingOpRepo.advanceBefore(event, synced, op);
+          } else if (synced) {
+            yield* tellMovedOn(op, destination, synced);
+          }
+        }
+        const produced = response?.etag ?? undefined;
+        if (unchanged && produced !== undefined) {
+          yield* advancePastMove(op, destination, produced);
+        }
+        const queuedIds = new Set(
+          (yield* pendingOpRepo.listAll())
+            .filter((queued) => queued.id !== op.id && queued.accountId === op.accountId)
+            .map((queued) => queued.eventId),
         );
-        const synced = theirsIn(
-          local?.startTimeZone ?? holding?.beforePayload?.startTimeZone ?? 'UTC',
-        );
-        // Another device changed the event before the move landed. What
-        // is queued behind the move is laid over Google's version while
-        // its copy is still the one it was made on: advanced first, a
-        // field that device changed read as the user's own, and was sent
-        // back over it.
-        if (synced && !unchanged) {
-          yield* heldEvents.take(synced);
+        const rows = yield* seriesRows(op.accountId, destination, op.eventId);
+        for (const row of rows) {
+          if ((row.id !== op.eventId || !response) && !queuedIds.has(row.id)) {
+            yield* eventRepo.markSynced(op.accountId, destination, row.id);
+          }
         }
-        if (local) {
-          yield* settle(op, synced, { calendarId: destination });
-        } else if (synced && holding) {
-          // Deleted here while the move waited: no row to settle, but what
-          // that delete replaces is Google's copy in the destination now.
-          yield* pendingOpRepo.advanceBefore(event, synced, op);
-        } else if (synced) {
-          yield* tellMovedOn(op, destination, synced);
-        }
-      }
-      const produced = response?.etag ?? undefined;
-      if (unchanged && produced !== undefined) {
-        yield* advancePastMove(op, destination, produced);
-      }
-      const queuedIds = new Set(
-        (yield* pendingOpRepo.listAll())
-          .filter((queued) => queued.id !== op.id && queued.accountId === op.accountId)
-          .map((queued) => queued.eventId),
-      );
-      const rows = yield* seriesRows(op.accountId, destination, op.eventId);
-      for (const row of rows) {
-        if ((row.id !== op.eventId || !response) && !queuedIds.has(row.id)) {
-          yield* eventRepo.markSynced(op.accountId, destination, row.id);
-        }
-      }
-    });
+      }),
+    );
 
   /**
    * A move's 404 is the event or the destination — or only that an
