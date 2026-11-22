@@ -31,7 +31,8 @@ was written; re-verify before starting one.
       unsynced with no change behind it until the next pull. Adopt the
       task when the pull's page brings it (match it as the retry does),
       so the twin never shows. Sequence 290 at 80 steps
-      (`QUEUE_SEQUENCE_STEPS=80`).
+      (`QUEUE_SEQUENCE_STEPS=80`), the only one of 2,000 that fails
+      there; once it passes, add an 80-step run to `queue-search.yml`.
 - [ ] An "All events" edit that changes a series' start drops every
       changed occurrence (Google cancels them with the new start,
       verified live 2026-11-22, and the app follows since #374): say so
