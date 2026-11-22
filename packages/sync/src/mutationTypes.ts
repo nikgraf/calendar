@@ -151,6 +151,18 @@ export class NotOrganizerError extends Data.TaggedError('NotOrganizerError')<{
   readonly eventId: string;
 }> {}
 
+/**
+ * The calendar an event is to move to holds an event of the same id
+ * already: Google's ids repeat across calendars (an event with another
+ * calendar of the user's as its guest), and a move would write over that
+ * one here.
+ */
+export class EventAlreadyThereError extends Data.TaggedError('EventAlreadyThereError')<{
+  readonly calendarId: string;
+  readonly eventId: string;
+  readonly message: string;
+}> {}
+
 /** The move target is unknown or read-only. */
 export class CalendarNotWritableError extends Data.TaggedError('CalendarNotWritableError')<{
   readonly calendarId: string;
@@ -158,6 +170,7 @@ export class CalendarNotWritableError extends Data.TaggedError('CalendarNotWrita
 
 type MoveError =
   | CalendarNotWritableError
+  | EventAlreadyThereError
   | EventNotFoundError
   | EventProviderError
   | NotOrganizerError

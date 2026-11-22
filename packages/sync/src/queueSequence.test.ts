@@ -3436,6 +3436,48 @@ describe('pending-op queue: what the sequences found', () => {
 });
 
 describe('pending-op queue: a held task and Google’s copy of it', () => {
+  it.effect(
+    'a to-do another device moved to another list stays there when its edit is discarded',
+    () => {
+      // Review (Codex, round 5): renamed here while offline, moved to the
+      // other list on another device. The pull wrote Google's row in the new
+      // list, the copy stayed with the old one, and discarding the rename
+      // deleted the row Google has and put the old list's copy back.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const sql = yield* SqlClient;
+          const rows = Effect.map(
+            sql<{
+              readonly list_id: string;
+              readonly sync_status: string;
+            }>`SELECT list_id, sync_status FROM tasks WHERE id = 't1' ORDER BY list_id`,
+            (found) => found.map((row) => `${row.list_id} ${row.sync_status}`),
+          );
+          network.down = true;
+          yield* mutations.updateTask({
+            accountId: ACCOUNT_ID,
+            changes: { title: 'Call the bank' },
+            taskId: 't1',
+            taskListId: 'list-1',
+          });
+          google.now += MINUTE;
+          google.moveTaskServerSide('list-1', 't1', { destination: 'list-2' });
+          google.now += MINUTE;
+          yield* TestClock.adjust('2 minutes');
+          yield* (yield* SyncEngine).syncAll();
+          const [op] = yield* (yield* PendingOpRepo).listAll();
+          yield* mutations.discardPendingOp(op!.id);
+          expect(yield* rows).toEqual(['list-2 synced']);
+          expect(yield* sql`SELECT id FROM task_copies`).toEqual([]);
+        }),
+      );
+    },
+  );
+
   it.effect('discarding the tick of a to-do Google has not got yet opens it again', () => {
     // Review (Codex, round 4): made and ticked while offline, then the tick
     // discarded. With no copy of Google's to rebuild the row from, nothing

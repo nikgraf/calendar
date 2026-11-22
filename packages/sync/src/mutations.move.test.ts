@@ -28,7 +28,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Fiber, Layer, Scheduler } from 'effect';
+import { Effect, Fiber, Layer, Result, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
@@ -289,6 +289,27 @@ describe('moveEvent inside one Google account', () => {
       expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.syncStatus).toBe('synced');
     }).pipe(noYield, Effect.provide(testLayer(recordingGoogle(calls), appleFake())));
   });
+
+  it.effect('refuses a move into a calendar that holds an event of that id already', () =>
+    // Review (Codex, round 5): Google's ids repeat across calendars (an
+    // event with one of the user's own calendars as its guest). Moved into
+    // the calendar that holds the other one, the event's row replaced that
+    // one's, and the next page naming it there read as the move landed.
+    Effect.gen(function* () {
+      yield* seed([
+        googleEvent(),
+        googleEvent({ calendarId: 'cal-2', etag: '"other"', title: 'Planning (their copy)' }),
+      ]);
+      const mutations = yield* EventMutations;
+      const result = yield* Effect.result(
+        mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2'])),
+      );
+      expect(Result.isFailure(result) && result.failure._tag).toBe('EventAlreadyThereError');
+      expect(yield* queued).toEqual([]);
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.syncStatus).toBe('synced');
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.title).toBe('Planning (their copy)');
+    }).pipe(Effect.provide(testLayer(recordingGoogle([]), appleFake()))),
+  );
 
   it.effect('an edit queued behind a move waits while the move is in backoff', () => {
     const calls: Array<Call> = [];

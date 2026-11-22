@@ -69,6 +69,7 @@ import {
   CALENDAR_COLOR_EVENT_ID,
   CalendarNotWritableError,
   ConflictNotResolvableError,
+  EventAlreadyThereError,
   EventNotFoundError,
   type EventMutationsShape,
   InvalidColorError,
@@ -2403,6 +2404,18 @@ const make: Effect.Effect<
       const { master } = yield* loadSource(params, 'google');
       const account = yield* accountRepo.get(accountId);
       yield* ensureOrganizer(master, account?.email, calendarId);
+      // The destination's own event of that id: this one's row would
+      // replace it, and a page that names it there would read as the move
+      // landed (`landedInPull`).
+      if (yield* eventRepo.getById(accountId, target.calendarId, eventId)) {
+        return yield* Effect.fail(
+          new EventAlreadyThereError({
+            calendarId: target.calendarId,
+            eventId,
+            message: 'That calendar already has this event.',
+          }),
+        );
+      }
       const now = yield* Clock.currentTimeMillis;
       yield* restoreTakenExceptions(accountId, calendarId, master.id);
       const overrides = master.recurrence

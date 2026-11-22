@@ -105,12 +105,15 @@ export interface HeldTasks {
    * to leave the queue. It reads the copy and the queue and then writes
    * the row: run in one transaction with whatever else the caller decides
    * from the queue (a pull's page, an answer's landing, a discard), or a
-   * change made in between is written over.
+   * change made in between is written over. `givenUp`: an edit, a tick or
+   * a delete of the task was given up (not a move, whose rows are its
+   * own): Google's row in another list than the copy's then stays.
    */
   readonly refresh: (
     accountId: string,
     taskId: string,
     except?: string,
+    givenUp?: boolean,
   ) => Effect.Effect<void, SqlError>;
 }
 
@@ -175,7 +178,7 @@ export const makeHeldTasks = (deps: HeldTaskDeps): HeldTasks => {
       return (yield* holdersOf(copy, accountId, taskId)).filter((op) => op.id !== except);
     });
 
-  const refresh: HeldTasks['refresh'] = (accountId, taskId, except) =>
+  const refresh: HeldTasks['refresh'] = (accountId, taskId, except, givenUp = false) =>
     Effect.gen(function* () {
       const copy = yield* copyOf(accountId, taskId);
       const ops = (yield* holdersOf(copy, accountId, taskId)).filter((op) => op.id !== except);
@@ -210,12 +213,28 @@ export const makeHeldTasks = (deps: HeldTaskDeps): HeldTasks => {
         // the list Google has it in. A row a move of its parent took to
         // another list while Google took the task out of that parent is
         // left there by nothing else.
+        // When an edit, a tick or a delete was given up, a synced row in
+        // another list is Google's own, though: a pull wrote it after
+        // another device moved the task there, and the copy is what Google
+        // had before. That row stays, and the copy's list keeps none.
+        let movedElsewhere = false;
         for (const list of yield* taskRepo.listLists(accountId)) {
-          if (list.id !== copy.listId && (yield* taskRepo.get(accountId, list.id, taskId))) {
+          const row =
+            list.id === copy.listId ? undefined : yield* taskRepo.get(accountId, list.id, taskId);
+          if (!row) {
+            continue;
+          }
+          if (givenUp && (yield* taskRepo.listSyncedIds(accountId, list.id)).includes(taskId)) {
+            movedElsewhere = true;
+          } else {
             yield* taskRepo.removeTask(accountId, list.id, taskId);
           }
         }
-        yield* taskRepo.upsertTasks([copy], now);
+        if (movedElsewhere) {
+          yield* taskRepo.removeTask(accountId, copy.listId, taskId);
+        } else {
+          yield* taskRepo.upsertTasks([copy], now);
+        }
         yield* taskRepo.removeCopies(accountId, copy.listId, [taskId]);
         return;
       }

@@ -1133,7 +1133,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return op.taskListId
           ? Effect.ignore(
               revert
-                ? transaction(held.refresh(op.accountId, op.eventId, op.id))
+                ? transaction(held.refresh(op.accountId, op.eventId, op.id, true))
                 : landedUnseen(op, op.taskListId),
             )
           : Effect.void;
@@ -1142,7 +1142,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       case 'deleteTask':
         return op.taskListId
           ? Effect.ignore(
-              revert ? transaction(held.refresh(op.accountId, op.eventId, op.id)) : forgetCopy(op),
+              revert
+                ? transaction(held.refresh(op.accountId, op.eventId, op.id, true))
+                : forgetCopy(op),
             )
           : Effect.void;
       case 'reorderTask':
