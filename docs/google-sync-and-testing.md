@@ -657,9 +657,7 @@ separate: it also covers tasks, moves, discards and other-device writes.
   demand. Run a wide search before pushing any change to the queue
   (`QUEUE_SEQUENCE_RUNS=7000 QUEUE_SEQUENCE_KNOWN=1`): a change in the
   requests the app sends reshuffles every seed, so compare the count and
-  the classes of failures, never seed numbers. `QUEUE_SEQUENCE_STRICT=1`
-  fails where a difference is otherwise only listed as a known gap
-  (`World.heldTold`).
+  the classes of failures, never seed numbers.
   `QUEUE_SEQUENCE_SEED=<n>` runs one seed, `QUEUE_SEQUENCE_RUNS` and
   `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take about a
   minute), `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. What

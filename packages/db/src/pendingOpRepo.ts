@@ -167,9 +167,9 @@ export interface PendingOpRepoShape {
    */
   readonly markConflict: (opId: string, at: number) => Effect.Effect<void, SqlError>;
   /**
-   * The user gave up a move that was sent, and Google could not be asked
-   * whether it landed (`PendingOp.discarded`): it stays queued, due now,
-   * and says why.
+   * The user gave the change up, and Google has still to say what it has
+   * of the item (`PendingOp.discarded`): it stays queued, due now, never
+   * sent again, and says why.
    */
   readonly markDiscarded: (opId: string, reason: string) => Effect.Effect<void, SqlError>;
   /** Persists the pre-network stamp for non-idempotent calls. */
@@ -755,7 +755,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         invalidating(
           Effect.asVoid(
             sql`UPDATE pending_ops SET discarded = 1, next_attempt_at = 0, last_error = ${reason}
-              WHERE id = ${opId} AND kind IN ('move', 'moveTask')`,
+              WHERE id = ${opId}`,
           ),
         ),
       markDispatched: (opId, at) =>

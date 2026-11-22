@@ -466,12 +466,15 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   copySource: Schema.optional(CopySource),
   createdAt: Schema.Number,
   /**
-   * A move only (an event's or a task's): the user gave it up after it
-   * was sent, and Google could not be asked whether it had landed. It is
-   * never sent again. It stays queued, and the item where the move put
-   * it, until Google says where the item is: there, the move landed and
-   * stays; not there, everything goes back. What is changed meanwhile
-   * waits behind it and follows the item either way.
+   * The user gave the change up after it was tried, and Google has still
+   * to say whether it had landed: it is never sent again. A move (an
+   * event's or a task's) stays queued so, and the item where the move
+   * put it, until Google says where the item is: there, the move landed
+   * and stays; not there, everything goes back; what is changed
+   * meanwhile waits behind it and follows the item either way. An
+   * event's update, delete or answer carries it only until its discard
+   * has asked Google, right after (the drain finishes that if the app
+   * stopped in between).
    */
   discarded: Schema.optional(Schema.Boolean),
   /**

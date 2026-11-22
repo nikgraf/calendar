@@ -59,7 +59,13 @@ import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
-import { type AppleCopySource, isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
+import {
+  type AppleCopySource,
+  holdsUpdate,
+  isPulledCopy,
+  makeApplyOp,
+  retargetOp,
+} from './applyOp.ts';
 import { makeHeldEvents } from './heldEvents.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
@@ -1012,6 +1018,12 @@ const make: Effect.Effect<
             if (!op) {
               continue;
             }
+            // Given up, and its discard still to finish (it waits for this
+            // gate, or the app stopped before it could): never sent.
+            if (op.discarded === true && op.kind !== 'move' && op.kind !== 'moveTask') {
+              yield* finishDiscard(op.id);
+              continue;
+            }
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
               yield* finish(op);
@@ -1041,6 +1053,85 @@ const make: Effect.Effect<
       );
 
   /**
+   * Whether the discard of this change asks Google first: an event's
+   * update, delete or answer that was tried before. Its request may have
+   * landed with the answer lost. Put back as "never sent", a cut, a new
+   * rule or a delete that had landed left occurrences, or an event, on
+   * screen that Google has no more, and a change made to one was refused
+   * and dropped. Not one that waits for the user's choice (that has its
+   * own answers), nor one behind a move or a create, where Google has
+   * nothing to ask about yet.
+   */
+  const asksGoogleOnDiscard = (op: PendingOp) =>
+    op.attempts > 0 &&
+    op.conflictAt === undefined &&
+    op.copySource === undefined &&
+    (op.kind === 'delete' || op.kind === 'rsvp' || op.kind === 'update')
+      ? Effect.map(
+          pendingOpRepo.earlierInSeries(op),
+          (earlier) => !earlier.some((entry) => entry.kind === 'move' || entry.kind === 'create'),
+        )
+      : Effect.succeed(false);
+
+  /**
+   * Finishes the discard of a change marked given up (`PendingOp.discarded`),
+   * with no request of it out (under the drain's gate): Google says what it
+   * has, and that is what shows, as take-theirs does, whether the change
+   * had landed or not. When Google cannot be reached the change is put
+   * back as never sent, as the user asked, and the next pull corrects it
+   * if it had landed (todo.md, Tier 0).
+   */
+  const finishDiscard = (opId: string) =>
+    Effect.gen(function* () {
+      const op = yield* pendingOpRepo.getById(opId);
+      // Landed, or settled otherwise, while this waited: nothing to undo.
+      if (!op) {
+        return;
+      }
+      // Any failure but "gone" is no answer, a defect of the client's
+      // included: the discard itself must not fail for it.
+      const answer = yield* client
+        .getEvent({ accountId: op.accountId, calendarId: op.calendarId, eventId: op.eventId })
+        .pipe(
+          Effect.map((item): { readonly item: GcalEvent | undefined } | undefined => ({ item })),
+          Effect.catchTags({
+            NotFoundError: () => Effect.succeed({ item: undefined }),
+            SyncTokenExpiredError: () => Effect.succeed({ item: undefined }),
+          }),
+          Effect.catchCause(() => Effect.succeed(undefined)),
+        );
+      // An occurrence Google had no exception for: asked by its id, Google
+      // answers with the series drawn at that slot, which is no event of
+      // its own to store (kept as a row, it stood still when the series
+      // changed). It has one now only if the change had landed: its
+      // cancellation, or an exception that holds what the change set.
+      const item = answer?.item;
+      const theirs =
+        item === undefined || item.status === 'cancelled'
+          ? null
+          : mapGcalEvent(item, {
+              accountId: op.accountId,
+              calendarId: op.calendarId,
+              defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
+              syncedAt: yield* Clock.currentTimeMillis,
+            });
+      const drawnBySeries =
+        !op.beforePayload && item?.status !== 'cancelled' && !(theirs && holdsUpdate(op, theirs));
+      if (answer === undefined || drawnBySeries) {
+        yield* discard(opId);
+      } else {
+        const now = yield* Clock.currentTimeMillis;
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* takeTheirs(op, answer.item, now);
+            yield* dropUndrawn(op);
+          }),
+        );
+      }
+      yield* wake(op);
+    });
+
+  /**
    * A move's discard sends what was queued after it back to the source,
    * reading its place in the queue, so the move goes only once released.
    * One never sent goes at once (the drain stamps a move as sent in one
@@ -1054,6 +1145,14 @@ const make: Effect.Effect<
   const discardPendingOp: EventMutationsShape['discardPendingOp'] = (opId) =>
     Effect.gen(function* () {
       const queued = yield* pendingOpRepo.getById(opId);
+      if (queued && (yield* asksGoogleOnDiscard(queued))) {
+        // Marked at once, so a drain already running does not send it
+        // while this waits for the gate; the drain finishes the discard
+        // itself if the app stops in between.
+        yield* pendingOpRepo.markDiscarded(opId, 'discarded');
+        yield* gate.withPermits(1)(Effect.orDie(finishDiscard(opId)));
+        return yield* kick;
+      }
       const splits = queued !== undefined && (yield* waitingSplits(taken, queued));
       // A copy's discard puts its source back: under the drain's gate, so
       // a refusal the drain is putting back meanwhile cannot do it twice.

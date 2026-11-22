@@ -140,7 +140,13 @@ The class found in the most PRs (54), almost all by Opus.
 - A discard or a rejection of a change that may already have landed (its
   answer lost): what does the app show until the next pull, and where
   does a change made in between go? A move's goes to the wrong calendar
-  unless the move waits for Google's answer (`PendingOp.discarded`).
+  unless the move waits for Google's answer (`PendingOp.discarded`);
+  other changes ask Google on the discard (`finishDiscard`).
+- An answer to a lookup by id (`events.get`): is it kept (`learned`,
+  take-theirs), or used for one question and thrown away while the row
+  shows the older version? And for an occurrence id: is it an exception
+  Google holds, or only the series drawn at that slot, which must not be
+  stored as a row?
 - Does anything read the queue or a copy and then write a row in two
   steps outside a transaction? The desktop's store answers within the
   fiber's turn; the iPhone's does not, and a discard gets in between.

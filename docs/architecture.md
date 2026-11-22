@@ -668,14 +668,23 @@ it whenever a kind is added. Rules that keep the queue correct:
   body did not decode (the write landed) keeps the row's content. A full
   re-list after an expired sync token confirms a deletion only by
   absence: the copy of a held event the list no longer names goes then
-  too, as a queued move's source is marked gone. Open: a cut, a new
-  rule, new times or a delete that had landed with its answer lost and
-  is discarded before a pull says so is put back as if Google never got
-  it; until that pull the app draws what Google has no more, and a
-  change made to it is refused and dropped with a notice (todo.md,
-  Tier 0). A move in that state waits for Google instead
-  (`PendingOp.discarded`), since a change made meanwhile would go to the
-  wrong calendar.
+  too, as a queued move's source is marked gone. The discard of an
+  event's update, delete or answer that was tried before asks Google
+  first (`finishDiscard`): its request may have landed with the answer
+  lost, so what Google has is what shows, as take-theirs does, whether
+  the change had landed or not. It is marked given up at once
+  (`PendingOp.discarded`), so a drain already running does not send it
+  while the discard waits for the gate, and the drain finishes the
+  discard if the app stops in between. An occurrence Google had no
+  exception for is answered with its series drawn at the slot, which is
+  nothing to store: only its cancellation, or an exception that holds
+  what the change set, is taken. Open: with Google out of reach the
+  change is put back as never sent, as the user asked; a cut, a new
+  rule, new times or a delete that had landed then leaves on screen what
+  Google has no more until the next pull, and a change made to it is
+  refused and dropped with a notice (todo.md, Tier 0). A move in that
+  state waits for Google instead, since a change made meanwhile would go
+  to the wrong calendar.
 
 Rules a change to the queue keeps (each broke once):
 

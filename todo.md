@@ -9,18 +9,18 @@ was written; re-verify before starting one.
 ## Tier 0 — bugs
 
 - [ ] A cut, a new rule, new times or a delete that landed with its
-      answer lost and is then discarded is put back as if Google never
-      got it, until the next pull says otherwise (a discarded edit of a
-      single event is harmless: the next write meets a 412 and is laid
-      over Google's version). Until that pull the app draws occurrences,
-      or an event, that Google has no more, and a change made to one is
-      refused and dropped with a notice. A move in that state waits for
-      Google instead (`PendingOp.discarded`, #374); the same wait here
-      would keep an accidental delete from being undone while offline,
-      since a request that failed offline and one whose answer was lost
-      look alike. Telling them apart needs the device's own word on
-      whether it was online (no such seam yet). The sequence test leaves
-      such occurrences unjudged (`reshapedAway`).
+      answer lost and is then discarded **while Google cannot be
+      reached** is put back as if Google never got it, until the next
+      pull says otherwise. (Reachable, the discard asks Google and shows
+      what it has: `finishDiscard`, #374.) Until that pull the app draws
+      occurrences, or an event, that Google has no more, and a change
+      made to one is refused and dropped with a notice. A move in that
+      state waits for Google instead (`PendingOp.discarded`); the same
+      wait here would keep an accidental delete from being undone while
+      offline, since a request that failed offline and one whose answer
+      was lost look alike. Telling them apart needs the device's own word
+      on whether it was online (no such seam yet). The sequence test
+      leaves such occurrences unjudged (`reshapedAway`).
 - [ ] An "All events" edit that changes a series' start drops every
       changed occurrence (Google cancels them with the new start,
       verified live 2026-11-22, and the app follows since #374): say so

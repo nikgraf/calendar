@@ -106,8 +106,6 @@ const STEPS = envNumber('QUEUE_SEQUENCE_STEPS') ?? 40;
 const VERBOSE = process.env['QUEUE_SEQUENCE_VERBOSE'] === '1';
 /** Run the seeds KNOWN_FAILING skips (to check a change that closes their gap). */
 const RUN_KNOWN = process.env['QUEUE_SEQUENCE_KNOWN'] === '1';
-/** Fails where a difference is otherwise only listed as a known gap (World.heldTold). */
-const STRICT = process.env['QUEUE_SEQUENCE_STRICT'] === '1';
 
 const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
@@ -638,32 +636,7 @@ interface World {
   /** The etag each exception row had when the user last moved its series (see movedSincePulled). */
   readonly etagsAtMove: Map<string, string>;
   readonly google: FakeGoogle;
-  /**
-   * Slots (`container|id`) Google sent this step, with the copy last sent
-   * (JSON, `null` for gone) and whether an answer the client applies
-   * carried it.
-   */
-  readonly heard: Map<
-    string,
-    { readonly applied: boolean; readonly json: string; readonly shownOnly: boolean }
-  >;
-  /** Items an op held at the end of the step before (see heldItems). */
-  held: ReadonlySet<string>;
-  /**
-   * Items Google showed the client a newer state of while an op held
-   * their row, in an answer the client keeps nothing of: an event it
-   * asked for by id (the fetch after a 412 when the op has left the queue
-   * by then, a split-off series asking where its source ends), or a task
-   * listing, which may be the drain looking for a create whose answer was
-   * lost. The next pull brings that state, so until then a difference is
-   * listed, not failed — per slot, what that copy shows (JSON), while
-   * Google's still shows it. A pull's events page is no such answer: what
-   * it brings for a held event becomes the event's copy, and shows once
-   * the op is gone.
-   */
-  readonly heldTold: Map<string, string>;
   readonly intents: Map<string, Intent>;
-  readonly knownGaps: Array<string>;
   network: { readonly lost: number; readonly name: string; readonly refused: number };
   /** Faults the next writes meet, in order, before the network's odds apply. */
   readonly nextWrites: Array<FakeFault>;
@@ -777,36 +750,14 @@ const isListRead = (call: FakeCall): boolean => call.method === 'GET' && itemOf(
 const isCalendar = (container: string): boolean =>
   (CALENDARS as ReadonlyArray<string>).includes(container);
 
-/** The item a `container|id` slot holds. */
-const keyOfSlot = (slot: string): string => {
-  const [container = '', id = ''] = slot.split('|');
-  return isCalendar(container) ? eventKey(id) : taskKey(id);
-};
-
-/** What the client would show of Google's copy (JSON; `null` for none): a renumbered position is no change. */
-const shownJson = (container: string, item: GcalEvent | GcalTask | null): string =>
-  JSON.stringify(
-    item === null
-      ? null
-      : isCalendar(container)
-        ? (gcalEventFields(container, item) ?? null)
-        : (gcalTaskFields(container, item) ?? null),
-  );
-
 const remember = (
   world: World,
   container: string,
   id: string,
   item: GcalEvent | GcalTask | null,
   applied: boolean,
-  shownOnly = false,
 ) => {
   const slot = `${container}|${id}`;
-  world.heard.set(slot, {
-    applied: applied || (world.heard.get(slot)?.applied ?? false),
-    json: shownJson(container, item),
-    shownOnly,
-  });
   if (applied) {
     world.told.set(slot, { item, json: JSON.stringify(item) });
     // A series back in the calendar (moved back) is judged again.
@@ -862,14 +813,7 @@ const learn = (world: World, call: FakeCall, status: number, json: unknown) => {
         if (gone && tookExceptions.has(slot) && !world.deletedSlots.has(slot)) {
           world.unjudged.add(slot);
         }
-        remember(
-          world,
-          calendarOrList,
-          item.id,
-          gone ? null : item,
-          events !== null,
-          events === null,
-        );
+        remember(world, calendarOrList, item.id, gone ? null : item, events !== null);
       }
       // A full events list (after a 410) says gone by leaving out: what it
       // does not name, it no longer has (one page here).
@@ -899,18 +843,16 @@ const learn = (world: World, call: FakeCall, status: number, json: unknown) => {
   const destination =
     url.searchParams.get('destination') ?? url.searchParams.get('destinationTasklist');
   if (status === 200) {
-    // An event the client asks for while no op of its own holds it is only
-    // looked at (a split-off series asking where its source ends), not
-    // written to the row.
-    const applied = call.method !== 'GET' || isHeld(world.held, target.key);
-    remember(
-      world,
-      destination ?? target.container,
-      target.id,
-      json as GcalEvent,
-      applied,
-      call.method === 'GET',
-    );
+    // Every answer about one event is kept, also one the client only
+    // asked for (the fetch after a 412, a split-off series asking where
+    // its source ends, a discard asking what Google has): laid under what
+    // is queued for the event, or the row where nothing is. But an
+    // occurrence Google holds no exception for, asked for by its id, is
+    // its series drawn at that slot: nothing of its own to keep.
+    const where = destination ?? target.container;
+    const drawnBySeries =
+      call.method === 'GET' && world.google.eventOf(where, target.id) === undefined;
+    remember(world, where, target.id, json as GcalEvent, !drawnBySeries);
     if (url.searchParams.has('destination')) {
       // The event left its calendar: the answer to the move says so.
       world.told.set(`${target.container}|${target.id}`, { item: null, json: 'null' });
@@ -927,11 +869,7 @@ const makeWorld = (seed: number, google: FakeGoogle): World => {
     disturbed: new Set(),
     etagsAtMove: new Map(),
     google,
-    heard: new Map(),
-    held: new Set(),
-    heldTold: new Map(),
     intents: new Map(),
-    knownGaps: [],
     network: { lost: 0, name: 'good', refused: 0 },
     nextWrites: [],
     random,
@@ -1286,85 +1224,14 @@ const checkShown = (world: World, snapshot: Snapshot, views: Views) => {
   }
 };
 
-/**
- * A difference from Google: the known gap when Google's copy of that slot
- * (or, for an item, of any of its slots; for an occurrence, of its
- * series) is still the one it sent while an op held the row, else a
- * failure.
- */
+/** A difference from Google, unless what the client shows there is not judged (World.unjudged). */
 const staleOrBroken = (world: World, slotOrKey: string, message: string) => {
-  const stillThatCopy = (slot: string, json: string) => {
-    const [container = '', id = ''] = slot.split('|');
-    return shownJson(container, googleNow(world, container, id)) === json;
-  };
   const [container = '', id = ''] = slotOrKey.split('|');
   // An exception of a series a list reported gone: see World.unjudged.
   if (world.unjudged.has(`${container}|${masterIdOf(id) ?? ''}`)) {
     return;
   }
-  // An occurrence shows what its series' row does: a copy of the master
-  // that was skipped is why its occurrences differ too.
-  const names = slotOrKey.includes('|')
-    ? (slot: string) => slot === slotOrKey || slot === `${container}|${masterIdOf(id) ?? ''}`
-    : (slot: string) => keyOfSlot(slot) === slotOrKey || keyOfSlot(slot) === seriesKeyOf(slotOrKey);
-  const known = [...world.heldTold].some(
-    ([slot, json]) => names(slot) && stillThatCopy(slot, json),
-  );
-  if (known && !STRICT) {
-    world.knownGaps.push(`#${world.step} ${message}`);
-  } else {
-    world.violations.push(message);
-  }
-};
-
-/** How heldItems names a series whose move is queued: its exceptions' rows move with it. */
-const movingKey = (masterId: string): string => `moving:${masterId}`;
-
-/** Whether the held items (heldItems) hold this one's row. */
-const isHeld = (held: ReadonlySet<string>, key: string): boolean => {
-  const masterId = key.startsWith('event:') ? masterIdOf(key.slice('event:'.length)) : undefined;
-  return held.has(key) || (masterId !== undefined && held.has(movingKey(masterId)));
-};
-
-/**
- * The items queued ops hold: their own, the subtasks a task move carries
- * and the exceptions a series' move carries.
- */
-const heldItems = (snapshot: Snapshot): Set<string> => {
-  const held = new Set<string>();
-  for (const op of snapshot.ops) {
-    if (EVENT_KINDS.has(op.kind)) {
-      held.add(eventKey(op.eventId));
-      if (op.kind === 'move') {
-        held.add(movingKey(op.eventId));
-      }
-      continue;
-    }
-    held.add(taskKey(op.eventId));
-    if (op.kind === 'moveTask') {
-      for (const row of snapshot.tasks) {
-        if (row.parent_id === op.eventId) {
-          held.add(taskKey(row.id));
-        }
-      }
-    }
-  }
-  return held;
-};
-
-/** Which copies Google only showed this step reached a row an op held (see World.heldTold). */
-const noteHeldCopies = (world: World, snapshot: Snapshot) => {
-  const held = heldItems(snapshot);
-  for (const [slot, { applied, json, shownOnly }] of world.heard) {
-    const key = keyOfSlot(slot);
-    if (shownOnly && (isHeld(world.held, key) || isHeld(held, key))) {
-      world.heldTold.set(slot, json);
-    } else if (applied) {
-      world.heldTold.delete(slot);
-    }
-  }
-  world.heard.clear();
-  world.held = held;
+  world.violations.push(message);
 };
 
 /** 4 (parks): a conflict is parked only on an item someone else changed. */
@@ -1482,7 +1349,7 @@ const sourceUnsettled = (world: World, key: string): boolean => {
 
 /**
  * 2 (intent): what the user did last to an item nobody else touched is
- * what Google has (but see World.heldTold). An occurrence is there when
+ * what Google has. An occurrence is there when
  * Google draws it, by an exception or by the rule.
  */
 const checkIntents = (world: World, views: Views) => {
@@ -2612,9 +2479,6 @@ const report = (seed: number, world: World, snapshot: Snapshot | undefined): Err
       ...world.stepLog.map((line) => `  ${line}`),
       'queue after it:',
       ...(snapshot?.ops ?? []).map((op) => `  ${describeOp(op)}`),
-      ...(world.knownGaps.length > 0
-        ? ['known gap (Google sent a newer copy while an op held the row):', ...world.knownGaps]
-        : []),
     ].join('\n'),
   );
 
@@ -2648,7 +2512,6 @@ const runSequence = (seed: number) => {
       const snapshot = yield* mutations.whileQueueHeld(
         Effect.tap(readSnapshot, (current) =>
           Effect.sync(() => {
-            noteHeldCopies(world, current);
             checkStep(world, current);
           }),
         ),
@@ -6319,6 +6182,171 @@ describe('pending-op queue: keep-mine on an occurrence Google has cancelled', ()
           SELECT id FROM events WHERE description = 'Bring the mat' AND sync_status = 'synced'`;
         expect(copies).toHaveLength(1);
         expect(google.eventOf('cal-1', copies[0]!.id)?.recurringEventId).toBeUndefined();
+      }),
+    );
+  });
+});
+
+describe('pending-op queue: discarding a change that was tried before', () => {
+  it.effect('a cut that had landed shows as Google has it, and the next edit holds', () => {
+    // Sequences 2901 and 3522 of a search to 7,000: "this and following"
+    // landed with its answer lost and was discarded. Put back as never
+    // sent, the series showed uncut until the next pull, and a change of
+    // an occurrence past the cut met a 404 and was dropped. The discard
+    // asks Google now, and shows what it has.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        lostThenRefused(
+          google,
+          (call) => call.method === 'PATCH' && call.url.endsWith('/events/r1'),
+        );
+        yield* mutations.deleteRecurring({
+          ...R1,
+          originalStartUtc: R1_START + 2 * DAY,
+          scope: 'following',
+        });
+        yield* mutations.processPendingOps();
+        expect((yield* ops.listAll()).map((op) => [op.kind, op.attempts])).toEqual([['update', 1]]);
+        google.fault = undefined;
+        google.requests.length = 0;
+        yield* discardAll(mutations);
+        expect(yield* ops.listAll()).toEqual([]);
+        // Asked, not sent again; the series ends where Google ends it.
+        expect(writes(google)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly recurrence: string | null;
+          readonly sync_status: string;
+        }>`SELECT recurrence, sync_status FROM events WHERE id = 'r1'`;
+        expect(rows.map((row) => [row.recurrence?.includes('UNTIL'), row.sync_status])).toEqual([
+          [true, 'synced'],
+        ]);
+        expect(drawnOnGoogle(google, 'cal-1', 'r1')).toHaveLength(2);
+      }),
+    );
+  });
+
+  it.effect('a delete that had landed stays gone', () => {
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        lostThenRefused(google, (call) => call.method === 'DELETE');
+        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: 'e1' });
+        yield* mutations.processPendingOps();
+        google.fault = undefined;
+        yield* discardAll(mutations);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* shownAt('e1')).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('an occurrence Google has no exception for is not stored as one', () => {
+    // Sequence 899: asked by the occurrence's id, Google answers with the
+    // series drawn at that slot. Stored as the occurrence's row, it kept
+    // the old title when the series was renamed.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const id = googleInstanceId('r1', R1_START + DAY, false);
+        network.down = true;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { description: 'Bring the mat' },
+          originalStartUtc: R1_START + DAY,
+          scope: 'instance',
+        });
+        yield* mutations.processPendingOps();
+        network.down = false;
+        yield* discardAll(mutations);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* shownAt(id)).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect("an occurrence's change that had landed shows as the exception Google has", () => {
+    // Sequence 257: the first change of an occurrence landed with its
+    // answer lost. Asked on the discard, Google answers with the exception
+    // that change made, and it shows: put back as never sent, the day
+    // showed plain until the next pull.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const id = googleInstanceId('r1', R1_START + DAY, false);
+        lostThenRefused(google, (call) => call.method === 'PATCH' && call.url.endsWith(id));
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { location: 'Studio 2' },
+          originalStartUtc: R1_START + DAY,
+          scope: 'instance',
+        });
+        yield* mutations.processPendingOps();
+        google.fault = undefined;
+        yield* discardAll(mutations);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly location: string | null;
+          readonly sync_status: string;
+        }>`SELECT location, sync_status FROM events WHERE id = ${id}`;
+        expect(rows).toEqual([{ location: 'Studio 2', sync_status: 'synced' }]);
+      }),
+    );
+  });
+
+  it.effect('with Google out of reach it goes back as never sent, as before', () => {
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        google.fault = (call) => (call.url.includes('/events/e1') ? 'refused' : undefined);
+        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: 'e1' });
+        yield* mutations.processPendingOps();
+        yield* discardAll(mutations);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* shownAt('e1')).toEqual(['cal-1 synced']);
+      }),
+    );
+  });
+
+  it.effect('the drain finishes a discard the app stopped in the middle of', () => {
+    // Marked given up, then nothing: the app was closed while the discard
+    // waited for the drain. It is never sent, and goes with the next drain.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Renamed' },
+          eventId: 'e1',
+        });
+        yield* mutations.processPendingOps();
+        const [op] = yield* ops.listAll();
+        yield* ops.markDiscarded(op!.id, 'discarded');
+        network.down = false;
+        google.requests.length = 0;
+        yield* mutations.processPendingOps();
+        expect(writes(google)).toEqual([]);
+        expect(yield* ops.listAll()).toEqual([]);
+        expect(yield* shownAt('e1')).toEqual(['cal-1 synced']);
+        expect(google.eventOf('cal-1', 'e1')?.summary).not.toBe('Renamed');
       }),
     );
   });

@@ -108,6 +108,15 @@ export interface ApplyOpDeps {
  * user; a conflict parks the op with Google's version (null = deleted on
  * Google) until the user chooses.
  */
+/**
+ * Whether Google's version of the event already holds exactly what this
+ * update would send: an attempt of it landed, its answer lost.
+ */
+export const holdsUpdate = (op: PendingOp, theirs: EventRecord): boolean =>
+  op.kind === 'update' &&
+  op.payload !== undefined &&
+  JSON.stringify(updateBody(op, theirs)) === JSON.stringify(updateBody(op, op.payload));
+
 /** What decides which slots a series draws: its rule and its start. Two updates with the same draw the same. */
 const slotsOf = (payload: EventRecord | undefined): string =>
   JSON.stringify([payload?.recurrence ?? null, payload?.startUtc, payload?.startTimeZone]);
@@ -2173,13 +2182,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                 // Google already holds exactly what this update would send:
                 // an earlier attempt landed and its response was lost, so
                 // the retry's stale If-Match met our own write.
-                if (
-                  current.kind === 'update' &&
-                  current.payload &&
-                  theirs &&
-                  JSON.stringify(updateBody(current, theirs)) ===
-                    JSON.stringify(updateBody(current, current.payload))
-                ) {
+                if (theirs && holdsUpdate(current, theirs)) {
                   yield* settle(current, theirs);
                   return 'done' as const;
                 }
