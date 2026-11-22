@@ -466,6 +466,117 @@ describe('PendingOpRepo', () => {
           expect((yield* shown('made'))?.title).toBe('Occurrence');
         }).pipe(Effect.provide(freshDbLayer())),
     );
+
+    it.effect('each keeps its own: a version is the copy with the changes up to it, in order', () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        const copy = new EventRecord({
+          ...eventRow('Planning'),
+          attendees: [guest('me@example.com', 'needsAction')],
+        });
+        const renamed = new EventRecord({ ...copy, syncStatus: 'pending', title: 'Planning (B)' });
+        const answered = new EventRecord({
+          ...renamed,
+          attendees: [guest('me@example.com', 'accepted')],
+        });
+        yield* repo.enqueue(
+          op('rename', { beforePayload: copy, createdAt: 1, eventId: 'evt-1', payload: renamed }),
+        );
+        // Made on a row that showed the rename: the title is not the answer's.
+        yield* repo.enqueue(
+          op('answer', {
+            beforePayload: copy,
+            changed: ['me@example.com'],
+            createdAt: 2,
+            eventId: 'evt-1',
+            kind: 'rsvp',
+            payload: answered,
+          }),
+        );
+        yield* repo.enqueue(
+          op('place', {
+            beforePayload: copy,
+            createdAt: 3,
+            eventId: 'evt-1',
+            payload: new EventRecord({ ...answered, location: 'Room 4' }),
+          }),
+        );
+        const versions = Effect.map(repo.listForEvent(event), (ops) =>
+          ops.map(
+            (one) =>
+              `${one.id}: ${one.payload?.title} @ ${one.payload?.location ?? '-'} ` +
+              `${one.payload?.attendees?.[0]?.responseStatus} (${one.changed?.join(',')})`,
+          ),
+        );
+        expect(yield* versions).toEqual([
+          'rename: Planning (B) @ - needsAction (title)',
+          'answer: Planning (B) @ - accepted (me@example.com)',
+          'place: Planning (B) @ Room 4 accepted (location,geo)',
+        ]);
+        // What a change is laid over is the copy with the ones ahead of it.
+        const place = (yield* repo.getById('place'))!;
+        expect([place.basePayload?.title, place.basePayload?.location]).toEqual([
+          'Planning (B)',
+          undefined,
+        ]);
+        // The rename leaves the queue (replaced, or landed under another
+        // title): it takes its title along, out of the others' versions.
+        expect(
+          (yield* repo.listForEvent(event, 'rename')).map((one) => one.payload?.title),
+        ).toEqual(['Planning', 'Planning']);
+        yield* repo.remove('rename');
+        yield* repo.advanceBefore(event, new EventRecord({ ...copy, title: 'Planning (D)' }), {
+          id: 'none',
+        });
+        expect(yield* versions).toEqual([
+          'answer: Planning (D) @ - accepted (me@example.com)',
+          'place: Planning (D) @ Room 4 accepted (location,geo)',
+        ]);
+      }).pipe(Effect.provide(freshDbLayer())),
+    );
+
+    it.effect('a field taken over from the update it replaces stays its own at any value', () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        const copy = eventRow('Original');
+        // A rename back to the title Google has, while the rename is out.
+        yield* repo.enqueue(
+          op('back', {
+            beforePayload: copy,
+            changed: ['title'],
+            eventId: 'evt-1',
+            payload: new EventRecord({ ...copy, syncStatus: 'pending' }),
+          }),
+        );
+        expect((yield* repo.getById('back'))?.changed).toEqual(['title']);
+        // The first rename landed: the copy moves on, the title stays.
+        yield* repo.advanceBefore(event, new EventRecord({ ...copy, title: 'Renamed' }), {
+          id: 'none',
+        });
+        expect((yield* shown('back'))?.title).toBe('Original');
+        // And an answer keeps the answer it gave where Google has the same.
+        const invited = new EventRecord({
+          ...eventRow('Planning'),
+          attendees: [guest('me@example.com', 'accepted')],
+          id: 'evt-2',
+        });
+        yield* repo.enqueue(
+          op('again', {
+            beforePayload: invited,
+            changed: ['me@example.com'],
+            eventId: 'evt-2',
+            kind: 'rsvp',
+            payload: new EventRecord({ ...invited, syncStatus: 'pending' }),
+          }),
+        );
+        yield* repo.advanceBefore(
+          { ...event, eventId: 'evt-2' },
+          new EventRecord({ ...invited, attendees: [guest('me@example.com', 'declined')] }),
+          { id: 'none' },
+        );
+        expect((yield* shown('again'))?.attendees?.[0]?.responseStatus).toBe('accepted');
+      }).pipe(Effect.provide(freshDbLayer())),
+    );
   });
 
   it.effect('a move remembers that a pull found its event gone from the source', () =>

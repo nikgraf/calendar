@@ -509,12 +509,14 @@ const beforePayloadOf = (row: PendingOpRow): EventRecord | null | undefined =>
     : undefined;
 
 /**
- * What a queued update or answer changed: the fields in which the user's
- * version differs from Google's copy, and nothing else. The version itself
- * is not kept: it is Google's copy with these laid over it, computed at
- * every read (`withEventChanges`), so a copy that moves on under a waiting
- * change takes the rest of the event with it and the change's own fields
- * stay. Encoded as the event's JSON is.
+ * What a queued update or answer changed: the fields that edit set, and
+ * nothing else — not what an earlier change of the event set, which is
+ * that change's. The version itself is not kept: it is Google's copy with
+ * the changes queued for the event laid over it in queue order, up to this
+ * one, computed at every read (`withEventChanges`). So a copy that moves
+ * on under a waiting change takes the rest of the event with it, a change
+ * that leaves the queue takes only its own fields along, and each change's
+ * own fields stay. Encoded as the event's JSON is.
  */
 export interface EventChanges {
   /** The answers that differ, by guest email. */
@@ -554,17 +556,21 @@ const guestsOf = (event: Readonly<Record<string, unknown>>): ReadonlyArray<Encod
 
 /**
  * The changes that turn `copy` into `payload` (both encoded events).
- * `guests`: the op edited the guest list, which then goes whole.
+ * `guests`: the op edited the guest list, which then goes whole. `kept`:
+ * fields that are the op's whatever their value — it set them before, to
+ * what `copy` may hold by now (a rename back to the old title while the
+ * rename is out: left out, it was never sent).
  */
 export const eventChangesOf = (
   copy: Readonly<Record<string, unknown>>,
   payload: Readonly<Record<string, unknown>>,
   guests: boolean,
+  kept: ReadonlyArray<string> = [],
 ): EventChanges => {
   const differs = (key: string) => JSON.stringify(copy[key]) !== JSON.stringify(payload[key]);
   const changed = new Set(
     [...new Set([...Object.keys(copy), ...Object.keys(payload)])].filter(
-      (key) => !NOT_A_CHANGE.has(key) && differs(key),
+      (key) => !NOT_A_CHANGE.has(key) && (differs(key) || kept.includes(key)),
     ),
   );
   for (const whole of WHOLES) {
@@ -602,6 +608,45 @@ export const eventChangesOf = (
 };
 
 /**
+ * What an answer changes: the answers that differ, and those of the guests
+ * it answers for (`kept`, by email) always — the first answer given again
+ * while another is out differs from nothing here, and is the one that
+ * counts. No other field: an answer owns none, and one it kept went on to
+ * Google as the user's after the edit that set it was replaced.
+ */
+export const answerChangesOf = (
+  copy: Readonly<Record<string, unknown>>,
+  payload: Readonly<Record<string, unknown>>,
+  kept: ReadonlyArray<string> = [],
+): EventChanges => {
+  const own: Record<string, string> = {};
+  for (const guest of guestsOf(payload)) {
+    if (
+      guest.email !== undefined &&
+      guest.responseStatus !== undefined &&
+      kept.includes(guest.email)
+    ) {
+      own[guest.email] = guest.responseStatus;
+    }
+  }
+  return {
+    answers: { ...eventChangesOf(copy, payload, false).answers, ...own },
+    cleared: [],
+    set: {},
+  };
+};
+
+/** `base` (an encoded event) with the changes queued ahead of an op over it, in their order. */
+export const laidOver = (
+  base: Readonly<Record<string, unknown>>,
+  earlier: ReadonlyArray<EventChanges>,
+): Readonly<Record<string, unknown>> =>
+  earlier.reduce<Readonly<Record<string, unknown>>>(
+    (event, changes) => withEventChanges(event, changes, undefined),
+    base,
+  );
+
+/**
  * Google's copy with a queued op's changes over it: the user's version, as
  * an encoded event. `stored` is the version the op was queued with, which
  * dates it.
@@ -633,6 +678,18 @@ const isEventChanges = (value: unknown): value is EventChanges =>
   isRecord(value['answers']) &&
   Array.isArray(value['cleared']) &&
   isRecord(value['set']);
+
+/** The stored changes of a queued op (`pending_ops.changes`), none when it keeps its version whole. */
+export const eventChangesFrom = (json: string | null): EventChanges | undefined => {
+  const changes = parseJson(json);
+  return isEventChanges(changes) ? changes : undefined;
+};
+
+/** The fields a change names as its own (the guest list and answers aside). */
+export const namesOf = (changes: EventChanges | undefined): ReadonlyArray<string> =>
+  changes
+    ? [...Object.keys(changes.set), ...changes.cleared].filter((key) => key !== 'attendees')
+    : [];
 
 /** The op kinds whose version of the event is Google's copy with their changes over it. */
 export const CHANGING_KINDS: ReadonlySet<string> = new Set(['rsvp', 'update']);
@@ -691,7 +748,7 @@ export const slotOf = (
     : undefined;
 };
 
-/** What a queued change is laid over, encoded: Google's copy, else its series at the slot. */
+/** What Google has of a queued change's event, encoded: its copy, else its series at the slot. */
 export const baseOf = (row: PendingOpRow, master: EventRecord | undefined): unknown => {
   const copy = parseJson(row.copy_payload ?? null);
   if (copy !== undefined && copy !== null) {
@@ -704,12 +761,39 @@ export const baseOf = (row: PendingOpRow, master: EventRecord | undefined): unkn
 };
 
 /**
+ * What a queued change is laid over, encoded: what Google has of its event
+ * (`baseOf`) with the changes queued ahead of it over that. A cancelled
+ * copy is a tombstone, and stays one.
+ */
+export const priorOf = (
+  row: PendingOpRow,
+  master: EventRecord | undefined,
+  earlier: ReadonlyArray<EventChanges>,
+): unknown => {
+  const base = baseOf(row, master);
+  return isRecord(base) && base['status'] !== 'cancelled' && earlier.length > 0
+    ? laidOver(base, earlier)
+    : base;
+};
+
+const changedOf = (row: PendingOpRow): ReadonlyArray<string> | undefined => {
+  const changes = eventChangesFrom(row.changes);
+  const names = row.kind === 'rsvp' ? Object.keys(changes?.answers ?? {}) : namesOf(changes);
+  return names.length > 0 ? names : undefined;
+};
+
+/**
  * Undefined for a row with an unknown op kind (nothing could apply it);
  * an unreadable payload degrades to `payload: undefined`, which applyOp
  * reports as a dropped change rather than crashing the queue. `master` is
- * the row of the series an occurrence without a copy belongs to (`slotOf`).
+ * the row of the series an occurrence without a copy belongs to (`slotOf`),
+ * `earlier` the changes queued for the event ahead of this op.
  */
-export const pendingOpFromRow = (row: PendingOpRow, master?: EventRecord): PendingOp | undefined =>
+export const pendingOpFromRow = (
+  row: PendingOpRow,
+  master?: EventRecord,
+  earlier: ReadonlyArray<EventChanges> = [],
+): PendingOp | undefined =>
   OP_KINDS.has(row.kind)
     ? new PendingOp({
         accountId: row.account_id,
@@ -717,13 +801,14 @@ export const pendingOpFromRow = (row: PendingOpRow, master?: EventRecord): Pendi
         attendeesChanged: row.attendees_changed === 1 ? true : undefined,
         baseEtag: row.base_etag ?? undefined,
         basePayload: CHANGING_KINDS.has(row.kind)
-          ? decodeOr(EventRecord, baseOf(row, master))
+          ? decodeOr(EventRecord, priorOf(row, master, earlier))
           : undefined,
         beforeColorHex: row.before_color_hex ?? undefined,
         beforeOverrides: takenOf(row),
         beforePayload: beforePayloadOf(row),
         calendarId: row.calendar_id,
         carriedText: decodeOr(CarriedText, parseJson(row.carried_text)),
+        changed: CHANGING_KINDS.has(row.kind) ? changedOf(row) : undefined,
         colorHex: row.color_hex ?? undefined,
         conflictAt: row.conflict_at ?? undefined,
         copySource: decodeOr(CopySource, parseJson(row.copy_source)),
@@ -736,7 +821,7 @@ export const pendingOpFromRow = (row: PendingOpRow, master?: EventRecord): Pendi
         kind: row.kind as PendingOp['kind'],
         lastError: row.last_error ?? undefined,
         nextAttemptAt: row.next_attempt_at,
-        payload: payloadOf(row, baseOf(row, master)),
+        payload: payloadOf(row, priorOf(row, master, earlier)),
         recurrenceCleared: row.recurrence_cleared === 1 ? true : undefined,
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
         sourceGone: row.source_gone === 1 ? true : undefined,

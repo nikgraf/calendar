@@ -371,22 +371,19 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // edit's attendees and the other way round). Google's copy of the
       // event never held it.
       if (op.beforePayload !== null && op.payload) {
-        const before = op.beforePayload;
+        const before = op.basePayload ?? op.beforePayload;
         const payload = op.payload;
         for (const other of yield* pendingOpRepo.listForEvent(op)) {
           if (other.id === op.id || other.conflictAt !== undefined) {
             continue;
           }
-          if (other.beforePayload) {
-            yield* pendingOpRepo.setBefore(
-              other.id,
-              new EventRecord({
-                ...other.beforePayload,
-                ...ownedFields(op, other.beforePayload, before, payload),
-              }),
-            );
-          }
-          if (other.payload && other.kind !== 'delete') {
+          // One laid over Google's copy is that copy with its own changes:
+          // this change is out of it once it is out of the queue. But for
+          // a guest-list edit made after an answer: its list holds it.
+          const derived =
+            other.basePayload !== undefined &&
+            !(op.kind === 'rsvp' && other.attendeesChanged === true);
+          if (other.payload && other.kind !== 'delete' && !derived) {
             yield* pendingOpRepo.setPayload(
               other.id,
               new EventRecord({
@@ -423,10 +420,22 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // Otherwise only what this op owns goes back, and the rest of the
       // row is whatever the other ops of the event made it.
       const whole = others.length === 0 || !op.payload;
+      // What still waits is laid over Google's copy without this change;
+      // where nothing is (a delete, an op that keeps its version whole),
+      // this change's own fields go back to what it was laid over.
+      const waiting = (yield* pendingOpRepo.listForEvent(op, op.id)).findLast(
+        (other) =>
+          (other.kind === 'rsvp' || other.kind === 'update') &&
+          other.basePayload !== undefined &&
+          other.payload !== undefined,
+      )?.payload;
       const row = new EventRecord({
         ...(whole
           ? op.beforePayload
-          : { ...current, ...ownedFields(op, current, op.beforePayload, op.payload) }),
+          : (waiting ?? {
+              ...current,
+              ...ownedFields(op, current, op.basePayload ?? op.beforePayload, op.payload),
+            })),
         calendarId: op.calendarId,
         etag: op.beforePayload.etag ?? current.etag,
         id: op.eventId,

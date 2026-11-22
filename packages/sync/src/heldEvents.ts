@@ -96,12 +96,15 @@ export const withAnswers = (
  * A queued update laid over Google's newer copy of its event: `old` is
  * the copy it was made on, `theirs` the one Google has now. The fields
  * the update changed keep its values, every other field takes Google's:
- * that is its payload either way. `clash` when both changed the same
- * thing to different values: then the user is asked, and what they
- * compare is that payload against Google's version — their own changes,
- * nothing a third change made elsewhere in the event. So is an update
- * that edits the guest list, whenever Google's version moved and does
- * not already hold that edit: Google replaces the whole list, guest
+ * that is its payload either way. Its own fields are the ones in which it
+ * differs from what it was laid over (`basePayload`: `old` with the
+ * changes queued ahead of it, which are those changes') and the ones it
+ * names (`changed`), also where their value is `old`'s. `clash` when both
+ * changed the same thing to different values: then the user is asked, and
+ * what they compare is that payload against Google's version — their own
+ * changes, nothing a third change made elsewhere in the event. So is an
+ * update that edits the guest list, whenever Google's version moved and
+ * does not already hold that edit: Google replaces the whole list, guest
  * fields this app does not keep (optional, comment) included. The guest
  * list of an update that did not edit it is Google's: answers belong to
  * RSVPs.
@@ -115,7 +118,11 @@ export const rebaseOnto = (
   if (!payload) {
     return { kind: 'clash', payload: theirs };
   }
-  const { attendees: _guestsWere, ...mine } = changedFields(old, payload);
+  const { attendees: _guestsWere, ...differing } = changedFields(op.basePayload ?? old, payload);
+  const mine: Record<string, unknown> = { ...differing };
+  for (const field of op.changed ?? []) {
+    mine[field] ??= null;
+  }
   const editsGuests = op.attendeesChanged === true;
   const moved = Object.keys(changedFields(old, theirs));
   const mineGroups = new Set(Object.keys(mine).map(groupOf));
@@ -197,8 +204,23 @@ const HOLDING: ReadonlySet<PendingOp['kind']> = new Set(['delete', 'rsvp', 'upda
 export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
   const { eventRepo, pendingOpRepo } = deps;
 
-  /** Google's newer copy of one held event, taken in. */
-  const takeOver = (theirs: EventRecord, ops: ReadonlyArray<PendingOp>) =>
+  const show: HeldEvents['show'] = (event, except) =>
+    Effect.gen(function* () {
+      const ops = yield* pendingOpRepo.listForEvent(event, except);
+      const last = ops.findLast((op) => (op.kind === 'rsvp' || op.kind === 'update') && op.payload);
+      if (!last?.payload || !last.basePayload || ops.some((op) => op.kind === 'delete')) {
+        return;
+      }
+      if (yield* eventRepo.getById(event.accountId, event.calendarId, event.eventId)) {
+        yield* eventRepo.upsertMany([new EventRecord({ ...last.payload, syncStatus: 'pending' })]);
+      }
+    });
+
+  /**
+   * Google's newer copy of one held event, taken in. `except` is an op
+   * whose reply `theirs` is: still queued, and its change in `theirs`.
+   */
+  const takeOver = (theirs: EventRecord, ops: ReadonlyArray<PendingOp>, except?: string) =>
     Effect.gen(function* () {
       const event = {
         accountId: theirs.accountId,
@@ -223,16 +245,11 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
       if (theirs.status === 'cancelled' || old === null) {
         return;
       }
-      let row: EventRecord | undefined = undefined;
-      let removed = false;
-      // The answers queued so far: an edit queued after one was made on a
-      // row that showed it, and shows it still.
-      const answers: Array<PendingOp> = [];
-      const answered = (record: EventRecord): EventRecord =>
-        answers.reduce((shown, answer) => withAnswers(shown, answer, old), record);
+      // The changes themselves stay as they are queued: each is its own
+      // fields, and the version it makes is `theirs` with those over it
+      // from here on. What is left to decide is who has to be asked.
       for (const op of holding) {
         if (op.kind === 'delete') {
-          removed = true;
           // A delete of an event that changed since asks first, as the 412
           // of its If-Match would: the version it names is the one the
           // user deleted (a move of ours that landed since moved it on).
@@ -249,18 +266,9 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
           // Parked already: its preview of Google's version moves on, and
           // it stays the user's version on screen.
           yield* pendingOpRepo.markConflict(op.id, op.conflictAt);
-          const kept =
-            op.kind === 'rsvp' ? undefined : answered(rebaseOnto(op, old, theirs).payload);
-          if (kept) {
-            row = kept;
-            yield* pendingOpRepo.setPayload(op.id, kept);
-          }
           continue;
         }
         if (op.kind === 'rsvp') {
-          row = withAnswers(row ?? theirs, op, old);
-          yield* pendingOpRepo.setPayload(op.id, row);
-          answers.push(op);
           continue;
         }
         // Made on this very version: a full list names every event,
@@ -270,22 +278,16 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
         // One sent without If-Match (the user kept it) was made on the
         // copy: the version they compared against is no news either.
         if (theirs.etag !== null && (op.baseEtag ?? old.etag) === theirs.etag && op.payload) {
-          row = op.payload;
           continue;
         }
-        const rebased = rebaseOnto(op, old, theirs);
-        row = answered(rebased.payload);
-        yield* pendingOpRepo.setPayload(op.id, row);
-        if (rebased.kind === 'clash') {
+        if (rebaseOnto(op, old, theirs).kind === 'clash') {
           yield* pendingOpRepo.markConflict(op.id, now);
         }
       }
       if (theirs.etag !== null) {
         yield* pendingOpRepo.setBaseEtag(event, theirs.etag);
       }
-      if (row !== undefined && !removed) {
-        yield* eventRepo.upsertMany([new EventRecord({ ...row, syncStatus: 'pending' })]);
-      }
+      yield* show(event, except);
     });
 
   const receive: HeldEvents['receive'] = (accountId, calendarId, records) =>
@@ -336,20 +338,9 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
         takeOver(
           theirs,
           ops.filter((op) => op.id !== except),
+          except,
         ),
     );
-
-  const show: HeldEvents['show'] = (event, except) =>
-    Effect.gen(function* () {
-      const ops = (yield* pendingOpRepo.listForEvent(event)).filter((op) => op.id !== except);
-      const last = ops.findLast((op) => (op.kind === 'rsvp' || op.kind === 'update') && op.payload);
-      if (!last?.payload || !last.basePayload || ops.some((op) => op.kind === 'delete')) {
-        return;
-      }
-      if (yield* eventRepo.getById(event.accountId, event.calendarId, event.eventId)) {
-        yield* eventRepo.upsertMany([new EventRecord({ ...last.payload, syncStatus: 'pending' })]);
-      }
-    });
 
   return { receive, show, take };
 };

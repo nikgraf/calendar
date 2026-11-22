@@ -5,16 +5,19 @@ import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import {
-  baseOf,
+  answerChangesOf,
   CHANGING_KINDS,
+  eventChangesFrom,
   eventChangesOf,
   eventFromRow,
   type EventRow,
   slotOf,
   HOLDING_KINDS,
+  namesOf,
   parseJson,
   pendingOpFromRow,
   type PendingOpRow,
+  priorOf,
 } from './rows.ts';
 import { carriedTextJson, copySourceJson, eventPayloadJson } from './repoShared.ts';
 
@@ -129,14 +132,17 @@ export interface PendingOpRepoShape {
   /**
    * The ops queued for one event of one account, in queue order. Every
    * edit and every ack asks this; filtering in SQL decodes only these ops,
-   * not the whole queue's payloads.
+   * not the whole queue's payloads. `without` is an op on its way out of
+   * the queue: left out, and its changes out of the others' versions.
    */
-  readonly listForEvent: (event: {
-    readonly accountId: string;
-    readonly calendarId: string;
-    readonly eventId: string;
-  }) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
-  /** Makes a waiting op due now (what it waited for left the queue); a parked one stays. */
+  readonly listForEvent: (
+    event: {
+      readonly accountId: string;
+      readonly calendarId: string;
+      readonly eventId: string;
+    },
+    without?: string,
+  ) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   /**
    * A task's queued ops in every list of the account, in queue order: a
    * move re-queues what follows it in its destination.
@@ -145,6 +151,7 @@ export interface PendingOpRepoShape {
     accountId: string,
     taskId: string,
   ) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  /** Makes a waiting op due now (what it waited for left the queue); a parked one stays. */
   readonly makeDue: (opId: string) => Effect.Effect<void, SqlError>;
   /**
    * Parks an op whose event changed on Google: the drain skips it until
@@ -320,14 +327,51 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             AND id = ${slot.masterId}`;
         return masters[0] ? eventFromRow(masters[0]) : undefined;
       });
+    /**
+     * The changes of every queued update and answer by event, in queue
+     * order: an op's version of its event is Google's copy with the ones up
+     * to its own laid over it.
+     */
+    const chains = Effect.map(
+      sql<{
+        readonly account_id: string;
+        readonly calendar_id: string;
+        readonly changes: string | null;
+        readonly event_id: string;
+        readonly id: string;
+      }>`SELECT id, account_id, calendar_id, event_id, changes FROM pending_ops
+        WHERE kind IN ('rsvp', 'update') ORDER BY created_at, rowid`,
+      (rows) => {
+        const byEvent = new Map<string, Array<{ changes: string | null; id: string }>>();
+        for (const row of rows) {
+          const key = JSON.stringify([row.account_id, row.calendar_id, row.event_id]);
+          byEvent.set(key, [...(byEvent.get(key) ?? []), row]);
+        }
+        return byEvent;
+      },
+    );
+    type Chains = Effect.Success<typeof chains>;
+    /** The changes queued for the row's event ahead of it; `without` is an op on its way out. */
+    const earlierOf = (all: Chains, row: PendingOpRow, without?: string) => {
+      const chain = all.get(JSON.stringify([row.account_id, row.calendar_id, row.event_id])) ?? [];
+      const own = chain.findIndex((entry) => entry.id === row.id);
+      return chain.slice(0, Math.max(own, 0)).flatMap((entry) => {
+        const changes = entry.id === without ? undefined : eventChangesFrom(entry.changes);
+        return changes ? [changes] : [];
+      });
+    };
+    const noChains: Chains = new Map();
     /** Rows of an unknown op kind are skipped: nothing could apply them. */
-    const decoded = (rows: ReadonlyArray<PendingOpRow>) =>
-      Effect.map(
-        Effect.forEach(rows, (row) =>
-          Effect.map(masterOf(row), (master) => pendingOpFromRow(row, master)),
-        ),
-        (ops) => ops.flatMap((op) => (op ? [op] : [])),
-      );
+    const decoded = (rows: ReadonlyArray<PendingOpRow>, without?: string) =>
+      Effect.gen(function* () {
+        const all = rows.some((row) => CHANGING_KINDS.has(row.kind)) ? yield* chains : noChains;
+        const ops = yield* Effect.forEach(rows, (row) =>
+          Effect.map(masterOf(row), (master) =>
+            pendingOpFromRow(row, master, earlierOf(all, row, without)),
+          ),
+        );
+        return ops.flatMap((op) => (op ? [op] : []));
+      });
     const putCopy = (accountId: string, calendarId: string, eventId: string, copy: EventRecord) =>
       sql`INSERT OR REPLACE INTO event_copies (account_id, calendar_id, id, payload)
         VALUES (${accountId}, ${calendarId}, ${eventId},
@@ -347,12 +391,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           OR (p.kind = 'delete'
             AND p.event_id = json_extract(event_copies.payload, '$.recurringEventId'))))`;
     /**
-     * Writes what an update or an answer changes against Google's copy of
-     * its event, as the two stand now (`EventChanges`): from then on the
-     * op's version is that copy with these over it, whatever the copy
-     * becomes. One of an event Google has no copy of keeps its version.
+     * Writes what an update or an answer changes (`EventChanges`): the
+     * fields in which its version differs from what it is laid over as the
+     * two stand now — Google's copy with the changes queued ahead of it —
+     * and the ones it named before or takes over from the update it
+     * replaces (`inherited`), whatever their value. From then on its
+     * version is those over that, whatever the copy becomes. One of an
+     * event Google has no copy of keeps its version.
      */
-    const writeChanges = (opId: string) =>
+    const writeChanges = (opId: string, inherited: ReadonlyArray<string> = []) =>
       Effect.gen(function* () {
         const rows = yield* sql<PendingOpRow>`SELECT p.*, c.payload AS copy_payload
           FROM pending_ops p LEFT JOIN event_copies c ON c.account_id = p.account_id
@@ -362,18 +409,25 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         if (!row || !CHANGING_KINDS.has(row.kind)) {
           return;
         }
-        const copy = baseOf(row, yield* masterOf(row));
+        const copy = priorOf(row, yield* masterOf(row), earlierOf(yield* chains, row));
         const payload = parseJson(row.payload);
         const changes =
           typeof copy === 'object' &&
           copy !== null &&
           typeof payload === 'object' &&
           payload !== null
-            ? eventChangesOf(
-                copy as Record<string, unknown>,
-                payload as Record<string, unknown>,
-                row.attendees_changed === 1,
-              )
+            ? row.kind === 'rsvp'
+              ? answerChangesOf(
+                  copy as Record<string, unknown>,
+                  payload as Record<string, unknown>,
+                  [...Object.keys(eventChangesFrom(row.changes)?.answers ?? {}), ...inherited],
+                )
+              : eventChangesOf(
+                  copy as Record<string, unknown>,
+                  payload as Record<string, unknown>,
+                  row.attendees_changed === 1,
+                  [...namesOf(eventChangesFrom(row.changes)), ...inherited],
+                )
             : null;
         yield* sql`UPDATE pending_ops SET changes = ${changes ? JSON.stringify(changes) : null}
           WHERE id = ${opId}`;
@@ -504,7 +558,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             for (const taken of op.kind === 'delete' ? (op.beforeOverrides ?? []) : []) {
               yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
             }
-            yield* writeChanges(op.id);
+            yield* writeChanges(op.id, op.changed ?? []);
           }),
         ),
       getById: (opId) =>
@@ -575,13 +629,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             ORDER BY p.created_at, p.rowid LIMIT ${DRAIN_PAGE_SIZE}`,
           decoded,
         ),
-      listForEvent: ({ accountId, calendarId, eventId }) =>
+      listForEvent: ({ accountId, calendarId, eventId }, without) =>
         Effect.flatMap(
           sql<PendingOpRow>`${selectOps}
             WHERE p.account_id = ${accountId} AND p.calendar_id = ${calendarId}
-              AND p.event_id = ${eventId}
+              AND p.event_id = ${eventId} AND p.id IS NOT ${without ?? null}
             ORDER BY p.created_at, p.rowid`,
-          decoded,
+          (rows) => decoded(rows, without),
         ),
       listForTask: (accountId, taskId) =>
         Effect.flatMap(

@@ -579,3 +579,149 @@ describe('a discarded change leaves what the other queued op sends', () => {
     }).pipe(Effect.provide(offline)),
   );
 });
+
+describe('an answer waiting under a newer rename', () => {
+  it.effect(
+    'a rename that lands before an older answer keeps its title, also in what follows',
+    () => {
+      // Review (Opus): the answer was queued on a row that showed a rename
+      // and kept that title among its changes. A newer rename replaced the
+      // first and landed while the answer still backed off: the row was drawn
+      // again from the answer, old title and all, and the next edit of what
+      // the user saw sent that title to Google as theirs.
+      const sent: Array<string> = [];
+      let offline = true;
+      let etag = '"inv-1"';
+      let writes = 0;
+      let summary = 'Planning';
+      let description: string | undefined = undefined;
+      let attendees = invited.attendees!.map((attendee) => ({
+        email: attendee.email,
+        responseStatus: attendee.responseStatus as string,
+      }));
+      const current = () => ({
+        attendees,
+        ...(description === undefined ? {} : { description }),
+        end: { dateTime: '2026-07-08T11:00:00Z' },
+        etag,
+        id: 'evt-invite',
+        start: { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
+        status: 'confirmed' as const,
+        summary,
+      });
+      const layer = makeLayer({
+        getEvent: () => Effect.sync(() => current()),
+        patchEvent: ({ baseEtag, event, eventId }) =>
+          Effect.suspend((): ReturnType<GoogleCalendarClientShape['patchEvent']> => {
+            const keys = Object.keys(event).join(',');
+            if (offline) {
+              return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+            }
+            if (baseEtag !== undefined && baseEtag !== etag) {
+              return Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
+            }
+            summary = typeof event.summary === 'string' ? event.summary : summary;
+            description = typeof event.description === 'string' ? event.description : description;
+            if (event.attendees) {
+              attendees = event.attendees.map((guest) => ({
+                email: guest.email,
+                responseStatus: guest.responseStatus as string,
+              }));
+            }
+            writes += 1;
+            etag = `"w${writes}"`;
+            sent.push(keys);
+            return Effect.succeed(current());
+          }),
+      });
+      return Effect.gen(function* () {
+        yield* seed;
+        const mutations = yield* EventMutations;
+        const events = yield* EventRepo;
+        const ops = yield* PendingOpRepo;
+        const rename = (title: string) => mutations.updateEvent({ ...respond, changes: { title } });
+        yield* rename('B');
+        yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+        // Both back off.
+        yield* mutations.processPendingOps();
+        yield* rename('D');
+        offline = false;
+        yield* mutations.processPendingOps();
+        const row = yield* events.getById('acc-1', 'cal-1', 'evt-invite');
+        expect([row?.title, summary]).toEqual(['D', 'D']);
+        // The user then edits the description of what they see.
+        yield* mutations.updateEvent({ ...respond, changes: { description: 'Agenda' } });
+        yield* ops.retryNow();
+        yield* mutations.processPendingOps();
+        yield* mutations.processPendingOps();
+        const final = yield* events.getById('acc-1', 'cal-1', 'evt-invite');
+        expect([final?.title, final?.description, final?.syncStatus]).toEqual([
+          'D',
+          'Agenda',
+          'synced',
+        ]);
+        expect([summary, description]).toEqual(['D', 'Agenda']);
+        expect(sent).toEqual(['summary', 'attendees', 'description']);
+        expect(yield* ops.listAll()).toEqual([]);
+      }).pipe(Effect.provide(layer));
+    },
+  );
+});
+
+describe('an answer given while an earlier one is out', () => {
+  it.effect('the answer Google has, given again, is sent once the other has landed', () => {
+    // Review (Opus): declined, then back to accepted while the decline was
+    // out. Measured against Google's copy the second answer changed
+    // nothing, and what went was the copy's answer once the decline had
+    // landed: declined, on Google and on the row.
+    const sent: Array<string | undefined> = [];
+    let duringNext: Effect.Effect<unknown, unknown> | undefined;
+    let attendees = invited.attendees!.map((attendee) => ({
+      email: attendee.email,
+      responseStatus: attendee.responseStatus as string,
+    }));
+    const own = () => attendees.find((guest) => guest.email === 'nik@example.com')?.responseStatus;
+    const layer = makeLayer({
+      patchEvent: ({ event }) =>
+        Effect.gen(function* () {
+          const during = duringNext;
+          duringNext = undefined;
+          if (during) {
+            yield* Effect.orDie(during);
+          }
+          attendees = attendees.map((guest) => ({
+            ...guest,
+            responseStatus:
+              event.attendees?.find((answer) => answer.email === guest.email)?.responseStatus ??
+              guest.responseStatus,
+          }));
+          sent.push(own());
+          return {
+            attendees,
+            end: { dateTime: '2026-07-08T11:00:00Z' },
+            etag: `"a${sent.length}"`,
+            id: 'evt-invite',
+            start: { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
+            status: 'confirmed' as const,
+            summary: 'Planning',
+          };
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.processPendingOps();
+      yield* mutations.respondToEvent({ ...respond, response: 'declined' });
+      duringNext = mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+      expect(sent).toEqual(['accepted', 'declined', 'accepted']);
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-invite');
+      expect(
+        row?.attendees?.find((guest) => guest.email === 'nik@example.com')?.responseStatus,
+      ).toBe('accepted');
+    }).pipe(Effect.provide(layer));
+  });
+});

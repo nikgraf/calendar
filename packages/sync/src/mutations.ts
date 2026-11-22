@@ -171,6 +171,19 @@ const inheritedPark = (
     : { conflictAt: parked.conflictAt, lastError: parked.lastError ?? 'changed on Google' };
 };
 
+/**
+ * The fields the queued updates a new update replaces named as their own:
+ * they stay the new one's, whatever their value is by now. A rename back
+ * to the old title while the rename is out differs from nothing here, and
+ * left out, it was never sent.
+ */
+const inheritedChanged = (queued: ReadonlyArray<PendingOp>): ReadonlyArray<string> | undefined => {
+  const names = [
+    ...new Set(queued.flatMap((op) => (op.kind === 'update' ? (op.changed ?? []) : []))),
+  ];
+  return names.length > 0 ? names : undefined;
+};
+
 /** The queued series edit whose text the exceptions show locally, if any. */
 const seriesEditOf = (queued: ReadonlyArray<PendingOp>): PendingOp | undefined =>
   queued.findLast((op) => op.kind === 'update' && op.carriedText !== undefined);
@@ -537,6 +550,7 @@ const make: Effect.Effect<
               beforePayload: inheritedBefore(queued, master),
               calendarId,
               carriedText,
+              changed: inheritedChanged(queued),
               createdAt: now,
               dropsFrom: Math.min(cutAt, replaced?.dropsFrom ?? cutAt),
               eventId: master.id,
@@ -1225,6 +1239,7 @@ const make: Effect.Effect<
             seriesEditOf(yield* opsForEvent(accountId, calendarId, masterId)),
           ),
           calendarId,
+          changed: inheritedChanged(queued),
           createdAt: now,
           eventId: instanceId,
           geoCleared: geoClearedFlag(base, merged, queued),
@@ -1351,6 +1366,7 @@ const make: Effect.Effect<
           beforePayload: inheritedBefore(queued, master),
           calendarId,
           carriedText,
+          changed: inheritedChanged(queued),
           createdAt: now,
           // A new rule drops the exceptions it no longer draws; one
           // queued before it dropped some already.
@@ -1788,6 +1804,9 @@ const make: Effect.Effect<
             beforePayload:
               priorRsvp && !isPulledCopy(queued, existing) ? priorRsvp.beforePayload : existing,
             calendarId,
+            // The user's own answer is this op's, also where it is the one
+            // Google has: an answer of theirs may be out.
+            changed: existing.attendees.filter(isOwn).map((attendee) => attendee.email),
             createdAt: now,
             eventId,
             id: generateEventId(),
@@ -1892,6 +1911,7 @@ const make: Effect.Effect<
             baseEtag: existing.etag ?? undefined,
             beforePayload: inheritedBefore(queued, existing),
             calendarId,
+            changed: inheritedChanged(queued),
             createdAt: now,
             // A series cleared while offline drops its exceptions on Google;
             // this edit replaces that queued op and drops them in its place.

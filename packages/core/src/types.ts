@@ -409,14 +409,23 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   baseEtag: Schema.optional(Schema.String),
   /**
    * What an update or an answer is laid over, read by the repo: Google's
-   * copy of the event, or for an occurrence Google has no exception for,
-   * its series drawn at that slot. `payload` is this with the op's changes
-   * over it, and the PATCH names only what differs from it. Absent where
-   * there is neither (the series is not on Google yet).
+   * copy of the event (for an occurrence Google has no exception for, its
+   * series drawn at that slot) with the changes queued for the event ahead
+   * of this op over it. `payload` is this with the op's own changes over
+   * it, and the PATCH names only what differs from it. Absent where Google
+   * has neither (the series is not there yet).
    */
   basePayload: Schema.optional(EventRecord),
   /** Kind 'calendarColor': the color the calendar had, so a discard puts it back. */
   beforeColorHex: Schema.optional(Schema.String),
+  /**
+   * What an update or an answer names as its own, read by the repo: an
+   * update's fields (the guest list aside), the emails of the guests an
+   * answer answers for. On an op being queued: the ones it takes over from
+   * the queued update it replaces, or answers for, which are its own
+   * whatever their value is by now.
+   */
+  changed: Schema.optional(Schema.Array(Schema.String)),
   /**
    * A series delete only: Google's copies of the exceptions it took off
    * the table with the master (Google cascades, so they queue no op of

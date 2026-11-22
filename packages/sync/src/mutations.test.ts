@@ -1911,3 +1911,48 @@ describe('a rejection of an edit replaced while in flight', () => {
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 });
+
+describe('an edit made while an earlier one of the event is out', () => {
+  it.effect('a rename back to the old title is sent once the rename has landed', () => {
+    // Review (Opus): the second rename replaced the one in flight and was
+    // measured against Google's copy, which still had the old title: it
+    // changed nothing, so nothing was sent, and the title the user had
+    // taken back stayed on Google and on the row.
+    const sent: Array<Record<string, unknown>> = [];
+    let duringFirstPatch: Effect.Effect<unknown, unknown> | undefined;
+    const client = stubClient({
+      insertEvent: ({ event }) => Effect.succeed(echo(event, event.id ?? 'x', '"v1"')),
+      patchEvent: ({ event, eventId }) =>
+        Effect.gen(function* () {
+          sent.push({ ...event });
+          const during = duringFirstPatch;
+          duringFirstPatch = undefined;
+          if (during) {
+            yield* Effect.orDie(during);
+          }
+          return echo(event, eventId, `"v${sent.length + 1}"`);
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent({ ...draft, title: 'Original' });
+      yield* mutations.processPendingOps();
+      const rename = (title: string) =>
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title },
+          eventId: record.id,
+        });
+      yield* rename('Renamed');
+      duringFirstPatch = rename('Original');
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+      expect(sent.map((body) => body['summary'])).toEqual(['Renamed', 'Original']);
+      const final = yield* rowOf(record.id);
+      expect([final?.title, final?.syncStatus]).toEqual(['Original', 'synced']);
+      expect(echoed.get(record.id)?.summary).toBe('Original');
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+});
