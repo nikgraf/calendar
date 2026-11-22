@@ -330,7 +330,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   put the old text back otherwise); until then an exception's queued
   change is laid over its copy with that text carried onto it
   (`carriedChangesOf`), so the carried text is never the exception's own
-  and goes with a discarded series edit. `listDue` skips parked ops. The UI
+  and goes with a discarded series edit. What changed on Google is
+  measured against the copy the series edit holds (`carryBase`), so a
+  rename another device made meanwhile is not carried again; a text field
+  an occurrence edit sets itself leaves the series edits' record
+  (`ownFields`) and stays when they are given up, also when it equals
+  the series' text. `listDue` skips parked ops. The UI
   reads the conflict from `listPendingOps` (`PendingOpSummary.conflict`:
   mine is Google's version with the op's own fields over it (`ownVersion`:
   not also what an earlier change still queued for the event set), theirs
