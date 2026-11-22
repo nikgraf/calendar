@@ -657,7 +657,10 @@ separate: it also covers tasks, moves, discards and other-device writes.
   demand. Run a wide search before pushing any change to the queue
   (`QUEUE_SEQUENCE_RUNS=7000 QUEUE_SEQUENCE_KNOWN=1`): a change in the
   requests the app sends reshuffles every seed, so compare the count and
-  the classes of failures, never seed numbers.
+  the classes of failures, never seed numbers. Longer sequences find
+  what 40 steps do not (`QUEUE_SEQUENCE_STEPS=80`, 2,000 seeds: review
+  round 11 of #374 found seven bugs that way); a test file cannot set
+  the variables for itself, they are read when it is imported.
   `QUEUE_SEQUENCE_SEED=<n>` runs one seed, `QUEUE_SEQUENCE_RUNS` and
   `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take about a
   minute), `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. What

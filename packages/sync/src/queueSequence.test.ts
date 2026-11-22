@@ -6427,6 +6427,49 @@ describe('pending-op queue: what review round 11 found', () => {
     },
   );
 
+  it.effect("a 404 in a to-do's old list leaves the copy a change in its new list holds", () => {
+    // Renamed here, moved to another list on another device, ticked
+    // there. The rename's 404 in the old list forgot the task's one copy,
+    // which the tick held by then: discarded, the tick stayed on the row.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { title: 'Renamed' },
+          taskId: 't1',
+          taskListId: 'list-1',
+        });
+        google.moveTaskServerSide('list-1', 't1', { destination: 'list-2' });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        yield* mutations.completeTask({
+          accountId: ACCOUNT_ID,
+          status: 'completed',
+          taskId: 't1',
+          taskListId: 'list-2',
+        });
+        // Online for the old list alone: the rename meets its 404 there.
+        google.fault = (call) =>
+          call.method !== 'GET' && call.url.includes('/lists/list-2/') ? 'refused' : undefined;
+        yield* drainAll(mutations);
+        const tick = (yield* ops.listAll()).find((op) => op.kind === 'completeTask');
+        yield* mutations.discardPendingOp(tick!.id);
+        const rows = yield* (yield* SqlClient)<{
+          readonly list_id: string;
+          readonly status: string;
+          readonly sync_status: string;
+        }>`SELECT list_id, status, sync_status FROM tasks WHERE id = 't1'`;
+        expect(rows).toEqual([{ list_id: 'list-2', status: 'needsAction', sync_status: 'synced' }]);
+      }),
+    );
+  });
+
   it.effect(
     'a move whose source is known gone says so to the move queued behind a move back',
     () => {

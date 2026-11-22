@@ -21,6 +21,17 @@ was written; re-verify before starting one.
       was lost look alike. Telling them apart needs the device's own word
       on whether it was online (no such seam yet). The sequence test
       leaves such occurrences unjudged (`reshapedAway`).
+- [ ] A to-do whose create landed with its answer lost shows twice
+      until the create's retry adopts Google's task (on `main` too;
+      `tasks.insert` is not idempotent): a pull writes Google's task
+      beside the temporary row, and the user can act on both. Moved,
+      ticked or edited on both sides before the retry, the two sets of
+      changes meet as one task's: a change keyed to the list the other
+      side moved it out of meets a 404 and is dropped, and a row can stay
+      unsynced with no change behind it until the next pull. Adopt the
+      task when the pull's page brings it (match it as the retry does),
+      so the twin never shows. Sequence 290 at 80 steps
+      (`QUEUE_SEQUENCE_STEPS=80`).
 - [ ] An "All events" edit that changes a series' start drops every
       changed occurrence (Google cancels them with the new start,
       verified live 2026-11-22, and the app follows since #374): say so
