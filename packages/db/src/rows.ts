@@ -153,7 +153,7 @@ export interface TaskRow {
   readonly list_provider?: string | null;
 }
 
-const parseJson = (text: string | null): unknown => {
+export const parseJson = (text: string | null): unknown => {
   if (text === null) {
     return undefined;
   }
@@ -482,6 +482,8 @@ export interface PendingOpRow {
   readonly task_due_cleared: number;
   readonly task_previous: string | null;
   readonly copy_source: string | null;
+  /** What an update or an answer changed, against Google's copy (JSON `EventChanges`). */
+  readonly changes: string | null;
   /** Google's copy of the op's event (`event_copies`), joined in by the repo's reads. */
   readonly copy_payload?: string | null;
   /** Joined in by PendingOpRepo: the copies a series delete holds (a JSON array). */
@@ -504,6 +506,157 @@ const beforePayloadOf = (row: PendingOpRow): EventRecord | null | undefined =>
   HOLDING_KINDS.has(row.kind)
     ? (decodeOr(EventRecord, parseJson(row.copy_payload ?? null)) ?? null)
     : undefined;
+
+/**
+ * What a queued update or answer changed: the fields in which the user's
+ * version differs from Google's copy, and nothing else. The version itself
+ * is not kept: it is Google's copy with these laid over it, computed at
+ * every read (`withEventChanges`), so a copy that moves on under a waiting
+ * change takes the rest of the event with it and the change's own fields
+ * stay. Encoded as the event's JSON is.
+ */
+export interface EventChanges {
+  /** The answers that differ, by guest email. */
+  readonly answers: Readonly<Record<string, string>>;
+  /** Fields the user emptied. */
+  readonly cleared: ReadonlyArray<string>;
+  /** Fields the user set, with their values (the guest list only when it was edited). */
+  readonly set: Readonly<Record<string, unknown>>;
+}
+
+/** Row bookkeeping: never a change. */
+const NOT_A_CHANGE: ReadonlySet<string> = new Set([
+  'accountId',
+  'attendees',
+  'calendarId',
+  'etag',
+  'id',
+  'mirror',
+  'syncStatus',
+  'syncedAt',
+  'updatedAt',
+]);
+
+/** Fields the user reads as one thing, and that are kept whole: a time, a place. */
+const WHOLES: ReadonlyArray<ReadonlyArray<string>> = [
+  ['endDate', 'endUtc', 'isAllDay', 'startDate', 'startTimeZone', 'startUtc'],
+  ['geo', 'location'],
+];
+
+interface EncodedGuest {
+  readonly email?: string;
+  readonly responseStatus?: string;
+}
+
+const guestsOf = (event: Readonly<Record<string, unknown>>): ReadonlyArray<EncodedGuest> =>
+  Array.isArray(event['attendees']) ? (event['attendees'] as ReadonlyArray<EncodedGuest>) : [];
+
+/**
+ * The changes that turn `copy` into `payload` (both encoded events).
+ * `guests`: the op edited the guest list, which then goes whole.
+ */
+export const eventChangesOf = (
+  copy: Readonly<Record<string, unknown>>,
+  payload: Readonly<Record<string, unknown>>,
+  guests: boolean,
+): EventChanges => {
+  const differs = (key: string) => JSON.stringify(copy[key]) !== JSON.stringify(payload[key]);
+  const changed = new Set(
+    [...new Set([...Object.keys(copy), ...Object.keys(payload)])].filter(
+      (key) => !NOT_A_CHANGE.has(key) && differs(key),
+    ),
+  );
+  for (const whole of WHOLES) {
+    if (whole.some((key) => changed.has(key))) {
+      for (const key of whole) {
+        changed.add(key);
+      }
+    }
+  }
+  const set: Record<string, unknown> = {};
+  const cleared: Array<string> = [];
+  for (const key of [...changed].toSorted()) {
+    if (payload[key] === undefined || payload[key] === null) {
+      cleared.push(key);
+    } else {
+      set[key] = payload[key];
+    }
+  }
+  if (guests) {
+    set['attendees'] = payload['attendees'] ?? [];
+  }
+  const theirs = new Map(guestsOf(copy).map((guest) => [guest.email, guest.responseStatus]));
+  const answers: Record<string, string> = {};
+  for (const guest of guestsOf(payload)) {
+    if (
+      guest.email !== undefined &&
+      guest.responseStatus !== undefined &&
+      theirs.has(guest.email) &&
+      theirs.get(guest.email) !== guest.responseStatus
+    ) {
+      answers[guest.email] = guest.responseStatus;
+    }
+  }
+  return { answers, cleared, set };
+};
+
+/**
+ * Google's copy with a queued op's changes over it: the user's version, as
+ * an encoded event. `stored` is the version the op was queued with, which
+ * dates it.
+ */
+export const withEventChanges = (
+  copy: Readonly<Record<string, unknown>>,
+  changes: EventChanges,
+  stored: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> => {
+  const event: Record<string, unknown> = { ...copy, ...changes.set };
+  for (const key of changes.cleared) {
+    delete event[key];
+  }
+  const guests = guestsOf(event);
+  if (guests.length > 0) {
+    event['attendees'] = guests.map((guest) => {
+      const answer = guest.email === undefined ? undefined : changes.answers[guest.email];
+      return answer === undefined ? guest : { ...guest, responseStatus: answer };
+    });
+  }
+  return { ...event, syncStatus: 'pending', updatedAt: stored?.['updatedAt'] ?? copy['updatedAt'] };
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isEventChanges = (value: unknown): value is EventChanges =>
+  isRecord(value) &&
+  isRecord(value['answers']) &&
+  Array.isArray(value['cleared']) &&
+  isRecord(value['set']);
+
+/** The op kinds whose version of the event is Google's copy with their changes over it. */
+export const CHANGING_KINDS: ReadonlySet<string> = new Set(['rsvp', 'update']);
+
+/**
+ * The user's version of the event a queued op holds. For an update or an
+ * answer of an event Google has a copy of, that copy with the op's changes
+ * over it; for the rest (a create, a delete's tombstone, an occurrence
+ * Google has no exception for yet) the version it was queued with.
+ */
+const payloadOf = (row: PendingOpRow): EventRecord | undefined => {
+  const stored = parseJson(row.payload);
+  const copy = parseJson(row.copy_payload ?? null);
+  const changes = parseJson(row.changes);
+  if (CHANGING_KINDS.has(row.kind) && isRecord(copy) && isEventChanges(changes)) {
+    const shown = decodeOr(
+      EventRecord,
+      withEventChanges(copy, changes, isRecord(stored) ? stored : undefined),
+    );
+    if (shown) {
+      return shown;
+    }
+  }
+  return decodeOr(EventRecord, stored);
+};
 
 /** The exceptions a series delete took: Google's copies of them, none for any other op. */
 const takenOf = (row: PendingOpRow): ReadonlyArray<EventRecord> | undefined => {
@@ -540,7 +693,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         kind: row.kind as PendingOp['kind'],
         lastError: row.last_error ?? undefined,
         nextAttemptAt: row.next_attempt_at,
-        payload: decodeOr(EventRecord, parseJson(row.payload)),
+        payload: payloadOf(row),
         recurrenceCleared: row.recurrence_cleared === 1 ? true : undefined,
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
         sourceGone: row.source_gone === 1 ? true : undefined,

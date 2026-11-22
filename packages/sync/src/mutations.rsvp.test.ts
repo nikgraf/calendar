@@ -144,7 +144,12 @@ const ifMatchGoogle = (initialEtag: string, { firstEditFails = false } = {}) => 
     getEvent: () => Effect.sync(() => current()),
     patchEvent: ({ baseEtag, event, eventId }) =>
       Effect.suspend((): ReturnType<GoogleCalendarClientShape['patchEvent']> => {
-        const fields = 'summary' in event ? 'summary' : 'attendees';
+        // An answer names the guests alone, as many as were invited; an
+        // edit names what it changed: a title, or a longer guest list.
+        const fields =
+          'summary' in event || event.attendees?.length !== invited.attendees?.length
+            ? 'summary'
+            : 'attendees';
         const check = baseEtag === undefined ? 'unchecked' : `If-Match ${baseEtag}`;
         if (fields === 'summary' && editFails) {
           editFails = false;

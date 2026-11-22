@@ -16,13 +16,13 @@ was written; re-verify before starting one.
       with the series back and those occurrences cancelled. Skipped test:
       `queueSequence.test.ts`, "the deletes a rule change queued go with
       it when a delete replaces it".
-- [ ] A queued event change still holds the whole event, so an edit of
-      all events replaces the series' queued change and goes to the back
-      of the queue — behind a change of one occurrence made under it. The
+- [ ] An edit of all events replaces the series' queued change and goes
+      to the back of the queue — behind a change of one occurrence made
+      under it. The
       occurrence's own text is then overwritten by the series' older one
       (Google copies a changed text onto every exception), or an
-      occurrence deleted under a new rule comes back. Needs changes that
-      hold only their own fields, several per event in order. Skipped
+      occurrence deleted under a new rule comes back. Needs several
+      changes of one event queued in order. Skipped
       tests: "an occurrence keeps its own text through a later edit of
       its series", "an occurrence deleted under a new rule stays deleted
       when the series is edited again".

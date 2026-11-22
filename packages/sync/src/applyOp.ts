@@ -159,6 +159,26 @@ export const isPulledCopy = (
   row.status !== 'cancelled' &&
   queued.some((op) => op.kind === 'delete');
 
+/**
+ * What an update sends: of the PATCH body its version makes, the keys
+ * that differ from the body Google's copy makes. A PATCH leaves what it
+ * does not name as it is, so a field the user did not change is never
+ * written from this device's copy of it, which may be older than Google's.
+ * With no copy (an occurrence Google has no exception for) the whole body.
+ */
+const changedBody = (op: PendingOp, record: EventRecord): ReturnType<typeof updateBody> => {
+  const body = updateBody(op, record);
+  if (!op.beforePayload) {
+    return body;
+  }
+  const theirs = updateBody(op, op.beforePayload) as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(body).filter(
+      ([key, value]) => JSON.stringify(value) !== JSON.stringify(theirs[key]),
+    ),
+  ) as ReturnType<typeof updateBody>;
+};
+
 /** What an update PATCHes, built the same way from the user's record and from Google's. */
 const updateBody = (op: PendingOp, record: EventRecord) => ({
   ...toGcalEventInput(record),
@@ -1703,6 +1723,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       const row = yield* eventRepo.getById(event.accountId, event.calendarId, event.eventId);
       if (isPulledCopy(yield* pendingOpRepo.listForEvent(event), row)) {
         yield* eventRepo.upsertMany([synced]);
+      } else {
+        yield* heldEvents.show(event, op.id);
       }
     });
 
@@ -2782,7 +2804,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         accountId: op.accountId,
         baseEtag: op.baseEtag,
         calendarId: op.calendarId,
-        event: updateBody(op, op.payload),
+        event: changedBody(op, op.payload),
         eventId: op.eventId,
         // Removed guests get their cancellation too: flagged edits
         // always notify, even when nobody is left.

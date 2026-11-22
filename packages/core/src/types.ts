@@ -488,8 +488,11 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   /**
-   * Snapshot of the event: what to send for create/update, and the row as
-   * it was when deleted for delete (so a parked delete can be named).
+   * The user's version of the event. For an update or an answer of an
+   * event Google has a copy of it is not stored: the repo keeps only what
+   * the op changed and reads this as that copy with the changes over it,
+   * so it follows the copy. For a create it is what to send; for a delete
+   * the row as it was when deleted (so a parked delete can be named).
    */
   payload: Schema.optional(EventRecord),
   /**

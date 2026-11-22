@@ -4,7 +4,14 @@ import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
-import { HOLDING_KINDS, pendingOpFromRow, type PendingOpRow } from './rows.ts';
+import {
+  CHANGING_KINDS,
+  eventChangesOf,
+  HOLDING_KINDS,
+  parseJson,
+  pendingOpFromRow,
+  type PendingOpRow,
+} from './rows.ts';
 import { carriedTextJson, copySourceJson, eventPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
@@ -309,6 +316,43 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         AND (p.event_id = event_copies.id
           OR (p.kind = 'delete'
             AND p.event_id = json_extract(event_copies.payload, '$.recurringEventId'))))`;
+    /**
+     * Writes what an update or an answer changes against Google's copy of
+     * its event, as the two stand now (`EventChanges`): from then on the
+     * op's version is that copy with these over it, whatever the copy
+     * becomes. One of an event Google has no copy of keeps its version.
+     */
+    const writeChanges = (opId: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{
+          readonly attendees_changed: number;
+          readonly copy_payload: string | null;
+          readonly kind: string;
+          readonly payload: string | null;
+        }>`SELECT p.kind, p.payload, p.attendees_changed, c.payload AS copy_payload
+          FROM pending_ops p LEFT JOIN event_copies c ON c.account_id = p.account_id
+            AND c.calendar_id = p.calendar_id AND c.id = p.event_id
+          WHERE p.id = ${opId}`;
+        const row = rows[0];
+        if (!row || !CHANGING_KINDS.has(row.kind)) {
+          return;
+        }
+        const copy = parseJson(row.copy_payload);
+        const payload = parseJson(row.payload);
+        const changes =
+          typeof copy === 'object' &&
+          copy !== null &&
+          typeof payload === 'object' &&
+          payload !== null
+            ? eventChangesOf(
+                copy as Record<string, unknown>,
+                payload as Record<string, unknown>,
+                row.attendees_changed === 1,
+              )
+            : null;
+        yield* sql`UPDATE pending_ops SET changes = ${changes ? JSON.stringify(changes) : null}
+          WHERE id = ${opId}`;
+      });
     /** The copies of a series' exceptions that no op of their own holds. */
     const dropTaken = (accountId: string, calendarId: string, masterId: string) =>
       sql`DELETE FROM event_copies WHERE account_id = ${accountId}
@@ -435,6 +479,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             for (const taken of op.kind === 'delete' ? (op.beforeOverrides ?? []) : []) {
               yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
             }
+            yield* writeChanges(op.id);
           }),
         ),
       getById: (opId) =>
@@ -598,6 +643,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             for (const taken of op.kind === 'delete' ? (op.beforeOverrides ?? []) : []) {
               yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
             }
+            yield* writeChanges(op.id);
             yield* dropIdleCopies;
           }),
         ),
@@ -684,9 +730,10 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         ),
       setPayload: (opId, payload) =>
         invalidating(
-          Effect.asVoid(
+          Effect.andThen(
             sql`UPDATE pending_ops SET payload = ${JSON.stringify(eventPayloadJson(payload))}
               WHERE id = ${opId}`,
+            writeChanges(opId),
           ),
         ),
       setSplitCheck: (opId, check) =>

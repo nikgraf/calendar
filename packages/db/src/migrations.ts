@@ -121,6 +121,11 @@ const baseline = Effect.gen(function* () {
   // - conflict_at is set when the event changed on Google under the op and
   //   the two clash (the drain skips it until the user chooses keep-mine
   //   or take-theirs); Google's version is the event's copy.
+  // - changes (JSON EventChanges): for an update or an answer of an event
+  //   Google has a copy of, the fields in which the user's version differs
+  //   from that copy. The op's version is the copy with these over it,
+  //   computed at every read; `payload` is then only the version it was
+  //   queued with (a create's, a delete's and a move's payload is whole).
   // - carried_text (JSON CarriedText): what a series edit mirrored onto the
   //   series' exceptions and their own text before, so abandoning the op
   //   can put that back.
@@ -160,6 +165,7 @@ const baseline = Effect.gen(function* () {
       before_color_hex TEXT,
       conflict_at INTEGER,
       carried_text TEXT,
+      changes TEXT,
       drops_from INTEGER,
       split_of TEXT,
       split_in TEXT,

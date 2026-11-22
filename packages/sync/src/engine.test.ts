@@ -4329,7 +4329,7 @@ describe('SyncEngine', () => {
             if (baseEtag !== '"x-2"') {
               return Effect.fail(new ConflictError({ calendarId, eventId }));
             }
-            sent.push(`${event.summary} @ ${event.location}`);
+            sent.push(`${event.summary ?? '(title not named)'} @ ${event.location}`);
             return Effect.succeed({
               ...july3OnGoogle,
               etag: '"x-3"',
@@ -4354,7 +4354,8 @@ describe('SyncEngine', () => {
           yield* mutations.retryPendingOps();
           yield* mutations.processPendingOps();
           expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-          expect(sent).toEqual(['Renamed @ Room 4']);
+          // The PATCH names what the edit changed, and no title at all.
+          expect(sent).toEqual(['(title not named) @ Room 4']);
           expect(yield* july3Shown).toEqual(['12:00 Renamed @ Room 4']);
         }).pipe(Effect.provide(engineLayer(client)));
       },
@@ -4391,7 +4392,7 @@ describe('SyncEngine', () => {
               if (baseEtag !== july3OnGoogle.etag) {
                 return Effect.fail(new ConflictError({ calendarId, eventId }));
               }
-              sent.push(`${event.summary} @ ${event.location}`);
+              sent.push(`${event.summary ?? '(title not named)'} @ ${event.location}`);
               july3OnGoogle = {
                 ...july3OnGoogle,
                 etag: `"x-${++tick}"`,
@@ -4425,7 +4426,7 @@ describe('SyncEngine', () => {
           yield* mutations.processPendingOps();
           yield* mutations.processPendingOps();
           expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-          expect(sent.at(-1)).toBe('Renamed @ Room 5');
+          expect(sent.at(-1)).toBe('(title not named) @ Room 5');
           expect(july3OnGoogle.summary).toBe('Renamed');
           expect(yield* july3Shown).toEqual(['12:00 Renamed @ Room 5']);
         }).pipe(Effect.provide(engineLayer(client)));

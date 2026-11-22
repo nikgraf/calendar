@@ -153,6 +153,10 @@ const storedTime = (time: unknown): GcalEvent['start'] =>
         ),
       );
 
+/** What each echoed event holds so far: a PATCH names only what it changes. */
+const echoed = new Map<string, { end?: unknown; start?: unknown; summary?: string | undefined }>();
+
+/** Google's event after an insert or a PATCH of `event`: the body laid over what it had. */
 const echo = (
   event: {
     readonly end?: unknown;
@@ -161,14 +165,23 @@ const echo = (
   },
   id: string,
   etag: string,
-): GcalEvent => ({
-  end: storedTime(event.end),
-  etag,
-  id,
-  start: storedTime(event.start),
-  status: 'confirmed',
-  ...(event.summary === undefined ? {} : { summary: event.summary }),
-});
+): GcalEvent => {
+  const had = echoed.get(id) ?? {};
+  const has = {
+    end: event.end ?? had.end,
+    start: event.start ?? had.start,
+    summary: event.summary ?? had.summary,
+  };
+  echoed.set(id, has);
+  return {
+    end: storedTime(has.end),
+    etag,
+    id,
+    start: storedTime(has.start),
+    status: 'confirmed',
+    ...(has.summary === undefined ? {} : { summary: has.summary }),
+  };
+};
 
 /**
  * Google as If-Match sees it: a patch or delete carrying the stale

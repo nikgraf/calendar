@@ -56,17 +56,35 @@ interface Sent {
 const stored = (time: GcalTimePatch | undefined) =>
   time && Object.fromEntries(Object.entries(time).filter(([, value]) => typeof value === 'string'));
 
-const echo = (event: GcalEventPatch, id: string) =>
-  Effect.succeed({
-    end: stored(event.end) ?? { dateTime: '2026-07-08T11:00:00Z' },
+/** What each echoed event holds so far: a PATCH names only what it changes. */
+const echoed = new Map<string, GcalEventPatch>();
+
+/** Google's event after an insert or a PATCH of `event`: the body laid over what it had. */
+const echo = (event: GcalEventPatch, id: string) => {
+  // The seeded series, as Google has it: a PATCH that names neither its
+  // rule nor its times keeps them.
+  const had =
+    echoed.get(id) ??
+    (id === 'master1'
+      ? {
+          end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+          start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
+        }
+      : {});
+  const has = { ...had, ...event };
+  echoed.set(id, has);
+  return Effect.succeed({
+    end: stored(has.end) ?? { dateTime: '2026-07-08T11:00:00Z' },
     etag: '"next"',
     id,
-    recurrence: event.recurrence,
-    reminders: event.reminders ?? { useDefault: true },
-    start: stored(event.start) ?? { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
+    recurrence: has.recurrence,
+    reminders: has.reminders ?? { useDefault: true },
+    start: stored(has.start) ?? { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
     status: 'confirmed',
-    summary: event.summary ?? 'Planning',
+    summary: has.summary ?? 'Planning',
   });
+};
 
 const makeLayer = (sent: Array<Sent>, overrides: Partial<GoogleCalendarClientShape> = {}) =>
   EventMutations.layer.pipe(

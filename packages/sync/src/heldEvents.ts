@@ -168,6 +168,17 @@ export interface HeldEvents {
     records: ReadonlyArray<EventRecord>,
   ) => Effect.Effect<ReadonlyArray<EventRecord>, SqlError>;
   /**
+   * Writes the row of a held event again from what is queued for it:
+   * Google's copy with the last waiting change over it, pending. After the
+   * copy moved on without a version to compare (an answer of our own
+   * landed), so the row shows what the waiting changes now send. `except`
+   * is an op about to leave the queue. A queued delete leaves no row.
+   */
+  readonly show: (
+    event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
+    except?: string,
+  ) => Effect.Effect<void, SqlError>;
+  /**
    * Google's newer version of one event (the fetch after a refused write,
    * or the reply to a write sent without If-Match, which may hold another
    * device's change too): it becomes the event's copy, and every queued
@@ -322,5 +333,17 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
         ),
     );
 
-  return { receive, take };
+  const show: HeldEvents['show'] = (event, except) =>
+    Effect.gen(function* () {
+      const ops = (yield* pendingOpRepo.listForEvent(event)).filter((op) => op.id !== except);
+      const last = ops.findLast((op) => (op.kind === 'rsvp' || op.kind === 'update') && op.payload);
+      if (!last?.payload || !last.beforePayload || ops.some((op) => op.kind === 'delete')) {
+        return;
+      }
+      if (yield* eventRepo.getById(event.accountId, event.calendarId, event.eventId)) {
+        yield* eventRepo.upsertMany([new EventRecord({ ...last.payload, syncStatus: 'pending' })]);
+      }
+    });
+
+  return { receive, show, take };
 };

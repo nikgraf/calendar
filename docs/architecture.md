@@ -545,7 +545,18 @@ it whenever a kind is added. Rules that keep the queue correct:
   (a task's source list until its move lands; a move re-keys an event's
   to the destination with its ops, and back if Google never makes the
   move), and gone again once nothing queued holds the item
-  (`dropIdleCopies`, `heldTasks.refresh`). It is written when the first
+  (`dropIdleCopies`, `heldTasks.refresh`). A queued update or answer of
+  an event keeps only what it changed against that copy (`pending_ops.
+  changes`, `EventChanges`: the fields the user set or emptied, a time
+  and a place whole, the answers that differ, the guest list when it was
+  edited). Its version of the event, `PendingOp.payload`, is not stored:
+  it is the copy with those changes over it, computed at every read, so
+  when the copy moves on the rest of the event moves with it and no path
+  can leave an old value in a waiting change to be sent as the user's.
+  The PATCH names only what differs from the copy too (`changedBody`),
+  and a field the user did not change is never written from this device.
+  An occurrence Google has no exception for has no copy, and keeps the
+  version it was queued with. It is written when the first
   change is queued (the synced row, `enqueue`, `TaskRepo.holdTasks`), by
   every pull and conflict fetch (Conflicts above; Sync engine), and by
   answers: when an op lands while others of the item wait, the copy
@@ -592,10 +603,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   gap: a full re-list after an expired sync token confirms a deletion
   only by absence, which removes no copy. Open gaps of repeating events,
   each a skipped test in `queueSequence.test.ts` and a seed in its
-  `KNOWN_FAILING`: a queued event change still holds the whole event,
-  so an edit of all events replaces the series' queued change and goes to
-  the back of the queue, behind a change of one occurrence made under
-  it; an occurrence changed under a new rule that is then given up keeps
+  `KNOWN_FAILING`: an edit of all events replaces the series' queued
+  change and goes to the back of the queue, behind a change of one
+  occurrence made under it (several changes of one event queued in order
+  would close it; what a change stores allows that now, the queue does
+  not do it yet); an occurrence changed under a new rule that is then given up keeps
   its change at a slot the series no longer draws; the deletes a rule
   change queued outlive a delete that replaces it; and a change that had
   landed with its answer lost, discarded before a pull says so, is put

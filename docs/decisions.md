@@ -553,14 +553,14 @@ was cut (pruned 2026-11-17).
   puts nothing back.
 - **Google's copy of a held item** (2026-11-22, #374) — while a change of
   an event or a to-do waits, Google's version is kept once per item,
-  written by pulls, conflict fetches and answers, and the waiting changes
-  are laid over it: different things changed on two devices both hold,
-  and only the same thing changed twice, a guest-list edit or a delete
-  asks (Nik's picks, with: kept only while held, databases reset, one
-  PR). Replaces the per-change snapshots, which no pull could update.
-  Rejected: a copy of every item; an appended migration. Open: an event
-  change still holds the whole event; a discarded change that had landed;
-  the provider seam; and the series gaps in todo.md.
+  written by pulls, conflict fetches and answers. A waiting update keeps
+  only the fields it changed, and its version is the copy with those
+  over it: different things changed on two devices both hold, and only
+  the same thing changed twice, a guest-list edit or a delete asks (Nik's
+  picks, with: kept only while held, databases reset, one PR). Rejected:
+  the per-change snapshots; a copy of every item; an appended migration.
+  Open: several changes of one event queued in order; a discarded change
+  that had landed; the provider seam; todo.md's Tier 0 gaps.
 - **UI action state** (2026-11-05, #296) — an async action of a
   component is one value (`useAction`: idle, running, failed with its
   line, done with the result) on the editors' one-write slot; a value

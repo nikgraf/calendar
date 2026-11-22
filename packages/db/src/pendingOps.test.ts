@@ -56,6 +56,15 @@ const taken = (opId: string) =>
     return stored?.beforeOverrides?.map((row) => `${row.id} ${row.title}`).toSorted();
   });
 
+const guest = (email: string, responseStatus: Attendee['responseStatus']) =>
+  new Attendee({ email, responseStatus });
+
+/** The user's version of the event an op holds, as the repo reads it now. */
+const shown = (opId: string) =>
+  Effect.gen(function* () {
+    return (yield* (yield* PendingOpRepo).getById(opId))?.payload;
+  });
+
 describe('PendingOpRepo', () => {
   it.effect('counts the ops waiting for a set of calendars and task lists', () =>
     Effect.gen(function* () {
@@ -282,6 +291,155 @@ describe('PendingOpRepo', () => {
       });
     }).pipe(Effect.provide(freshDbLayer())),
   );
+
+  describe('an update or an answer keeps only what it changed', () => {
+    const event = { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-1' };
+
+    it.effect('its version is Google’s copy, as it is now, with those fields over it', () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        const copy = new EventRecord({ ...eventRow('Standup'), location: 'Room 1' });
+        yield* repo.enqueue(
+          op('rename', {
+            beforePayload: copy,
+            eventId: 'evt-1',
+            payload: new EventRecord({ ...copy, syncStatus: 'pending', title: 'Standup (mine)' }),
+          }),
+        );
+        // Another device moved it to another room and wrote notes.
+        yield* repo.advanceBefore(
+          event,
+          new EventRecord({ ...copy, description: 'Agenda', etag: '"e2"', location: 'Room 2' }),
+          { id: 'none' },
+        );
+        const mine = yield* shown('rename');
+        expect([mine?.title, mine?.location, mine?.description, mine?.etag]).toEqual([
+          'Standup (mine)',
+          'Room 2',
+          'Agenda',
+          '"e2"',
+        ]);
+        expect(mine?.syncStatus).toBe('pending');
+      }).pipe(Effect.provide(freshDbLayer())),
+    );
+
+    it.effect('a time is kept whole, and an emptied field stays empty', () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        const copy = new EventRecord({
+          ...eventRow('Standup'),
+          endUtc: 60,
+          location: 'Room 1',
+          startUtc: 0,
+        });
+        const { location: _emptied, ...rest } = copy;
+        yield* repo.enqueue(
+          op('shorten', {
+            beforePayload: copy,
+            eventId: 'evt-1',
+            payload: new EventRecord({ ...rest, endUtc: 30, syncStatus: 'pending' }),
+          }),
+        );
+        yield* repo.advanceBefore(
+          event,
+          new EventRecord({ ...copy, endUtc: 160, location: 'Room 2', startUtc: 100 }),
+          { id: 'none' },
+        );
+        const mine = yield* shown('shorten');
+        expect([mine?.startUtc, mine?.endUtc, mine?.location]).toEqual([0, 30, undefined]);
+      }).pipe(Effect.provide(freshDbLayer())),
+    );
+
+    it.effect('an answer is laid over whoever Google has on the guest list now', () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        const copy = new EventRecord({
+          ...eventRow('Planning'),
+          attendees: [guest('me@example.com', 'needsAction'), guest('bob@example.com', 'accepted')],
+        });
+        yield* repo.enqueue(
+          op('answer', {
+            beforePayload: copy,
+            eventId: 'evt-1',
+            kind: 'rsvp',
+            payload: new EventRecord({
+              ...copy,
+              attendees: [
+                guest('me@example.com', 'accepted'),
+                guest('bob@example.com', 'accepted'),
+              ],
+              syncStatus: 'pending',
+            }),
+          }),
+        );
+        yield* repo.advanceBefore(
+          event,
+          new EventRecord({
+            ...copy,
+            attendees: [
+              guest('me@example.com', 'needsAction'),
+              guest('bob@example.com', 'declined'),
+              guest('dave@example.com', 'needsAction'),
+            ],
+          }),
+          { id: 'none' },
+        );
+        expect(
+          (yield* shown('answer'))?.attendees?.map((one) => `${one.email} ${one.responseStatus}`),
+        ).toEqual([
+          'me@example.com accepted',
+          'bob@example.com declined',
+          'dave@example.com needsAction',
+        ]);
+      }).pipe(Effect.provide(freshDbLayer())),
+    );
+
+    it.effect(
+      'an edited guest list goes whole; an event Google has no copy of keeps its version',
+      () =>
+        Effect.gen(function* () {
+          const repo = yield* PendingOpRepo;
+          const copy = new EventRecord({
+            ...eventRow('Planning'),
+            attendees: [guest('bob@example.com', 'accepted')],
+          });
+          const mine = [
+            guest('bob@example.com', 'accepted'),
+            guest('carol@example.com', 'needsAction'),
+          ];
+          yield* repo.enqueue(
+            op('guests', {
+              attendeesChanged: true,
+              beforePayload: copy,
+              eventId: 'evt-1',
+              payload: new EventRecord({ ...copy, attendees: mine, syncStatus: 'pending' }),
+            }),
+          );
+          yield* repo.advanceBefore(
+            event,
+            new EventRecord({ ...copy, attendees: [guest('dave@example.com', 'needsAction')] }),
+            { id: 'none' },
+          );
+          expect((yield* shown('guests'))?.attendees?.map((one) => one.email)).toEqual([
+            'bob@example.com',
+            'carol@example.com',
+          ]);
+          // An occurrence Google has no exception for: nothing to lay it over.
+          yield* repo.enqueue(
+            op('made', {
+              beforePayload: null,
+              eventId: 'evt-2',
+              payload: new EventRecord({
+                ...eventRow('Occurrence'),
+                id: 'evt-2',
+                syncStatus: 'pending',
+              }),
+            }),
+          );
+          expect((yield* shown('made'))?.title).toBe('Occurrence');
+        }).pipe(Effect.provide(freshDbLayer())),
+    );
+  });
 
   it.effect('a move remembers that a pull found its event gone from the source', () =>
     Effect.gen(function* () {
