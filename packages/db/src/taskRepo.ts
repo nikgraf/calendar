@@ -487,6 +487,11 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                   AND t.sync_status = 'synced'`;
               const row = rows[0];
               if (row) {
+                // A synced row here is where Google has the task now: a copy
+                // of it in another list (another device moved it while a
+                // change of it waited) is what Google had before, and goes.
+                yield* sql`DELETE FROM task_copies WHERE account_id = ${accountId}
+                  AND id = ${id} AND list_id != ${listId}`;
                 yield* sql`INSERT OR IGNORE INTO task_copies (account_id, list_id, id, payload)
                   VALUES (${accountId}, ${listId}, ${id},
                           ${JSON.stringify(taskPayloadJson(taskFromRow(row)))})`;

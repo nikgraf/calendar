@@ -3478,6 +3478,88 @@ describe('pending-op queue: a held task and Google’s copy of it', () => {
     },
   );
 
+  it.effect(
+    'a to-do deleted here and moved to another list elsewhere shows where Google has it',
+    () => {
+      // Review (Opus, round 8): the other list's pull left out every task
+      // with a delete queued. The delete then met a 404 in the old list and
+      // was done, and the task, still on Google, showed nowhere.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const sql = yield* SqlClient;
+          network.down = true;
+          yield* mutations.deleteTask({
+            accountId: ACCOUNT_ID,
+            taskId: 't1',
+            taskListId: 'list-1',
+          });
+          google.now += MINUTE;
+          google.moveTaskServerSide('list-1', 't1', { destination: 'list-2' });
+          google.now += MINUTE;
+          yield* TestClock.adjust('2 minutes');
+          yield* (yield* SyncEngine).syncAll();
+          network.down = false;
+          yield* drainAll(mutations);
+          expect(
+            yield* sql`SELECT list_id, sync_status FROM tasks WHERE id = 't1' ORDER BY list_id`,
+          ).toEqual([{ list_id: 'list-2', sync_status: 'synced' }]);
+          expect(google.taskOf('list-2', 't1')?.deleted).toBeUndefined();
+        }),
+      );
+    },
+  );
+
+  it.effect(
+    'a tick on the row a pull wrote in the new list keeps one copy, and its discard undoes it',
+    () => {
+      // Review (Opus, round 8): renamed here, moved to the other list on
+      // another device, then ticked there. A second copy was made beside the
+      // old list's, the discard read the old one, and the row stayed ticked
+      // and pending with no change behind it.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const sql = yield* SqlClient;
+          network.down = true;
+          yield* mutations.updateTask({
+            accountId: ACCOUNT_ID,
+            changes: { title: 'Call the bank' },
+            taskId: 't1',
+            taskListId: 'list-1',
+          });
+          google.now += MINUTE;
+          google.moveTaskServerSide('list-1', 't1', { destination: 'list-2' });
+          google.now += MINUTE;
+          yield* TestClock.adjust('2 minutes');
+          yield* (yield* SyncEngine).syncAll();
+          yield* mutations.completeTask({
+            accountId: ACCOUNT_ID,
+            status: 'completed',
+            taskId: 't1',
+            taskListId: 'list-2',
+          });
+          expect(yield* sql`SELECT list_id FROM task_copies WHERE id = 't1'`).toEqual([
+            { list_id: 'list-2' },
+          ]);
+          const tick = (yield* (yield* PendingOpRepo).listAll()).find(
+            (op) => op.kind === 'completeTask',
+          );
+          yield* mutations.discardPendingOp(tick!.id);
+          expect(
+            yield* sql`SELECT status FROM tasks WHERE id = 't1' AND list_id = 'list-2'`,
+          ).toEqual([{ status: 'needsAction' }]);
+        }),
+      );
+    },
+  );
+
   it.effect('discarding the tick of a to-do Google has not got yet opens it again', () => {
     // Review (Codex, round 4): made and ticked while offline, then the tick
     // discarded. With no copy of Google's to rebuild the row from, nothing
@@ -3872,6 +3954,33 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
       }),
     );
   });
+
+  it.effect(
+    'a subtask deleted on Google long before its move does not keep the parent either',
+    () => {
+      // Review (Opus, round 8): the source was asked only for what changed
+      // since the move was queued, and a deletion from before it went unseen.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          network.down = true;
+          google.deleteTaskServerSide('list-1', 's1');
+          google.now += 5 * MINUTE;
+          yield* TestClock.adjust('5 minutes');
+          yield* moveOf(mutations, PACK, 'list-1', 'list-2');
+          yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+          network.down = false;
+          yield* drainAll(mutations);
+          expect(google.taskOf('list-1', 'p')?.deleted).toBe(true);
+          const rows = yield* (yield* SqlClient)`SELECT id FROM tasks WHERE id = 's1'`;
+          expect(rows).toEqual([]);
+        }),
+      );
+    },
+  );
 
   it.effect("discarding a parent's move leaves a subtask's own move back alone", () => {
     // Review (Opus, round 7): a subtask moved to the other list, its parent
@@ -5396,6 +5505,49 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
           `PATCH calendars/cal-2/events/${googleInstanceId('r2', R2_START + DAY, false)}`,
         ]);
         expect(google.eventOf('cal-2', 'r2')).toMatchObject({ summary: 'Sprint' });
+      }),
+    );
+  });
+
+  it.effect("an occurrence changed right after a move goes behind its series' change", () => {
+    // Sequence 5378 of a search to 7,000: all events an hour later, the
+    // series moved, then one occurrence renamed at its new time, in the
+    // move's own millisecond. The move re-queues the series' change a
+    // millisecond after itself; the occurrence's sorted ahead of it, went
+    // first and found no such slot on Google (404).
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { endUtc: R1_START + 2 * HOUR, startUtc: R1_START + HOUR },
+          originalStartUtc: R1_START,
+          scope: 'series',
+        });
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'r1',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        const second = R1_START + DAY + HOUR;
+        yield* mutations.updateRecurring({
+          ...R1,
+          calendarId: 'cal-2',
+          changes: { title: 'Yoga (second)' },
+          originalStartUtc: second,
+          scope: 'instance',
+        });
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.eventOf('cal-2', googleInstanceId('r1', second, false))?.summary).toBe(
+          'Yoga (second)',
+        );
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
       }),
     );
   });

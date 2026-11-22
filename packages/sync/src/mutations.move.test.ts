@@ -311,6 +311,32 @@ describe('moveEvent inside one Google account', () => {
     }).pipe(Effect.provide(testLayer(recordingGoogle([]), appleFake()))),
   );
 
+  it.effect('lets an event back into its calendar while its own create still waits there', () => {
+    // Review (Opus, round 8): its create sent and unanswered, moved away
+    // and back: the create queued in its calendar read as another event
+    // of the id, and the move back was refused.
+    const offline = recordingGoogle([], {
+      insertEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline', status: 503 })),
+      moveEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline', status: 503 })),
+    });
+    return Effect.gen(function* () {
+      yield* seed();
+      const mutations = yield* EventMutations;
+      const created = yield* mutations.createEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        endUtc: 2 * HOUR,
+        isAllDay: false,
+        startUtc: HOUR,
+        title: 'New',
+      });
+      yield* mutations.processPendingOps();
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', created.id], ['acc-1', 'cal-2']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-2', created.id], ['acc-1', 'cal-1']));
+      expect((yield* rowAt('acc-1', 'cal-1', created.id))?.title).toBe('New');
+    }).pipe(noYield, Effect.provide(testLayer(offline, appleFake())));
+  });
+
   it.effect('refuses it while the destination still has a change of that id queued', () =>
     // Review (Codex, round 6): with the destination's own event deleted
     // offline there is no row to see, but its delete still waits.

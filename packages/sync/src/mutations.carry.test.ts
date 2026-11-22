@@ -565,6 +565,32 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
     }).pipe(Effect.provide(layer(google)));
   });
 
+  it.effect("a cut that takes a series edit's place still sends its reminders", () => {
+    // Review (Opus, round 8): reminders ride on a flag of the op that set
+    // them. The cut took the edit's place without it, sent the new end of
+    // the series alone, and the reminders reverted when it landed.
+    const google: Google = { patch: 'offline', sent: [] };
+    return Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'master1' };
+      yield* mutations.updateRecurring({
+        ...at,
+        changes: { reminders: { overrides: [{ method: 'popup', minutes: 5 }], useDefault: false } },
+        originalStartUtc: master.startUtc,
+        scope: 'series',
+      });
+      yield* mutations.deleteRecurring({
+        ...at,
+        originalStartUtc: master.startUtc + 8 * DAY,
+        scope: 'following',
+      });
+      google.sent = [];
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      expect(google.sent[0]).toBe('master1: recurrence,reminders');
+    }).pipe(Effect.provide(layer(google)));
+  });
+
   it.effect('splitting the series keeps the carry undoable', () =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;

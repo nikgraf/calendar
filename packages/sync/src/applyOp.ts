@@ -125,6 +125,9 @@ const describeFailure = (value: unknown): string => {
   return String(value);
 };
 
+/** How far back a list is asked for a task's deletion (`deletedIn`): thirty days. */
+const DELETED_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
 /** Event ops a queued move of the same series must not be reordered with. */
 const EVENT_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['create', 'delete', 'rsvp', 'update']);
 
@@ -888,10 +891,26 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           ? yield* deletedIn(op, op.taskListId)
           : false;
       yield* Effect.ignore(revertTaskMove(op, !gone));
+      if (gone && op.taskListId !== undefined) {
+        // Put back as a row Google has no more: it goes, copy and all.
+        const source = op.taskListId;
+        yield* Effect.ignore(
+          transaction(
+            Effect.andThen(
+              taskRepo.removeTask(op.accountId, source, op.eventId),
+              taskRepo.removeCopies(op.accountId, source, [op.eventId]),
+            ),
+          ),
+        );
+      }
       return 'done' as const;
     });
 
-  /** Whether a list names the op's task as deleted since the op was queued; no answer is a no. */
+  /**
+   * Whether a list names the op's task as deleted; no answer is a no. Asked
+   * well back from the op: the task may have been deleted there long
+   * before a device that had not heard of it queued the move.
+   */
   const deletedIn = (op: PendingOp, taskListId: string) =>
     Effect.gen(function* () {
       let pageToken: string | undefined;
@@ -899,7 +918,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         const page = yield* Effect.result(
           tasksClient.listTasks({
             accountId: op.accountId,
-            params: { pageToken, updatedMin: new Date(op.createdAt - 60_000).toISOString() },
+            params: {
+              pageToken,
+              updatedMin: new Date(op.createdAt - DELETED_LOOKBACK_MS).toISOString(),
+            },
             taskListId,
           }),
         );

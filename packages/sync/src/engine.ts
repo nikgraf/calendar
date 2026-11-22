@@ -708,10 +708,17 @@ const make: Effect.Effect<
         // goes, so a discard has nothing to put back. One a queued move
         // brings here is listed where it still is.
         const still = new Set((yield* pendingOpRepo.listAll()).map((op) => op.id));
+        // (every queued move, not each event's next: at the end of a chain
+        // of moves Google has the event in the first calendar still).
         const arriving = new Set(
-          [...(yield* nextMoves(account.id)).values()]
-            .filter((move) => move.targetCalendarId === calendarId)
-            .map((move) => move.eventId),
+          (yield* pendingOpRepo.listAll())
+            .filter(
+              (op) =>
+                op.kind === 'move' &&
+                op.accountId === account.id &&
+                op.targetCalendarId === calendarId,
+            )
+            .map((op) => op.eventId),
         );
         yield* pendingOpRepo.forgetDeleted(account.id, calendarId, [
           ...new Set(
@@ -856,19 +863,26 @@ const make: Effect.Effect<
               .map((op) => op.eventId),
           ),
       );
-      // The tasks whose delete is queued, in whichever list. A move that
-      // landed with its answer lost leaves Google listing a task here
-      // while its copy still sits in the source: a row written from the
-      // listing would bring back a task the user deleted since.
-      const deletingNow = Effect.map(
-        pendingOpRepo.listAll(),
-        (ops) =>
-          new Set(
-            ops
-              .filter((op) => op.kind === 'deleteTask' && op.accountId === account.id)
-              .map((op) => op.eventId),
-          ),
-      );
+      // The tasks whose delete is queued in this list, or in whichever list
+      // while a move of ours for them is queued too. A move that landed
+      // with its answer lost leaves Google listing a task here while its
+      // copy still sits in the source: a row written from the listing
+      // would bring back a task the user deleted since. One deleted in
+      // another list with no move of ours was moved here on another
+      // device: its delete meets a 404 there, and here is where it is.
+      const deletingNow = Effect.map(pendingOpRepo.listAll(), (ops) => {
+        const own = ops.filter((op) => op.accountId === account.id);
+        const moving = new Set(own.filter((op) => op.kind === 'moveTask').map((op) => op.eventId));
+        return new Set(
+          own
+            .filter(
+              (op) =>
+                op.kind === 'deleteTask' &&
+                (op.taskListId === taskListId || moving.has(op.eventId)),
+            )
+            .map((op) => op.eventId),
+        );
+      });
       const order: Array<TaskOrderEntry> = [];
       let pageToken: string | undefined;
       do {

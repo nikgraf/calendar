@@ -330,8 +330,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   (`carriedChangesOf`), so the carried text is never the exception's own
   and goes with a discarded series edit. `listDue` skips parked ops. The UI
   reads the conflict from `listPendingOps` (`PendingOpSummary.conflict`:
-  mine is the op's payload, theirs the event's copy, `null` when Google
-  has the event no more) — a persistent banner on both apps plus the
+  mine is Google's version with the op's own fields over it (`ownVersion`:
+  not also what an earlier change still queued for the event set), theirs
+  the event's copy, cancelled or `null` when Google has the event no more) — a persistent banner on both apps plus the
   queue rows — and `resolveConflict` settles it: **mine** unparks with
   `base_etag` cleared so the re-send overwrites Google (an edit of an
   event Google deleted is re-created under a new id as a standalone
@@ -751,8 +752,11 @@ Rules a change to the queue keeps (each broke once):
   change started from. The push response (ack upsert), an abandoned op
   (`releaseRow`) or a resolved conflict hands the row back to sync.
 - **A page can be the answer a write lost.** The event a queued create
-  inserts, or an event in the calendar its next queued move takes it to,
-  can only be in a page because that write landed: it is settled with
+  inserts, or an event in the calendar its next queued move takes it to
+  once that move was sent, is in a page because that write landed (a move
+  not sent yet cannot have: Google's ids repeat across calendars, and the
+  event there is the destination's own — such a move is refused anyway,
+  `EventAlreadyThereError`): it is settled with
   the page's record as its answer and leaves the queue, right after the
   page's transaction and still under the pass's hold on the drain
   (`landedInPull`, `acknowledge`; such a record is the move's answer and

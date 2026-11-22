@@ -728,6 +728,9 @@ const make: Effect.Effect<
           : new PendingOp({
               accountId,
               attempts: 0,
+              // What the series edit it takes over from changed still goes:
+              // guests, reminders and dropped coordinates ride on flags.
+              attendeesChanged: attendeesFlag({}, inherits),
               ...inheritedPark(inherits),
               baseEtag: master.etag ?? undefined,
               beforePayload: inheritedBefore(queued, master),
@@ -737,10 +740,12 @@ const make: Effect.Effect<
               createdAt: notBefore(queued, now),
               dropsFrom: Math.min(cutAt, replaced?.dropsFrom ?? cutAt),
               eventId: master.id,
+              geoCleared: geoClearedFlag(master, truncated, inherits),
               id: generateEventId(),
               kind: 'update',
               nextAttemptAt: 0,
               payload: truncated,
+              remindersChanged: remindersFlag({}, inherits),
             }),
         inPlace ? replaced?.id : undefined,
       );
@@ -1449,7 +1454,8 @@ const make: Effect.Effect<
           ),
           calendarId,
           changed: inheritedChanged(queued),
-          createdAt: now,
+          // Never ahead of a change of its series it was made under.
+          createdAt: notBefore(yield* opsForEvent(accountId, calendarId, masterId), now),
           eventId: instanceId,
           geoCleared: geoClearedFlag(base, merged, queued),
           id: generateEventId(),
@@ -1875,7 +1881,7 @@ const make: Effect.Effect<
               baseEtag: existing?.etag ?? undefined,
               beforePayload: ownTextOf(inheritedBefore(queued, existing), seriesEdits),
               calendarId,
-              createdAt: now,
+              createdAt: notBefore(yield* opsForEvent(accountId, calendarId, masterId), now),
               eventId: instanceId,
               id: generateEventId(),
               kind: 'delete',
@@ -2426,8 +2432,11 @@ const make: Effect.Effect<
       if (
         elsewhere ||
         (yield* eventRepo.getById(accountId, target.calendarId, eventId)) ||
-        // (A move queued there is this event's own way out of it or back.)
-        (yield* pendingOpRepo.listForEvent(there)).some((op) => op.kind !== 'move')
+        // (A move queued there is this event's own way out of it or back,
+        // and a create its own beginning there.)
+        (yield* pendingOpRepo.listForEvent(there)).some(
+          (op) => op.kind !== 'move' && op.kind !== 'create',
+        )
       ) {
         return yield* Effect.fail(
           new EventAlreadyThereError({
