@@ -40,7 +40,7 @@ import {
 } from '@calendar/google';
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
-import { restoreCarriedText } from './carriedText.ts';
+import { carryBase, restoreCarriedText } from './carriedText.ts';
 import { cancelledOverrideTombstone } from './tombstone.ts';
 import { changedFields, makeHeldEvents, responseOf, withAnswers } from './heldEvents.ts';
 import { makeHeldTasks, withTaskChange } from './heldTasks.ts';
@@ -2082,12 +2082,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const advanceCarried = (op: PendingOp, synced: EventRecord, calendarId: string) =>
     Effect.gen(function* () {
       const carriedText = op.carriedText;
-      if (!carriedText) {
+      const base = carryBase(op);
+      if (!carriedText || !base) {
         return;
       }
       // Google keeps no empty text: an empty field and a missing one are the same value.
-      const changed = (field: CarriedField) =>
-        (synced[field] ?? '') !== (carriedText.base[field] ?? '');
+      const changed = (field: CarriedField) => (synced[field] ?? '') !== (base[field] ?? '');
       const carried: Partial<EventRecord> = {
         ...(changed('description') ? { description: synced.description } : {}),
         ...(changed('location') ? { location: synced.location } : {}),

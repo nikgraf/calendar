@@ -549,6 +549,41 @@ describe('a discarded change leaves what the other queued op sends', () => {
     }).pipe(Effect.provide(offline)),
   );
 
+  it.effect(
+    'a discarded RSVP is not sent along by the edit that replaced one queued before it',
+    () =>
+      Effect.gen(function* () {
+        yield* seed;
+        const mutations = yield* EventMutations;
+        yield* mutations.updateEvent({
+          ...respond,
+          changes: {
+            attendees: [
+              new Attendee({
+                email: 'organizer@example.com',
+                isOrganizer: true,
+                responseStatus: 'accepted',
+              }),
+              new Attendee({ email: 'nik@example.com', responseStatus: 'needsAction' }),
+              new Attendee({ email: 'ann@example.com', responseStatus: 'needsAction' }),
+            ],
+          },
+        });
+        yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+        // Replaces the guest-list edit where it waits, ahead of the answer.
+        yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+        const queue = yield* PendingOpRepo;
+        expect((yield* queue.listAll()).map((op) => op.kind)).toEqual(['update', 'rsvp']);
+        const rsvp = (yield* queue.listAll()).find((op) => op.kind === 'rsvp');
+        yield* mutations.discardPendingOp(rsvp!.id);
+        const edit = (yield* queue.listAll()).find((op) => op.kind === 'update');
+        expect(ownResponseOf(edit?.payload)).toBe('needsAction');
+        expect(edit?.payload?.title).toBe('Planning v2');
+        const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-invite');
+        expect(ownResponseOf(row ?? undefined)).toBe('needsAction');
+      }).pipe(Effect.provide(offline)),
+  );
+
   it.effect('a discarded guest-list edit is not sent along by a queued RSVP', () =>
     Effect.gen(function* () {
       yield* seed;

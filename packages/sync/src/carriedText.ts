@@ -53,13 +53,25 @@ const withText = (row: EventRecord, text: Text, geo?: GeoLocation | null): Event
         }),
       );
 
-/** Google's text of the series, which a queued edit of it is measured against. */
+const textOf = (event: EventRecord): CarriedText['base'] => ({
+  description: event.description ?? null,
+  location: event.location ?? null,
+  title: event.title,
+});
+
+/**
+ * Google's text of the series, which an edit of it is measured against:
+ * the copy the queued op holds (a pull or a refused write replaces it
+ * with Google's newer one), else the local row, which nothing waits on.
+ * Kept from when the op was first queued, another device's rename pulled
+ * since counted as this edit's and was carried over an exception's own
+ * title, which the PATCH never changes on Google.
+ */
+export const carryBase = (op: PendingOp): CarriedText['base'] | undefined =>
+  op.beforePayload ? textOf(op.beforePayload) : op.carriedText?.base;
+
 const baseOf = (master: EventRecord, queued: PendingOp | undefined): CarriedText['base'] =>
-  queued?.carriedText?.base ?? {
-    description: master.description ?? null,
-    location: master.location ?? null,
-    title: master.title,
-  };
+  (queued && carryBase(queued)) ?? textOf(master);
 
 /**
  * The text fields in which a series edit (`merged`) differs from what

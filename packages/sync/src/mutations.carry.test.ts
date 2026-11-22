@@ -26,6 +26,7 @@ import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
+import { makeHeldEvents } from './heldEvents.ts';
 import { EventMutations } from './mutations.ts';
 
 /**
@@ -380,6 +381,36 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       const restored = yield* row(moved.id);
       expect(restored?.location).toBe(geo.source);
       expect(restored?.geo).toEqual(geo);
+    }).pipe(Effect.provide(layer({ patch: 'offline' }))),
+  );
+
+  it.effect("Google's own rename, pulled while an edit waits, is not carried again", () =>
+    Effect.gen(function* () {
+      const events = yield* EventRepo;
+      const queue = yield* PendingOpRepo;
+      yield* series({ location: 'Room 1' });
+      // Another device renamed the series, and named this exception itself
+      // after that; a pull brings both while the location edit waits.
+      const theirs = [
+        new EventRecord({ ...master, etag: '"m-2"', title: 'Daily sync' }),
+        new EventRecord({ ...plain, etag: '"o-5-theirs"', title: 'Retro' }),
+      ];
+      const held = makeHeldEvents({ eventRepo: events, pendingOpRepo: queue });
+      yield* events.upsertMany(yield* held.receive('acc-1', 'cal-1', theirs), { mode: 'pull' });
+      expect((yield* row('master1'))?.title).toBe('Daily sync');
+
+      // The next edit changes no title on Google: the exception keeps its own.
+      yield* (yield* EventMutations).updateRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { description: 'Agenda in the doc' },
+        masterId: 'master1',
+        originalStartUtc: master.startUtc,
+        scope: 'series',
+      });
+      expect((yield* text(plain.id)).title).toBe('Retro');
+      const [op] = yield* masterOp;
+      expect(op?.carriedText?.base.title).toBe('Daily sync');
     }).pipe(Effect.provide(layer({ patch: 'offline' }))),
   );
 

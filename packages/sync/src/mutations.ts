@@ -177,6 +177,37 @@ const inheritedPark = (
 };
 
 /**
+ * An edit that replaces a queued update waits where that one did: ahead of
+ * an answer the user gave after it. The answer is that RSVP's alone, so
+ * the edit sends the one the update it replaces sent. Taken from the row,
+ * the answer was the edit's too: discarded, it still went to Google with
+ * the edit, and its own baseline held it already.
+ */
+const aheadOfAnswer = (
+  payload: EventRecord,
+  queued: ReadonlyArray<PendingOp>,
+  replaced: PendingOp | undefined,
+): EventRecord => {
+  const own =
+    replaced === undefined
+      ? undefined
+      : queued.slice(queued.indexOf(replaced) + 1).find((op) => op.kind === 'rsvp')?.changed;
+  const sent = replaced?.payload?.attendees;
+  if (!own?.length || !sent || !payload.attendees) {
+    return payload;
+  }
+  return new EventRecord({
+    ...payload,
+    attendees: payload.attendees.map((attendee) => {
+      const was = own.includes(attendee.email)
+        ? sent.find((other) => other.email === attendee.email)
+        : undefined;
+      return was ? new Attendee({ ...attendee, responseStatus: was.responseStatus }) : attendee;
+    }),
+  });
+};
+
+/**
  * The fields the queued update a new update takes over from named as its
  * own: they stay the new one's, whatever their value is by now. A rename
  * back to the old title while the rename is out differs from nothing here,
@@ -707,7 +738,7 @@ const make: Effect.Effect<
           id: generateEventId(),
           kind: 'update',
           nextAttemptAt: 0,
-          payload: truncated,
+          payload: aheadOfAnswer(truncated, queued, replaced),
           remindersChanged: remindersFlag({}, queued),
         }),
         replaced?.id,
@@ -1676,7 +1707,7 @@ const make: Effect.Effect<
           id: generateEventId(),
           kind: 'update',
           nextAttemptAt: 0,
-          payload: merged,
+          payload: aheadOfAnswer(merged, queued, replaced),
           recurrenceCleared: recurrenceClearedFlag(changes, queued),
           remindersChanged: remindersFlag(changes, queued),
         }),
@@ -2236,7 +2267,7 @@ const make: Effect.Effect<
             id: generateEventId(),
             kind: 'update',
             nextAttemptAt: 0,
-            payload: merged,
+            payload: aheadOfAnswer(merged, queued, replaced),
             // A series cleared while offline is a single event here already;
             // an edit that replaces that queued op must still clear it there.
             recurrenceCleared: recurrenceClearedFlag(changes, queued),

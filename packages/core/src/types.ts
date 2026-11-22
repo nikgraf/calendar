@@ -350,8 +350,10 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
  */
 export class CarriedText extends Schema.Class<CarriedText>('CarriedText')({
   /**
-   * The master's text as Google last acknowledged it: what "changed" is
-   * measured against, also when later edits coalesce into this op.
+   * The master's text as Google had it when the op was queued. What
+   * "changed" is measured against Google's copy the op holds
+   * (`beforePayload`, `carryBase` in sync); this stands in for an op that
+   * holds none.
    */
   base: Schema.Struct({
     description: Schema.NullOr(Schema.String),
