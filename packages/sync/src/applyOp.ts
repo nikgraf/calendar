@@ -709,6 +709,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       { readonly listId: string; readonly parentId: string | undefined } | undefined
     >,
     now: number,
+    keepsParent: boolean,
   ) =>
     Effect.gen(function* () {
       if (cameBack.size === 0) {
@@ -763,6 +764,11 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             ? taskRepo.markPending(op.accountId, listId, back.id)
             : taskRepo.markSynced(op.accountId, listId, back.id);
           yield* held.refresh(op.accountId, back.id, op.id);
+        }
+        // Google's again under a parent whose delete waits: a subtask
+        // kept is a parent kept here too (`keepParent`).
+        if (row && place?.parentId !== undefined && keepsParent) {
+          yield* keepParent(op.accountId, listId, place.parentId);
         }
       }
     });
@@ -908,7 +914,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         if (backUnder !== undefined && keepsParent) {
           yield* keepParent(op.accountId, to, backUnder);
         }
-        yield* settleCameBack(op, to, cameBack, now);
+        yield* settleCameBack(op, to, cameBack, now, keepsParent);
       }),
     );
 

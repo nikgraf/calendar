@@ -3980,6 +3980,39 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
     );
   });
 
+  it.effect(
+    'a subtask that had moved back keeps the parent too when its first move is undone',
+    () => {
+      // Sequence 6715: the subtask moved out and back, its parent was deleted
+      // without it, and the first move was undone. The move back went with
+      // it, the subtask was Google's again, under the parent, and the
+      // parent's delete took it along: its row was in the source already,
+      // where only a row still in the destination was looked at.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          network.down = true;
+          yield* moveOf(mutations, PACK, 'list-1', 'list-2');
+          yield* mutations.processPendingOps();
+          yield* moveOf(mutations, PACK, 'list-2', 'list-1');
+          yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+          const [own] = yield* (yield* PendingOpRepo).listAll();
+          yield* mutations.discardPendingOp(own!.id);
+          expect(yield* placed).toEqual(['list-1/p', 'list-1/s1/p']);
+          network.down = false;
+          yield* drainAll(mutations);
+          expect(google.taskOf('list-1', 'p')?.deleted).toBeUndefined();
+          expect(google.taskOf('list-1', 's1')?.deleted).toBeUndefined();
+          expect(google.taskOf('list-1', 's2')?.deleted).toBe(true);
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        }),
+      );
+    },
+  );
+
   it.effect('a pull leaves a deleted task gone where a move with a lost answer took it', () => {
     // Sequence 693: the move landed with its answer lost, the user deleted
     // the task in its new list, and a pull of that list — Google lists the
