@@ -498,9 +498,8 @@ const make: Effect.Effect<
   /**
    * What an occurrence edit or delete starts from: the occurrence's row,
    * else the exception a queued series delete took there — Google still
-   * has it while that delete waits behind the master a pull put back (a
-   * pull now puts the exceptions back with it, one made before it did
-   * left them in the delete). Built on the master's slot instead, the edit would patch
+   * has it while that delete waits, and the master may be on the table
+   * again (keep-theirs on another change of it). Built on the master's slot instead, the edit would patch
    * the exception's own changes away and the delete would remember
    * nothing to put back. The series delete stays queued, so nothing else
    * it took comes back. A cancellation it took is no base: the slot
@@ -1785,8 +1784,9 @@ const make: Effect.Effect<
         });
         yield* eventRepo.upsertMany([merged]);
         // Only the latest response needs to reach Google. A delete still
-        // queued goes too: the user answered the copy a pull put back while
-        // it waited, and the answer keeps the event, as an edit does.
+        // queued goes too: the user answered Google's copy put back at its
+        // id while it waited, and the answer keeps the event, as an edit
+        // does.
         yield* restoreTakenExceptions(accountId, calendarId, eventId);
         const queued = yield* opsForEvent(accountId, calendarId, eventId);
         const priorRsvp = queued.find((op) => op.kind === 'rsvp');
@@ -1802,7 +1802,8 @@ const make: Effect.Effect<
             // Sent as If-Match, retried without on a 412 (applyOp): when it
             // holds, the edits queued on this etag can follow the RSVP.
             baseEtag: existing.etag ?? undefined,
-            // Google's copy, when a pull put one back while the delete waited.
+            // Google's copy at a waiting delete's id (isPulledCopy), else the
+            // one the answer it replaces read.
             beforePayload:
               priorRsvp && !isPulledCopy(queued, existing) ? priorRsvp.beforePayload : existing,
             calendarId,
@@ -2141,12 +2142,12 @@ const make: Effect.Effect<
    * in the source (its response lost): it stays queued there with the move
    * behind it, since re-keyed it would insert a second copy in the target.
    *
-   * A delete of the event still queued means the user moved the copy a
-   * pull put back while it waited: the move replaces it, as an edit does
-   * (supersedeQueued). An exception's delete (a this-and-following cut)
-   * goes behind the move, and the copy of it a pull put back moves as
-   * Google's copy, still synced, for that delete to take once it lands
-   * (applyOp dropPulledCopy leaves pending rows alone).
+   * A delete of the event still queued means the user moved Google's copy
+   * put back at its id while it waited (isPulledCopy): the move replaces
+   * it, as an edit does (supersedeQueued). An exception's delete (a
+   * this-and-following cut) goes behind the move, and a row of it put
+   * back as Google's moves with it, still synced, for that delete to take
+   * once it lands (applyOp dropPulledCopy leaves pending rows alone).
    */
   const googleServerMove = (params: MoveEventParams) =>
     Effect.gen(function* () {

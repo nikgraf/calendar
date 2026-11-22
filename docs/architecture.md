@@ -197,20 +197,20 @@ Every Google mutation writes SQLite optimistically, then enqueues a
 `PendingOp` and kicks `processPendingOps` (semaphore-serialized, drains
 due ops oldest-first). Kinds:
 
-| kind            | eventId                       | payload/fields                   | remote call                                                                                                                      |
-| --------------- | ----------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `create`        | client-generated id           | full EventRecord                 | events.insert (idempotent — 409 = already landed); attendees included; `sendUpdates=all` when guests exist                       |
-| `update`        | event id / instance id        | EventRecord + `attendeesChanged` | events.patch (If-Match when etag known); attendees only when flagged; `sendUpdates=all` when guests exist or the list was edited |
-| `delete`        | event id / instance id        | EventRecord (the deleted row)    | events.delete (If-Match when etag known); the payload ties an exception's delete to its series                                   |
-| `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body; If-Match on the queued etag, resent **without** on a 412 (never parks)                        |
-| `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                           |
-| `move`          | master id (source calendar)   | `targetCalendarId`               | events.move?destination= (same account; organizer only; whole series)                                                            |
-| `createTask`    | temp `local-…` id             | title/notes/due                  | tasks.insert (NOT idempotent — see below)                                                                                        |
-| `updateTask`    | task id                       | title/notes/due                  | tasks.patch                                                                                                                      |
-| `completeTask`  | task id                       | completed flag                   | tasks.patch (status; `completed: null` when un-completing)                                                                       |
-| `deleteTask`    | task id                       | —                                | tasks.delete (404/410 = already gone)                                                                                            |
-| `moveTask`      | task id                       | `targetTaskListId`               | tasks.move?destinationTasklist= (same account; subtasks follow)                                                                  |
-| `reorderTask`   | task id                       | `taskParent` / `taskPrevious`    | tasks.move (same list), then the list's order is read back                                                                       |
+| kind            | eventId                       | payload/fields                   | remote call                                                                                                                       |
+| --------------- | ----------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `create`        | client-generated id           | full EventRecord                 | events.insert (idempotent — 409 = already landed); attendees included; `sendUpdates=all` when guests exist                        |
+| `update`        | event id / instance id        | EventRecord + `attendeesChanged` | events.patch (If-Match when etag known); attendees only when flagged; `sendUpdates=all` when guests exist or the list was edited  |
+| `delete`        | event id / instance id        | EventRecord (the deleted row)    | events.delete (If-Match when etag known); the payload ties an exception's delete to its series                                    |
+| `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body: Google's guests with the answer over them; If-Match, resent **without** on a 412 (never parks) |
+| `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                            |
+| `move`          | master id (source calendar)   | `targetCalendarId`               | events.move?destination= (same account; organizer only; whole series)                                                             |
+| `createTask`    | temp `local-…` id             | title/notes/due                  | tasks.insert (NOT idempotent — see below)                                                                                         |
+| `updateTask`    | task id                       | title/notes/due                  | tasks.patch                                                                                                                       |
+| `completeTask`  | task id                       | completed flag                   | tasks.patch (status; `completed: null` when un-completing)                                                                        |
+| `deleteTask`    | task id                       | —                                | tasks.delete (404/410 = already gone)                                                                                             |
+| `moveTask`      | task id                       | `targetTaskListId`               | tasks.move?destinationTasklist= (same account; subtasks follow)                                                                   |
+| `reorderTask`   | task id                       | `taskParent` / `taskPrevious`    | tasks.move (same list), then the list's order is read back                                                                        |
 
 `PendingOpSummary` in core/backend.ts has its **own kind literal** — extend
 it whenever a kind is added. Rules that keep the queue correct:
@@ -260,7 +260,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   over it again (`heldEvents.ts`): an update keeps the fields it changed
   against the old copy and takes Google's in every other (`rebaseOnto`),
   an RSVP lays its answers over Google's guests (and an edit queued after
-  it keeps them), an edit made on the very version that arrives is left
+  it keeps them; what it sends is the copy's guest list with those
+  answers, never the row's, which may show a guest-list edit still
+  queued or parked), an edit made on the very version that arrives is left
   as it is — a full list names every event, changed or not — and the row
   shows the result, still `pending`. The reply to a write sent without
   If-Match (an answer resent after its 412, keep-mine) may hold another

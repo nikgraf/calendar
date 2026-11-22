@@ -527,11 +527,15 @@ export const settlePulledSeries = (
     const written = new Set(page.written.map((record) => record.id));
     const deleted = new Set(page.deletions);
     const deletes = yield* deps.pendingOpRepo.listDeletes(accountId, calendarId);
+    // An occurrence's delete names its series in what it deleted (its
+    // tombstone, or the exception it took) and in Google's copy of that.
     const goneSeries = new Set(
       deletes.flatMap((remove) =>
-        [remove.eventId, remove.beforePayload?.recurringEventId].filter(
-          (id): id is string => id !== undefined && deleted.has(id),
-        ),
+        [
+          remove.eventId,
+          remove.beforePayload?.recurringEventId,
+          remove.payload?.recurringEventId,
+        ].filter((id): id is string => id !== undefined && deleted.has(id)),
       ),
     );
     for (const masterId of goneSeries) {

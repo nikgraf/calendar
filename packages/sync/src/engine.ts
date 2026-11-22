@@ -527,15 +527,17 @@ const make: Effect.Effect<
                   mode: 'pull',
                   upserts: rows,
                 });
-                // Google has these no more: a queued delete of one has
-                // nothing left to put back.
-                yield* pendingOpRepo.forgetDeleted(account.id, calendarId, gone);
-                // A master put back at its waiting delete brings back what
-                // the delete took; a series deleted on Google takes it away.
+                // A series deleted on Google takes its exceptions along: the
+                // synced rows of one whose occurrence has a delete waiting
+                // here too, found through that delete — before its copy
+                // goes, which names the series.
                 yield* settlePulledSeries(taken, account.id, calendarId, {
                   deletions: gone,
                   written: rows,
                 });
+                // Google has these no more: a queued delete of one has
+                // nothing left to put back.
+                yield* pendingOpRepo.forgetDeleted(account.id, calendarId, gone);
                 return landed;
               }),
             );

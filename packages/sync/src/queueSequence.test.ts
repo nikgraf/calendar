@@ -4318,6 +4318,122 @@ describe("pending-op queue: Google's copy and the changes laid over it", () => {
     },
   );
 
+  it.effect('a series deleted elsewhere takes its other changed occurrences along', () => {
+    // The user deleted one changed occurrence (its delete waits) and
+    // another device deleted the series. The page names the series alone.
+    // What tied the waiting delete to that series was the copy it held,
+    // which the same page had just removed: the series' other exception
+    // stayed, an event of its own, until a full resync.
+    const google = newFake();
+    const network = writesDown(google);
+    const moved = googleInstanceId('r2', R2_START + DAY, false);
+    const fourth = R2_START + 3 * DAY;
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...R2,
+          changes: { location: 'Room 4' },
+          originalStartUtc: fourth,
+          scope: 'instance',
+        });
+        yield* mutations.processPendingOps();
+        network.down = true;
+        yield* mutations.deleteRecurring({
+          ...R2,
+          originalStartUtc: R2_START + DAY,
+          scope: 'instance',
+        });
+        google.deleteEventServerSide('cal-2', 'r2');
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        const rows = yield* (yield* SqlClient)<{
+          readonly id: string;
+          readonly sync_status: string;
+        }>`SELECT id, sync_status FROM events WHERE id LIKE 'r2%' ORDER BY id`;
+        // The user's own delete keeps its tombstone until it is sent.
+        expect(rows).toEqual([{ id: moved, sync_status: 'pending' }]);
+      }),
+    );
+  });
+
+  it.effect(
+    'an answer given while a guest-list edit is parked leaves the guests to that choice',
+    () => {
+      // The user added a guest; another device added another, and the pull
+      // parked the edit. The user then answered the invitation: the answer
+      // went out with the row's guest list, the user's, and Google had the
+      // one guest more and the other less while the banner still asked.
+      const google = newFake();
+      google.putEvent('cal-1', {
+        ...timed('invite', 6, 9, 'Planning'),
+        attendees: [
+          { email: EMAIL, responseStatus: 'needsAction', self: true },
+          { email: 'host@example.com', organizer: true, responseStatus: 'accepted' },
+        ],
+        organizer: { email: 'host@example.com' },
+      });
+      const network = writesDown(google);
+      const guests = () =>
+        (google.eventOf('cal-1', 'invite')?.attendees ?? []).map((guest) => guest.email).toSorted();
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          network.down = true;
+          yield* mutations.updateEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            changes: {
+              attendees: [
+                new Attendee({ email: EMAIL, isSelf: true, responseStatus: 'needsAction' }),
+                new Attendee({
+                  email: 'host@example.com',
+                  isOrganizer: true,
+                  responseStatus: 'accepted',
+                }),
+                new Attendee({ email: 'carol@example.com', responseStatus: 'needsAction' }),
+              ],
+            },
+            eventId: 'invite',
+          });
+          google.patchEventServerSide('cal-1', 'invite', {
+            attendees: [
+              { email: EMAIL, responseStatus: 'needsAction', self: true },
+              { email: 'host@example.com', organizer: true, responseStatus: 'accepted' },
+              { email: 'dave@example.com', responseStatus: 'needsAction' },
+            ],
+          });
+          yield* TestClock.adjust('1 minute');
+          yield* (yield* SyncEngine).syncAll();
+          expect(
+            (yield* (yield* PendingOpRepo).listAll()).map((op) => op.conflictAt !== undefined),
+          ).toEqual([true]);
+          yield* mutations.respondToEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            eventId: 'invite',
+            response: 'accepted',
+          });
+          network.down = false;
+          yield* drainAll(mutations);
+          expect(guests()).toEqual(['dave@example.com', 'host@example.com', EMAIL]);
+          expect(
+            google.eventOf('cal-1', 'invite')?.attendees?.find((guest) => guest.email === EMAIL)
+              ?.responseStatus,
+          ).toBe('accepted');
+          expect(
+            (yield* (yield* PendingOpRepo).listAll()).map((op) => [
+              op.kind,
+              op.conflictAt !== undefined,
+            ]),
+          ).toEqual([['update', true]]);
+        }),
+      );
+    },
+  );
+
   it.effect('an event deleted while its create was out does not come back with a pull', () => {
     // The create's answer was lost and the user deleted the event: its
     // delete waits behind the create. The page that brings the event wrote

@@ -41,7 +41,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
-import { changedFields, makeHeldEvents, responseOf } from './heldEvents.ts';
+import { changedFields, makeHeldEvents, responseOf, withAnswers } from './heldEvents.ts';
 import { makeHeldTasks, withTaskChange } from './heldTasks.ts';
 import { askSplits, holdsSplit, ofSplitSeries, settleSplit } from './splitSeries.ts';
 import {
@@ -144,10 +144,12 @@ const TASK_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
 const PARKABLE_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['delete', 'update']);
 
 /**
- * Whether `row` is Google's copy of an event a pull put back while a
- * delete of it waits (`queued`: the event's ops). A delete takes its row
- * or leaves a pending tombstone, and a pull never writes over a pending
- * row, so a synced, live row there can only be the pull's.
+ * Whether `row` is Google's copy of an event put back on the table while
+ * a delete of it still waits (`queued`: the event's ops). A delete takes
+ * its row or leaves a pending tombstone, and a pull writes no row for an
+ * event whose delete waits, so a synced, live row there is Google's
+ * exception put back for that delete to take: by a discard or keep-theirs
+ * of the series change that dropped it (`restoreDropped`, `putBack`).
  */
 export const isPulledCopy = (
   queued: ReadonlyArray<PendingOp>,
@@ -451,9 +453,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         }
         return;
       }
-      // A synced row here is a pull's (Google's copy came back, or never
-      // left): it stays, and that pull put back the exceptions with it
-      // (takenExceptions.ts).
+      // A synced row here is Google's copy, put back already
+      // (`restoreDropped`, keep-theirs) or never taken: it stays.
       if (!current || current.syncStatus === 'pending') {
         const restored = new EventRecord({
           ...op.beforePayload,
@@ -858,9 +859,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
 
   /**
    * A task move landed (`task` is Google's copy in `destination`): the row
-   * there settles, its subtasks' rows are handed back to sync, and copies
-   * a pull put back into the source while the move waited go — Google
-   * sends no tombstone for a task that left a list.
+   * there settles, its subtasks' rows are handed back to sync, and rows of
+   * them still in the source go — Google sends no tombstone for a task
+   * that left a list.
    */
   const settleTaskMove = (op: PendingOp, destination: string, task: GcalTask) =>
     Effect.gen(function* () {
@@ -2338,8 +2339,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
 
   /**
    * The create has Google's id now (`taskId`). Deleted while it was out,
-   * the task stays gone here — a pull's copy of the one that landed too —
-   * and the delete, which took that id, goes next instead of waiting out
+   * the task stays gone here — a row of the one that landed too — and the
+   * delete, which took that id, goes next instead of waiting out
    * the backoff it collected behind the temp id. Otherwise `show` writes
    * the row.
    */
@@ -2567,7 +2568,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       return 'done' as const;
     });
 
-  /** An event delete: sent on its etag, then a copy a pull put back meanwhile goes. */
+  /** An event delete: sent on its etag, then a synced copy still at its id goes. */
   const sendDelete = (op: PendingOp) =>
     Effect.gen(function* () {
       yield* client.deleteEvent({
@@ -2705,7 +2706,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (!op.payload?.attendees) {
         return 'done' as const;
       }
-      const attendees = op.payload.attendees.map((attendee) => ({
+      // Google's guests with the answers over them, not the row's: the row
+      // may show a guest-list edit that is still queued — parked, even —
+      // and an answer is no place to send that. Google replaces the whole
+      // list with what a PATCH names.
+      const guests = op.beforePayload?.attendees
+        ? (withAnswers(op.beforePayload, op, op.beforePayload).attendees ?? op.payload.attendees)
+        : op.payload.attendees;
+      const attendees = guests.map((attendee) => ({
         email: attendee.email,
         responseStatus: attendee.responseStatus,
       }));
