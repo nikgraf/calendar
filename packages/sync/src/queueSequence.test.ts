@@ -2720,16 +2720,11 @@ const runSequence = (seed: number) => {
 };
 
 /**
- * Seeds that still fail, with the open gap each one meets (the skipped
- * tests at the end show each gap on its own): none in the first thousand.
- * Past it, to 7,000: 1347, 2936, 3309 and 3904 (the deletes a cut queued,
- * sent after a delete of the series replaced it), 1876, 2506, 2901, 3116
- * and 5388 (a change discarded after it had landed with its answer lost),
- * 3532 (another device's exception past a queued cut, todo.md) and 3748
- * (a step that leaves what is recorded of Google). Found with QUEUE_SEQUENCE_RUNS=7000;
- * a change to the steps, their odds or the requests the app sends
- * reshuffles every sequence, so search again rather than trust these
- * after one.
+ * Seeds that still fail, with the open gap each one meets: none in the
+ * first 7,000 (QUEUE_SEQUENCE_RUNS=7000, 2026-11-22; the Queue search
+ * workflow runs them nightly). A change to the steps, their odds or the
+ * requests the app sends reshuffles every sequence, so search again
+ * rather than trust a seed number after one.
  */
 const KNOWN_FAILING: ReadonlyMap<number, string> = new Map<number, string>();
 
@@ -6234,6 +6229,52 @@ describe('pending-op queue: what goes with a change of a series', () => {
           'confirmed',
         );
         expect(drawnOnGoogle(google, 'cal-2', 'r2')).toHaveLength(4);
+      }),
+    );
+  });
+});
+
+describe('pending-op queue: a move given up after it was sent', () => {
+  it.effect("a to-do's change made meanwhile follows it to where the move had landed", () => {
+    // The move's answer was lost, and Google cannot be asked when it is
+    // discarded. Put back at once (as a move that never reached Google
+    // would be), the to-do showed in its old list, and the rename made
+    // there met a 404. The move waits for Google's word instead.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        lostThenRefused(
+          google,
+          (call) => call.url.includes('/move') || call.url.includes('/lists/'),
+        );
+        yield* mutations.moveTask({
+          accountId: ACCOUNT_ID,
+          draft: { dueDate: due(5).slice(0, 10), title: 'Pack' },
+          target: { accountId: ACCOUNT_ID, taskListId: 'list-2' },
+          taskId: 's2',
+          taskListId: 'list-1',
+        });
+        yield* mutations.processPendingOps();
+        yield* discardAll(mutations);
+        expect((yield* ops.listAll()).map((op) => [op.kind, op.discarded])).toEqual([
+          ['moveTask', true],
+        ]);
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { title: 'Pack the bags' },
+          taskId: 's2',
+          taskListId: 'list-2',
+        });
+        google.fault = undefined;
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        // Never sent again: found in its destination, and the rename after it.
+        expect(writes(google)).toEqual(['PATCH lists/list-2/tasks/s2']);
+        expect(google.taskOf('list-2', 's2')?.title).toBe('Pack the bags');
+        expect(yield* ops.listAll()).toEqual([]);
       }),
     );
   });

@@ -422,6 +422,35 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
     }).pipe(Effect.provide(layer({ patch: 'offline' }))),
   );
 
+  it.effect("a rename set back gives an exception's queued change its own title back", () => {
+    // The series' rename had won over the exception's own title, in its
+    // row and in what its queued change sends. Set back to the title
+    // Google has, the series no longer changes it there, so nothing is
+    // copied: the row showed the exception's own again, while its change
+    // still sent the rename that was gone.
+    const google: Google = { patch: 'offline', sent: [] };
+    return Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* series({ title: 'Standup' });
+      yield* mutations.updateRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Custom' },
+        masterId: 'master1',
+        originalStartUtc: moved.originalStartUtc!,
+        scope: 'instance',
+      });
+      yield* series({ title: 'Weekly' });
+      const own = Effect.map(
+        (yield* PendingOpRepo).listAll(),
+        (ops) => ops.find((op) => op.eventId === moved.id)?.payload?.title,
+      );
+      expect([yield* own, (yield* text(moved.id)).title]).toEqual(['Weekly', 'Weekly']);
+      yield* series({ title: 'Daily' });
+      expect([yield* own, (yield* text(moved.id)).title]).toEqual(['Custom', 'Custom']);
+    }).pipe(Effect.provide(layer(google)));
+  });
+
   it.effect('an exception edited under a queued rename keeps only its own change', () => {
     // Its change was measured against Google's copy of it, which has its
     // own title: the carried one counted as the exception's, and went to

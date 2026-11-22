@@ -64,7 +64,13 @@ import { makeHeldEvents } from './heldEvents.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
 import { countAppleChangedOccurrences, findAppleOccurrence } from './appleOccurrence.ts';
-import { carriedFields, planCarry, restoreCarriedText, withOwnText } from './carriedText.ts';
+import {
+  carriedFields,
+  planCarry,
+  restoreCarriedChanges,
+  restoreCarriedText,
+  withOwnText,
+} from './carriedText.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
   CalendarNotWritableError,
@@ -1582,6 +1588,16 @@ const make: Effect.Effect<
         // A sent create stays ahead: this patch follows whatever it did.
         replaced?.id,
       );
+      // A field the series no longer changes on Google (set back to what
+      // Google has) is copied onto nothing: an occurrence's queued change
+      // that had taken the series' text there sends its own again.
+      if (replaced) {
+        yield* restoreCarriedChanges(
+          pendingOpRepo,
+          replaced,
+          TEXT_FIELDS.filter((field) => !carried.includes(field)),
+        );
+      }
       yield* carryOntoQueued(behind, merged, sets);
       yield* Effect.forEach(dropped.deletes, enqueue);
     });

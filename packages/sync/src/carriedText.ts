@@ -181,10 +181,56 @@ export const withOwnText = (row: EventRecord, op: PendingOp): EventRecord => {
 };
 
 /**
+ * The queued changes of the exceptions `op` (a series edit) carried text
+ * onto send what they had set themselves again, in `fields`: they had
+ * taken the series' text there when the edit set it (`carryOntoQueued` in
+ * mutations.ts), and the edit is given up, or no longer changes that
+ * field on Google.
+ */
+export const restoreCarriedChanges = (
+  pendingOpRepo: PendingOpRepoShape,
+  op: PendingOp,
+  fields: ReadonlyArray<Field> = FIELDS,
+): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    if (op.kind !== 'update' || !op.carriedText || !op.payload) {
+      return;
+    }
+    const series = op.payload;
+    for (const entry of op.carriedText.overrides) {
+      for (const other of yield* pendingOpRepo.listForEvent({
+        accountId: op.accountId,
+        calendarId: op.calendarId,
+        eventId: entry.eventId,
+      })) {
+        const payload = other.payload;
+        if (other.kind !== 'update' || !payload) {
+          continue;
+        }
+        const own: Text = {};
+        for (const field of fields) {
+          if (
+            entry[field] !== undefined &&
+            other.changed?.includes(field) === true &&
+            same(payload[field], series[field])
+          ) {
+            own[field] = entry[field];
+          }
+        }
+        if (Object.keys(own).length > 0) {
+          yield* pendingOpRepo.setPayload(
+            other.id,
+            withText(payload, own, own.location === undefined ? undefined : entry.geo),
+          );
+        }
+      }
+    }
+  });
+
+/**
  * Puts back the exceptions' own text when `op` is abandoned (`withOwnText`,
- * row by row), and in the queued changes of those exceptions that took the
- * series' text over their own (`carryOntoQueued` in mutations.ts): each
- * sends what it had set itself again.
+ * row by row), and in the queued changes of those exceptions
+ * (`restoreCarriedChanges`).
  */
 export const restoreCarriedText = (
   { eventRepo, pendingOpRepo }: { eventRepo: EventRepoShape; pendingOpRepo: PendingOpRepoShape },
@@ -204,32 +250,8 @@ export const restoreCarriedText = (
       if (restored !== row) {
         rows.push(restored);
       }
-      for (const other of yield* pendingOpRepo.listForEvent({
-        accountId: op.accountId,
-        calendarId: op.calendarId,
-        eventId: entry.eventId,
-      })) {
-        const payload = other.payload;
-        const own: Text = {};
-        for (const field of FIELDS) {
-          if (
-            entry[field] !== undefined &&
-            other.changed?.includes(field) === true &&
-            payload !== undefined &&
-            op.payload !== undefined &&
-            same(payload[field], op.payload[field])
-          ) {
-            own[field] = entry[field];
-          }
-        }
-        if (other.kind === 'update' && payload && Object.keys(own).length > 0) {
-          yield* pendingOpRepo.setPayload(
-            other.id,
-            withText(payload, own, own.location === undefined ? undefined : entry.geo),
-          );
-        }
-      }
     }
+    yield* restoreCarriedChanges(pendingOpRepo, op);
     if (rows.length > 0) {
       yield* eventRepo.upsertMany(rows);
     }
