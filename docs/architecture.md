@@ -321,7 +321,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   ordinary retry. What Google answers outside a pull is kept
   (`learned`): the fetch after a 412 for a change that left the queue
   meanwhile, and the series a split-off one asks about, are laid under
-  what is queued for the event or, with nothing queued, become the row. A series PATCH that changed text lands that text on
+  what is queued for the event or, with nothing queued, become the row;
+  the answer of a move that landed after the event moved on again goes
+  to the rows the next move holds (`tellMovedOn`). A series PATCH that changed text lands that text on
   its exceptions too (`advanceCarried` folds it into their copies, and
   into the payload of an edit queued before the series edit, or of one
   queued after it in the fields it did not change itself, which would
@@ -711,6 +713,14 @@ Rules a change to the queue keeps (each broke once):
 - A fix to one queue path checks every producer of the op it touches,
   a reviewer's included: cuts, rule changes and new times all go through
   `dropOverridesFrom`, and a fallback keyed on it broke rule changes.
+- While an event's move waits, what waits behind it sends no If-Match:
+  the move gives the event another etag. That holds when the move is
+  queued (`rekey`) and when a pull of the calendar it leaves brings a
+  version meanwhile (`showMoving`): armed with that calendar's etag, an
+  occurrence's delete met a 412 nobody caused and asked the user.
+- A task's changes re-queued for another list go behind the move that
+  takes the task there (a subtask under its parent's waiting move):
+  `created_at` decides the order, and an older change sorted ahead.
 - Nothing is queued that Google does itself with another write: the
   deletes a cut once queued for the exceptions its PATCH cancels were
   never meant to be sent, and every path that replaced, discarded or
