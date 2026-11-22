@@ -1665,7 +1665,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (
         (yield* pendingOpRepo.listForEvent(event)).some((queued) => queued.beforePayload != null)
       ) {
-        return yield* heldEvents.take(there);
+        // Only where Google's version holds another device's change: the
+        // etag alone moved with our own move, and taken as news, that
+        // parked a delete made since for the user to choose.
+        if (!(yield* onlyMoved(op, onward, () => there))) {
+          yield* heldEvents.take(there);
+        }
+        return;
       }
       const row = yield* eventRepo.getById(op.accountId, onward, op.eventId);
       if (row) {

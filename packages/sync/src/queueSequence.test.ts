@@ -6689,6 +6689,31 @@ describe('pending-op queue: a move that landed after the event moved on', () => 
   });
 });
 
+describe('pending-op queue: a delete made after a move there and back', () => {
+  it.effect('goes through once both moves landed, unasked', () => {
+    // Sequences 801, 879 and 984 at 80 steps: the first move's answer was
+    // handed on to the calendar the second one takes the event to, as
+    // Google's newer version. Only its etag was new, by our own move: the
+    // delete made there was parked for the user to choose.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* moveE1(mutations, 'cal-2', 'cal-1');
+        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: 'e1' });
+        network.down = false;
+        yield* drainAll(mutations);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        expect(google.eventOf('cal-1', 'e1')?.status).toBe('cancelled');
+      }),
+    );
+  });
+});
+
 describe('pending-op queue: a pull of the calendar a moving series leaves', () => {
   it.effect("does not arm an occurrence's waiting delete with that calendar's etag", () => {
     // Sequence 1088 at 80 steps: a changed occurrence deleted, its series
