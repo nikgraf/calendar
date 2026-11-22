@@ -61,7 +61,9 @@ export const pendingOpLabel = (op: {
     op.conflict !== undefined
       ? 'changed on Google — choose a version'
       : op.discarded === true
-        ? 'discarded — asking Google whether it had moved'
+        ? op.kind === 'move' || op.kind === 'moveTask'
+          ? 'discarded — asking Google whether it had moved'
+          : 'discarded — asking Google what it has'
         : op.attempts > 0
           ? `retrying (${String(op.attempts)}×)`
           : null,

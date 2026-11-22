@@ -41,6 +41,10 @@ describe('pendingOpLabel', () => {
     });
     expect(label.retry).toBe('discarded — asking Google whether it had moved');
     expect(label.reason).toBeNull();
+    // Any other change shows so only while its discard asks, a moment.
+    expect(pendingOpLabel({ ...op, attempts: 1, discarded: true }).retry).toBe(
+      'discarded — asking Google what it has',
+    );
   });
 
   it('gives no reason before a failure or while a conflict waits for a choice', () => {
