@@ -934,6 +934,7 @@ const make: Effect.Effect<
 
   const {
     acknowledge,
+    acknowledgeTasks,
     apply: applyOp,
     dropUndrawn,
     releaseAccountCopies,
@@ -1024,6 +1025,17 @@ const make: Effect.Effect<
             }
           }),
         { discard: true },
+      ),
+    );
+
+  const landedTasksInPull: EventMutationsShape['landedTasksInPull'] = (
+    accountId,
+    taskListId,
+    items,
+  ) =>
+    Effect.ignore(
+      Effect.flatMap(acknowledgeTasks(accountId, taskListId, items), (settled) =>
+        Effect.forEach(settled, finish, { discard: true }),
       ),
     );
 
@@ -2095,6 +2107,8 @@ const make: Effect.Effect<
     discardPendingOp,
 
     landedInPull,
+
+    landedTasksInPull,
 
     processPendingOps,
 

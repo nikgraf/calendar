@@ -1,7 +1,8 @@
 name: Queue search
 
 # The seeded sequence test of the pending-op queue
-# (packages/sync/src/queueSequence.test.ts) over 7,000 seeds. The gate
+# (packages/sync/src/queueSequence.test.ts) over 7,000 seeds, and over
+# 2,000 at twice the steps. The gate
 # runs its first 50 on every push; what a change breaks past them showed
 # only in a wider search run by hand, or in review. Nightly — but only
 # when main moved since the last completed run — and on demand from the
@@ -73,5 +74,14 @@ jobs:
         env:
           QUEUE_SEQUENCE_RUNS: ${{ inputs.runs || '7000' }}
           # The seeds the test file lists as known are searched too.
+          QUEUE_SEQUENCE_KNOWN: '1'
+        run: pnpm exec vp test run packages/sync/src/queueSequence.test.ts
+      # Twice as many steps reach what forty do not: states that need a
+      # lost answer, a move and a discard in one sequence.
+      - name: Run the long sequences
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_SEQUENCE_RUNS: '2000'
+          QUEUE_SEQUENCE_STEPS: '80'
           QUEUE_SEQUENCE_KNOWN: '1'
         run: pnpm exec vp test run packages/sync/src/queueSequence.test.ts

@@ -297,6 +297,15 @@ export interface ApplyOp {
    * no request out (under the drain's gate).
    */
   readonly acknowledge: (op: PendingOp, record: EventRecord) => Effect.Effect<boolean>;
+  /**
+   * The same for a list's page of tasks, before the page is written: the
+   * sent creates of that list a task in it settles, each still queued.
+   */
+  readonly acknowledgeTasks: (
+    accountId: string,
+    taskListId: string,
+    items: ReadonlyArray<GcalTask>,
+  ) => Effect.Effect<ReadonlyArray<PendingOp>>;
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
   /**
    * After a change of a series was given up: takes along the queued
@@ -337,6 +346,14 @@ const tempIdGate = (op: PendingOp): ApplyOutcome | undefined => {
   }
   return undefined;
 };
+
+/** Whether Google's task holds what this create sent: title, day, notes and parent. */
+const sameAsSent = (op: PendingOp, candidate: GcalTask): boolean =>
+  !candidate.deleted &&
+  (candidate.title ?? '') === op.taskTitle &&
+  (candidate.due?.slice(0, 10) ?? undefined) === (op.taskDue ?? undefined) &&
+  (candidate.notes ?? undefined) === op.taskNotes &&
+  (candidate.parent ?? undefined) === op.taskParent;
 
 export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const {
@@ -2651,13 +2668,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           taskListId,
         });
         for (const candidate of page.items ?? []) {
-          if (
-            !candidate.deleted &&
-            (candidate.title ?? '') === op.taskTitle &&
-            (candidate.due?.slice(0, 10) ?? undefined) === (op.taskDue ?? undefined) &&
-            (candidate.notes ?? undefined) === op.taskNotes &&
-            (candidate.parent ?? undefined) === op.taskParent
-          ) {
+          if (sameAsSent(op, candidate)) {
             matches.push(candidate);
           }
         }
@@ -3292,6 +3303,69 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const settleDiscardedMove = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     op.kind === 'moveTask' ? settleOrRevertTaskMove(op, true) : settleOrReleaseMove(op);
 
+  /**
+   * A pull's page of one list, before it is written: a task in it that a
+   * sent create of this list made (its answer lost) settles that create,
+   * as its retry would have (`sendCreateTask`), and the page then finds
+   * the task's row here. Written beside the temporary row first, the
+   * to-do showed twice until that retry, each open to changes of its own:
+   * one keyed to a list the other had left met a 404. Only a task this
+   * device has no row of, changed since the create was sent, and the
+   * only such match in the page; with a delete queued behind the create,
+   * only one the create itself made (`madeBy`).
+   */
+  const acknowledgeTasks = (
+    accountId: string,
+    taskListId: string,
+    items: ReadonlyArray<GcalTask>,
+  ): Effect.Effect<ReadonlyArray<PendingOp>> =>
+    Effect.orElseSucceed(
+      Effect.gen(function* () {
+        const settled: Array<PendingOp> = [];
+        const taken = new Set<string>();
+        const creates = (yield* pendingOpRepo.listAll()).filter(
+          (op) =>
+            op.kind === 'createTask' &&
+            op.accountId === accountId &&
+            op.taskListId === taskListId &&
+            op.dispatchedAt !== undefined,
+        );
+        for (const queued of creates) {
+          // Re-read: an earlier one's id went into the ones behind it.
+          const op = yield* pendingOpRepo.getById(queued.id);
+          const stamp = op?.dispatchedAt;
+          if (!op || stamp === undefined) {
+            continue;
+          }
+          const deleted = (yield* deletesBehind(accountId, taskListId, op.eventId)).length > 0;
+          const matches: Array<GcalTask> = [];
+          for (const item of items) {
+            const updated = item.updated === undefined ? Number.NaN : Date.parse(item.updated);
+            if (
+              !taken.has(item.id) &&
+              sameAsSent(op, item) &&
+              updated >= stamp - 60_000 &&
+              (yield* taskRepo.get(accountId, taskListId, item.id)) === undefined &&
+              (!deleted || (yield* madeBy(op, stamp, taskListId, item)))
+            ) {
+              matches.push(item);
+            }
+          }
+          const [adopted] = matches;
+          if (adopted && matches.length === 1) {
+            taken.add(adopted.id);
+            const now = yield* Clock.currentTimeMillis;
+            yield* swapInTask(op, taskListId, adopted, (record) =>
+              taskRepo.upsertTasks([record], now),
+            );
+            settled.push(op);
+          }
+        }
+        return settled;
+      }),
+      (): ReadonlyArray<PendingOp> => [],
+    );
+
   const acknowledge = (op: PendingOp, record: EventRecord): Effect.Effect<boolean> => {
     if (op.kind === 'create') {
       // The record may hold what another device changed since the create
@@ -3314,6 +3388,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
 
   return {
     acknowledge,
+    acknowledgeTasks,
     apply,
     dropUndrawn,
     releaseAccountCopies,

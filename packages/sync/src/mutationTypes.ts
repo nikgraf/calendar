@@ -28,7 +28,7 @@ import type {
   TaskMoveLoss,
   TaskToEventLoss,
 } from '@calendar/core';
-import type { GoogleRequestError } from '@calendar/google';
+import type { GcalTask, GoogleRequestError } from '@calendar/google';
 import type { RemindersError } from '@calendar/reminders';
 import { Data, type Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
@@ -314,6 +314,16 @@ export interface EventMutationsShape {
    */
   readonly landedInPull: (
     landed: ReadonlyArray<{ readonly opId: string; readonly record: EventRecord }>,
+  ) => Effect.Effect<void>;
+  /**
+   * The same for to-dos, before a list's page is written: a task in it
+   * that a sent create of that list made settles the create, so the page
+   * finds the task's row here instead of writing a second one.
+   */
+  readonly landedTasksInPull: (
+    accountId: string,
+    taskListId: string,
+    items: ReadonlyArray<GcalTask>,
   ) => Effect.Effect<void>;
   /**
    * Moves an event (the whole series for a recurring one) to another

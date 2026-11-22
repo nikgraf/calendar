@@ -912,6 +912,8 @@ const make: Effect.Effect<
             taskListId,
           }),
         );
+        // A task a sent create of ours made settles that create first.
+        yield* mutations.landedTasksInPull(account.id, taskListId, page.items ?? []);
         const listed: Array<TaskRecord> = [];
         const deletions: Array<string> = [];
         for (const item of page.items ?? []) {

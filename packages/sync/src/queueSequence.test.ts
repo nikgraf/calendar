@@ -3528,6 +3528,43 @@ describe('pending-op queue: a held task and Google’s copy of it', () => {
     );
   });
 
+  it.effect('a pull that brings the task a lost create made settles the create', () => {
+    // The create landed with its answer lost: a pull wrote Google's task
+    // beside the temporary row, and until the create's retry adopted it
+    // the to-do showed twice, each open to edits of its own.
+    const google = newFake();
+    lostThenRefused(google, (call) => call.method !== 'GET');
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const sql = yield* SqlClient;
+        const created = yield* mutations.createTask({
+          accountId: ACCOUNT_ID,
+          taskListId: 'list-1',
+          title: 'Groceries',
+        });
+        yield* mutations.processPendingOps();
+        // Renamed while the create is out: the change waits behind it.
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { notes: 'Oat milk' },
+          taskId: created.id,
+          taskListId: 'list-1',
+        });
+        // The pull comes before the create's retry is due.
+        yield* (yield* SyncEngine).syncAll();
+        const theirs = google.tasksIn('list-1').find((task) => task.title === 'Groceries');
+        expect(
+          yield* sql`SELECT id, notes, sync_status FROM tasks WHERE title = 'Groceries'`,
+        ).toEqual([{ id: theirs?.id, notes: 'Oat milk', sync_status: 'pending' }]);
+        expect((yield* (yield* PendingOpRepo).listAll()).map((op) => op.kind)).toEqual([
+          'updateTask',
+        ]);
+      }),
+    );
+  });
+
   it.effect('a pull shows Google’s newer copy under a queued edit, and a discard leaves it', () => {
     // The gap the event rows still have (below), closed for tasks: the
     // pull used to skip a row a queued op held, its watermark moved past
