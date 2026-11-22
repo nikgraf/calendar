@@ -291,8 +291,6 @@ export interface ApplyOp {
    * it (see the implementation).
    */
   readonly dropUndrawn: (op: PendingOp) => Effect.Effect<void, SqlError>;
-  /** Gives up the updates of the event queued behind `op`, the last first (see the implementation). */
-  readonly giveUpLater: (op: PendingOp) => Effect.Effect<void, SqlError>;
   /** An account about to go: what its queued copies were copied from stays. */
   readonly releaseAccountCopies: (accountId: string) => Effect.Effect<void, SqlError>;
   /** Puts back what an abandoned op changed locally and hands its row to sync (also used by discard). */
@@ -360,7 +358,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   /** The hand-back of a change that landed after all: the exceptions' own text, then the flag. */
   const handBack = (op: PendingOp) =>
     Effect.andThen(
-      Effect.ignore(restoreCarriedText(eventRepo, op)),
+      Effect.ignore(restoreCarriedText({ eventRepo, pendingOpRepo }, op)),
       eventRepo.markSynced(op.accountId, op.calendarId, op.eventId),
     );
 
@@ -376,7 +374,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (op.beforePayload === undefined) {
         return yield* handBack(op);
       }
-      yield* Effect.ignore(restoreCarriedText(eventRepo, op));
+      yield* Effect.ignore(restoreCarriedText({ eventRepo, pendingOpRepo }, op));
       // The other queued ops of the event were made with this change in
       // what they send: it goes out of that (an RSVP rides in a guest-list
       // edit's attendees and the other way round). Google's copy of the
@@ -1663,28 +1661,6 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     });
 
   /**
-   * The updates of the event queued behind `op`, an update itself, go
-   * before it does (a discard, keep-theirs, a rejection for good): they were made on top of it —
-   * new times for an event it had stopped repeating would move the whole
-   * series once it is gone. The last one first, each putting back what it
-   * changed.
-   */
-  const giveUpLater = (op: PendingOp) =>
-    Effect.gen(function* () {
-      if (op.kind !== 'update') {
-        return;
-      }
-      const queued = yield* pendingOpRepo.listForEvent(op);
-      const later = queued
-        .slice(queued.findIndex((other) => other.id === op.id) + 1)
-        .filter((other) => other.kind === 'update');
-      for (const other of later.toReversed()) {
-        yield* pendingOpRepo.remove(other.id);
-        yield* releaseRow(other);
-      }
-    });
-
-  /**
    * After a change of a series was given up: the queued changes of its
    * occurrences at a slot the series does not draw without it — new times,
    * a new rule — go with it, row and all. They were made under it, Google
@@ -1733,13 +1709,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (queued === undefined) {
         return 'done' as const;
       }
-      // Turned down for good, it takes along what was made on top of it,
-      // as when the user gives it up. One that landed (a 2xx that did not
+      // Turned down for good, it takes along what was made under it, as
+      // when the user gives it up. One that landed (a 2xx that did not
       // decode) keeps what follows it.
       const givenUp = options.revert ?? true;
-      if (givenUp) {
-        yield* Effect.ignore(transaction(giveUpLater(op)));
-      }
       yield* releaseRow(op, options);
       if (givenUp) {
         yield* Effect.ignore(transaction(dropUndrawn(op)));
@@ -2378,17 +2351,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       ) {
         return retry('waiting for the change of its series ahead of it');
       }
-      // Several changes of one event go in the order they were made: each
-      // sends only what it set, over what the ones before it left on
-      // Google. And a change of a series waits for the changes of its
-      // occurrences made before it: its text is copied onto them, over
-      // their own, as the user saw it here.
+      // A change of a series waits for the changes of its occurrences
+      // made before it: its text is copied onto them, over their own, as
+      // the user saw it here. (An event has one waiting update at most:
+      // every edit goes into it, where it stands.)
       if (
         op.kind === 'update' &&
         earlier.some(
-          (entry) =>
-            entry.kind === 'update' &&
-            (entry.eventId === op.eventId || entry.eventId.startsWith(`${op.eventId}_`)),
+          (entry) => entry.kind === 'update' && entry.eventId.startsWith(`${op.eventId}_`),
         )
       ) {
         return retry('waiting for the change ahead of it');
@@ -3160,7 +3130,6 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     acknowledge,
     apply,
     dropUndrawn,
-    giveUpLater,
     releaseAccountCopies,
     releaseRow,
     settleDiscardedMove,

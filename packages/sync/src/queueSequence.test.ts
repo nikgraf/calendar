@@ -55,15 +55,14 @@ import { type FakeCall, type FakeFault, FakeGoogle } from './testing/fakeGoogle.
  *    item nobody else changed.
  *
  * Series are in: the user creates one, edits or deletes one occurrence,
- * edits all events (their text, or the time of a series without
- * exceptions), gives it another rule, edits "this and following", deletes
+ * edits all events (their text or their time), gives it another rule, edits "this and following", deletes
  * it, moves it; another device renames or deletes a series, changes or
  * cancels an occurrence. A series is judged by what it draws: every
  * occurrence is an item under Google's id for it (`<masterId>_<original
  * start>`), an exception by its own row and a plain one by its master's
  * rule, on the client as on Google (`events.instances`). The sequences
  * stay on what is recorded of Google (docs/google-sync-and-testing.md,
- * Events & recurrence): a series with exceptions is not retimed, no rule
+ * Events & recurrence): no rule
  * draws a slot again that an earlier one dropped, nobody edits an
  * occurrence Google holds cancelled, nothing is done to a series on the
  * etag one of its exceptions had before the series moved — and the fake's
@@ -1662,16 +1661,6 @@ const redrawsDropped = (
   );
 
 /**
- * Whether Google or the client holds an exception of the series, or a
- * queued op would make one: what a series' new times do to its exceptions
- * is not recorded, so such a series is not retimed.
- */
-const hasExceptions = (world: World, snapshot: Snapshot, series: ClientSeries): boolean =>
-  series.overrides.length > 0 ||
-  snapshot.ops.some((op) => isOccurrenceOf(op.eventId, series.master.id)) ||
-  googleSeries(world, series.master.id).some((theirs) => theirs.exceptions.length > 0);
-
-/**
  * Whether one of the series' exception rows still has the etag it had
  * when the series moved, and Google's copy another: the move's answer
  * names the master's new etag only, and whether Google gives the
@@ -2131,12 +2120,7 @@ const userActions = (
         return undefined;
       }
       const { master } = entry;
-      const field = pick(
-        random,
-        hasExceptions(world, snapshot, entry)
-          ? (['title', 'location', 'description'] as const)
-          : (['title', 'location', 'description', 'time'] as const),
-      )!;
+      const field = pick(random, ['title', 'location', 'description', 'time'] as const)!;
       const text = `${field} ${step}`;
       const [changes, fields] =
         field === 'time'
@@ -2159,6 +2143,13 @@ const userActions = (
             if (field === 'time') {
               // The app moves a rule's end with its occurrences.
               dropIntentField(world, eventKey(master.id), 'repeat');
+              // No slot is drawn where it was: Google cancels every
+              // exception, and what the user made of an occurrence goes.
+              for (const key of world.intents.keys()) {
+                if (seriesKeyOf(key) === eventKey(master.id)) {
+                  world.intents.delete(key);
+                }
+              }
               return;
             }
             // Google copies a series' changed text onto every exception:
@@ -5462,12 +5453,11 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
     );
   });
 
-  it.effect('a change of the series given up takes the ones made after it along', () => {
-    // Sequence 829 of the search with the changes kept in order: "does
-    // not repeat", then new times for what was a single event by then;
-    // the first met a conflict and was given up for Google's version, and
-    // the second moved the whole series. Made on top of it, it goes too
-    // (here: two places for all, with an occurrence's own between them).
+  it.effect("a change of the series given up leaves an occurrence's own as it was", () => {
+    // Two places for all with an occurrence's own between them are one
+    // change of the series, ahead of the occurrence's: given up, it goes
+    // whole, and the occurrence's change sends the place it had set itself
+    // again, not the series' second one it had taken.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -5484,11 +5474,14 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
           originalStartUtc: R2_START + DAY,
           scope: 'instance',
         });
-        // A place for all once more: its order with the occurrence's own
-        // shows on Google, so it queues behind as a change of its own.
+        // A place for all once more: Google copies it onto every
+        // exception, so the occurrence shows it too.
         yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 3' } });
-        const queued = (yield* ops.listAll()).map((op) => op.eventId);
-        expect(queued).toEqual(['r2', googleInstanceId('r2', R2_START + DAY, false), 'r2']);
+        const queued = yield* ops.listAll();
+        expect(queued.map((op) => [op.eventId, op.payload?.location])).toEqual([
+          ['r2', 'Room 3'],
+          [googleInstanceId('r2', R2_START + DAY, false), 'Room 3'],
+        ]);
         yield* mutations.discardPendingOp((yield* ops.listAll())[0]!.id);
         // The occurrence's own change is its own, and stays.
         expect((yield* ops.listAll()).map((op) => op.eventId)).toEqual([
@@ -5507,6 +5500,9 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
           `PATCH calendars/cal-2/events/${googleInstanceId('r2', R2_START + DAY, false)}`,
         ]);
         expect(google.eventOf('cal-2', 'r2')).toMatchObject({ summary: 'Sprint' });
+        expect(
+          google.eventOf('cal-2', googleInstanceId('r2', R2_START + DAY, false))?.location,
+        ).toBe('Room 2');
       }),
     );
   });
@@ -5558,8 +5554,9 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
     // Sequence 934 of that search: "does not repeat", the event moved,
     // then new times, all while offline. A move re-queues what waits for
     // its event a millisecond after itself; queued in the move's own
-    // millisecond, the new times sorted ahead of the rule's change and
-    // went first: new times for a series that still had its exceptions.
+    // millisecond as a change of their own, the new times sorted ahead of
+    // the rule's change and went first. They are one change now, behind
+    // the move.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -5592,7 +5589,7 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
           google.requests
             .filter((call) => call.method === 'PATCH')
             .map((call) => Object.keys(call.body ?? {}).join(',')),
-        ).toEqual(['recurrence', 'end,start']);
+        ).toEqual(['end,recurrence,start']);
         expect(google.unverified).toEqual([]);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
       }),
@@ -5601,12 +5598,12 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
 
   it.effect('a later change of a series is not asked about what the one before it set', () => {
     // Sequence 2368 of that search: a rule and a title for all, an
-    // occurrence's own place, the event moved, a place for all, then a cut
-    // — two changes of the series queued in order. The first went without
-    // If-Match (the move had moved the etag), so its answer was laid under
-    // the second as Google's newer version, and the rule it had set itself
+    // occurrence's own place, the event moved, a place for all, then a cut.
+    // Queued as two changes of the series, the first went without If-Match
+    // (the move had moved the etag), so its answer was laid under the
+    // second as Google's newer version, and the rule it had set itself
     // counted as changed on Google: the cut was parked for the user to
-    // choose between their own two edits.
+    // choose between their own two edits. One change now, one PATCH.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -5658,7 +5655,6 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
           writes(google).filter((write) => write.endsWith('events/r1') || write.includes('/move')),
         ).toEqual([
           'POST calendars/cal-1/events/r1/move → cal-2',
-          'PATCH calendars/cal-2/events/r1',
           'PATCH calendars/cal-2/events/r1',
         ]);
         expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);

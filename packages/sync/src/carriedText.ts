@@ -5,7 +5,7 @@ import {
   type PendingOp,
   withConsistentGeo,
 } from '@calendar/core';
-import type { EventRepoShape } from '@calendar/db';
+import type { EventRepoShape, PendingOpRepoShape } from '@calendar/db';
 import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 
@@ -53,13 +53,37 @@ const withText = (row: EventRecord, text: Text, geo?: GeoLocation | null): Event
         }),
       );
 
+/** Google's text of the series, which a queued edit of it is measured against. */
+const baseOf = (master: EventRecord, queued: PendingOp | undefined): CarriedText['base'] =>
+  queued?.carriedText?.base ?? {
+    description: master.description ?? null,
+    location: master.location ?? null,
+    title: master.title,
+  };
+
+/**
+ * The text fields in which a series edit (`merged`) differs from what
+ * Google has of the series: the ones Google will copy onto the exceptions.
+ * `master` is the local row before the edit, `queued` the series op it
+ * takes over from.
+ */
+export const carriedFields = (
+  master: EventRecord,
+  merged: EventRecord,
+  queued: PendingOp | undefined,
+): ReadonlyArray<Field> => {
+  const base = baseOf(master, queued);
+  return FIELDS.filter((field) => !same(merged[field], base[field]));
+};
+
 /**
  * The exception rows a series edit rewrites and the `CarriedText` its op
  * keeps. `master` is the local row before this edit (it may already show
  * a queued edit), `queued` the series op this edit replaces. `owned` names,
  * per exception, the text fields a change of that exception queued behind
- * the series op set itself: sent after it, that change's value is what
- * Google ends with, so the series' text is not carried over it.
+ * the series op set itself after the series last set them: sent after it,
+ * that change's value is what Google ends with, so the series' text is
+ * not carried over it again.
  */
 export const planCarry = ({
   master,
@@ -77,12 +101,8 @@ export const planCarry = ({
   readonly carriedText: CarriedText | undefined;
   readonly rows: ReadonlyArray<EventRecord>;
 } => {
-  const base = queued?.carriedText?.base ?? {
-    description: master.description ?? null,
-    location: master.location ?? null,
-    title: master.title,
-  };
-  const changed = new Set(FIELDS.filter((field) => !same(merged[field], base[field])));
+  const base = baseOf(master, queued);
+  const changed = new Set(carriedFields(master, merged, queued));
   const rows: Array<EventRecord> = [];
   const entries: Array<Entry> = [];
   for (const row of overrides) {
@@ -160,9 +180,14 @@ export const withOwnText = (row: EventRecord, op: PendingOp): EventRecord => {
   return withText(row, text, text.location === undefined ? undefined : entry.geo);
 };
 
-/** Puts back the exceptions' own text when `op` is abandoned (`withOwnText`, row by row). */
+/**
+ * Puts back the exceptions' own text when `op` is abandoned (`withOwnText`,
+ * row by row), and in the queued changes of those exceptions that took the
+ * series' text over their own (`carryOntoQueued` in mutations.ts): each
+ * sends what it had set itself again.
+ */
 export const restoreCarriedText = (
-  eventRepo: EventRepoShape,
+  { eventRepo, pendingOpRepo }: { eventRepo: EventRepoShape; pendingOpRepo: PendingOpRepoShape },
   op: PendingOp,
 ): Effect.Effect<void, SqlError> =>
   Effect.gen(function* () {
@@ -178,6 +203,31 @@ export const restoreCarriedText = (
       const restored = withOwnText(row, op);
       if (restored !== row) {
         rows.push(restored);
+      }
+      for (const other of yield* pendingOpRepo.listForEvent({
+        accountId: op.accountId,
+        calendarId: op.calendarId,
+        eventId: entry.eventId,
+      })) {
+        const payload = other.payload;
+        const own: Text = {};
+        for (const field of FIELDS) {
+          if (
+            entry[field] !== undefined &&
+            other.changed?.includes(field) === true &&
+            payload !== undefined &&
+            op.payload !== undefined &&
+            same(payload[field], op.payload[field])
+          ) {
+            own[field] = entry[field];
+          }
+        }
+        if (other.kind === 'update' && payload && Object.keys(own).length > 0) {
+          yield* pendingOpRepo.setPayload(
+            other.id,
+            withText(payload, own, own.location === undefined ? undefined : entry.geo),
+          );
+        }
       }
     }
     if (rows.length > 0) {

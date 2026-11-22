@@ -1044,9 +1044,9 @@ export class FakeGoogle {
    * docs/google-sync-and-testing.md): each gets a new etag and `updated`;
    * a title, description or location the PATCH changed is copied onto
    * them, their own values included, while a field sent with its old
-   * value leaves theirs alone; and the rule it leaves keeps an exception
-   * whose slot it still draws as it was, moved or cancelled, and cancels
-   * the others.
+   * value leaves theirs alone; and the series it leaves (its rule, its
+   * start) keeps an exception whose slot it still draws as it was, moved
+   * or cancelled, and cancels the others.
    */
   private patchExceptions(calendarId: string, before: GcalEvent, after: GcalEvent): void {
     const exceptions = this.exceptionsOf(calendarId, after.id);
@@ -1059,20 +1059,12 @@ export class FakeGoogle {
         (field) => [field, after[field]],
       ),
     );
-    // No rule left cancels them all. Where the exceptions of a series
-    // that keeps one go when its times change is not recorded: they stay
-    // as they are.
+    // No rule left cancels them all; new times redraw the series, and an
+    // exception stays only where its slot is still drawn, as under a new
+    // rule (verified live 2026-11-22: moved an hour, a series loses every
+    // exception, a cancelled one's day comes back; its end alone moved,
+    // it keeps them).
     const cleared = !after.recurrence?.length;
-    const was = this.recordOf(calendarId, before);
-    const now = this.recordOf(calendarId, after);
-    const retimed =
-      !cleared &&
-      (was?.startUtc !== now?.startUtc ||
-        was?.endUtc !== now?.endUtc ||
-        was?.startTimeZone !== now?.startTimeZone);
-    if (retimed) {
-      this.unverified.push(`events.patch of ${after.id}: new times for a series with exceptions`);
-    }
     for (const exception of exceptions) {
       const tombstone = {
         id: exception.id,
@@ -1082,9 +1074,8 @@ export class FakeGoogle {
         updated,
       };
       const slot = timeMs(exception.originalStartTime);
-      const drawn =
-        !cleared && (retimed || (slot !== undefined && this.draws(calendarId, after, slot)));
-      const wasDrawn = retimed || (slot !== undefined && this.draws(calendarId, before, slot));
+      const drawn = !cleared && slot !== undefined && this.draws(calendarId, after, slot);
+      const wasDrawn = slot !== undefined && this.draws(calendarId, before, slot);
       if (!drawn) {
         this.putEvent(calendarId, tombstone);
       } else if (!wasDrawn) {

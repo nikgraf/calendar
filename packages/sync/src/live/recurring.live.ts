@@ -627,6 +627,60 @@ describe('live Google: a new rule and the series’ exceptions', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
+  it.live('new times cancel every exception whose slot is no longer drawn', () =>
+    // Verified 2026-11-22: a series redrawn by its start behaves as one
+    // redrawn by its rule. Its end alone moved, every slot is still drawn
+    // and the exceptions stay; moved an hour, no old slot is drawn: the
+    // moved occurrence is cancelled, the cancelled one's day is back, and
+    // a change sent to an old occurrence id is refused.
+    Effect.gen(function* () {
+      const { engine, scratch: google } = yield* bootstrap(config);
+      const series = yield* seriesWithExceptions(google, 'retime');
+      const before = yield* onGoogle(google, series);
+      yield* google.patchEvent(calendar(), series.masterId, {
+        end: { dateTime: iso(series.start + 2 * HOUR), timeZone: 'UTC' },
+      });
+      expect(yield* onGoogle(google, series)).toEqual(before);
+      yield* google.patchEvent(calendar(), series.masterId, {
+        end: { dateTime: iso(series.start + 3 * HOUR), timeZone: 'UTC' },
+        start: { dateTime: iso(series.start + HOUR), timeZone: 'UTC' },
+      });
+      const state = yield* onGoogle(google, series);
+      expect(state.moved.startsWith('cancelled')).toBe(true);
+      expect(state.cancelled.startsWith('cancelled')).toBe(true);
+      const drawn = yield* drawnOnGoogle(google, series);
+      expect(drawn).toEqual([0, 1, 2, 3, 4].map((week) => series.start + week * WEEK + HOUR));
+      const old = yield* Effect.exit(
+        google.patchEvent(calendar(), series.moved, { summary: 'under its old id' }),
+      );
+      expect(old._tag).toBe('Failure');
+      yield* engine.syncAll();
+      expect(yield* drawnHere(series)).toEqual(drawn);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('the app’s new times leave nothing queued: the PATCH cancels the exceptions', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const series = yield* appSeriesWithExceptions(engine, mutations, 'app-retime');
+      yield* mutations.updateRecurring({
+        ...target(series.masterId, series.start),
+        changes: { endUtc: series.start + 2 * HOUR, startUtc: series.start + HOUR },
+        scope: 'series',
+      });
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      const state = yield* onGoogle(google, series);
+      expect(state.moved.startsWith('cancelled')).toBe(true);
+      expect(state.cancelled.startsWith('cancelled')).toBe(true);
+      const drawn = yield* drawnOnGoogle(google, series);
+      expect(drawn).toEqual([0, 1, 2, 3, 4].map((week) => series.start + week * WEEK + HOUR));
+      expect(yield* drawnHere(series)).toEqual(drawn);
+      yield* engine.syncAll();
+      expect(yield* drawnHere(series)).toEqual(drawn);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
   it.live('the app’s cut leaves nothing parked: Google cancels the exceptions past it', () =>
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);

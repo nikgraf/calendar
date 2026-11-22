@@ -395,25 +395,30 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         originalStartUtc: moved.originalStartUtc!,
         scope: 'instance',
       });
-      // The first rename stays queued ahead of the exception's edit, and
-      // the series' next one goes behind both: by then Google has
-      // "Standup", so "Daily" is a change, which it copies onto every
-      // exception, over the edited one's title too.
-      yield* series({ title: 'Daily' });
-      expect((yield* masterOp).map((op) => op.payload?.title)).toEqual(['Standup', 'Daily']);
-      expect((yield* text(moved.id)).title).toBe('Daily');
-      expect((yield* text(plain.id)).title).toBe('Daily');
+      // The series' next rename takes the first one's place in the queue,
+      // ahead of the exception's edit: Google copies the new title onto
+      // every exception, so the edited one takes it too, in its row and in
+      // what its own change sends.
+      const own = Effect.map(
+        (yield* PendingOpRepo).listAll(),
+        (ops) => ops.find((op) => op.eventId === moved.id)?.payload?.title,
+      );
+      yield* series({ title: 'Weekly' });
+      expect((yield* masterOp).map((op) => op.payload?.title)).toEqual(['Weekly']);
+      expect((yield* text(moved.id)).title).toBe('Weekly');
+      expect(yield* own).toBe('Weekly');
+      expect((yield* text(plain.id)).title).toBe('Weekly');
 
-      // One more replaces the last, with nothing of an occurrence behind it.
       yield* series({ title: 'Sync' });
-      expect((yield* masterOp).map((op) => op.payload?.title)).toEqual(['Standup', 'Sync']);
+      expect((yield* masterOp).map((op) => op.payload?.title)).toEqual(['Sync']);
       expect((yield* text(moved.id)).title).toBe('Sync');
-      // Discarded, the exceptions show what they did before it and the
-      // rename it replaced: the edited one its own title.
+      // Discarded, the exceptions show what they did before the renames:
+      // the edited one its own title, which its change sends again.
       yield* mutations.discardPendingOp((yield* masterOp).at(-1)!.id);
-      expect((yield* text('master1')).title).toBe('Standup');
+      expect((yield* text('master1')).title).toBe('Daily');
       expect((yield* text(moved.id)).title).toBe('Custom');
-      expect((yield* text(plain.id)).title).toBe('Standup');
+      expect(yield* own).toBe('Custom');
+      expect((yield* text(plain.id)).title).toBe('Daily');
     }).pipe(Effect.provide(layer({ patch: 'offline' }))),
   );
 
@@ -462,14 +467,11 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
           scope: 'instance',
         });
       // A place for all, one exception's own title, then a title for all:
-      // the second edit of the series waits behind the exception's.
+      // one change of the series, ahead of the exception's.
       yield* series({ location: 'Room 1' });
       yield* instance(moved, { title: 'Custom' });
       yield* series({ title: 'Standup' });
-      expect((yield* masterOp).map((op) => op.changed?.join(','))).toEqual([
-        'location,geo',
-        'title',
-      ]);
+      expect((yield* masterOp).map((op) => op.changed?.join(','))).toEqual(['location,title,geo']);
       expect(yield* text(plain.id)).toEqual({ location: 'Room 1', title: 'Standup' });
 
       yield* instance(plain, { description: 'Notes' });
@@ -483,9 +485,10 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
 
   it.effect('a change Google rejects takes the ones made on top of it along', () =>
     // Review (Codex, round 3): "does not repeat", then new times for the
-    // single event that left. Google turned the first down for good, the
-    // second stayed queued, had the rule back under it and would have
-    // moved every occurrence.
+    // single event that left, then two changes in the queue. Google turned
+    // the first down for good, the second stayed queued, had the rule back
+    // under it and would have moved every occurrence. They are one change
+    // now, and go together.
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
       const at = { accountId: 'acc-1', calendarId: 'cal-1' };
@@ -501,7 +504,7 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         changes: { endUtc: master.endUtc + HOUR, startUtc: master.startUtc + HOUR },
         eventId: 'master1',
       });
-      expect((yield* masterOp).length).toBe(2);
+      expect((yield* masterOp).length).toBe(1);
       yield* mutations.processPendingOps();
       expect(yield* masterOp).toEqual([]);
       const back = yield* row('master1');
@@ -515,10 +518,11 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
 
   it.effect('a new rule made while the first rule is on its way is still sent', () => {
     // Review (Opus, round 5): a rule for all, one occurrence's own place, a
-    // place for all (queued behind both), and, while the first rule's
-    // PATCH was out, another rule. That one was written into the update
-    // on its way and left out of the new one as nothing new; the PATCH
-    // landed with the first rule, and the last one was gone for good.
+    // place for all, and, while the rule's PATCH was out, another rule.
+    // (With the place queued as a change of its own, the new rule was
+    // written into the update on its way and left out of the new one as
+    // nothing new; the PATCH landed with the first rule, and the last one
+    // was gone for good.)
     const second = 'RRULE:FREQ=DAILY;COUNT=6';
     const google: Google = { patch: 'offline' };
     return Effect.gen(function* () {
@@ -539,7 +543,7 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         scope: 'instance',
       });
       yield* forAll({ location: 'Room 3' });
-      expect((yield* masterOp).length).toBe(2);
+      expect((yield* masterOp).length).toBe(1);
       // The first rule lands; the second is made while it is out.
       google.land = (event) =>
         Effect.as(Effect.orDie(forAll({ recurrence: [second] })), {

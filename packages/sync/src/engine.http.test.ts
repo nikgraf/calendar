@@ -1227,6 +1227,39 @@ describe('the fake Google: repeating events', () => {
     },
   );
 
+  it.effect('new times keep only the exceptions whose slots the series still draws', () => {
+    // Verified live 2026-11-22 (`recurring.live.ts`).
+    const google = twoCalendars();
+    putSeriesWithExceptions(google);
+    return Effect.gen(function* () {
+      const client = yield* GoogleCalendarClient;
+      // Its end alone: every slot is still drawn, and they stay as they are.
+      yield* client.patchEvent({
+        ...series,
+        event: { end: { dateTime: isoAt(SERIES_START + 2 * HOUR_MS) } },
+        eventId: 'series',
+      });
+      expect(stateOf(google, 1)).toBe('confirmed 2026-07-07T12:00:00Z');
+      expect(stateOf(google, 2).startsWith('cancelled')).toBe(true);
+      // An hour later: no slot is drawn any more. The moved one is
+      // cancelled, and the day of the cancelled one is drawn again.
+      yield* client.patchEvent({
+        ...series,
+        event: {
+          end: { dateTime: isoAt(SERIES_START + 3 * HOUR_MS) },
+          start: { dateTime: isoAt(SERIES_START + HOUR_MS) },
+        },
+        eventId: 'series',
+      });
+      expect(stateOf(google, 1).startsWith('cancelled')).toBe(true);
+      expect(stateOf(google, 2).startsWith('cancelled')).toBe(true);
+      expect(drawnOnGoogle(google).map((day) => Math.round(day * 24))).toEqual(
+        [0, 1, 2, 3, 4].map((day) => day * 24 + 1),
+      );
+      expect(google.unverified).toEqual([]);
+    }).pipe(Effect.provide(engineLayer(google)));
+  });
+
   it.effect('says where it answered without a recorded Google behaviour', () => {
     const google = twoCalendars();
     putSeriesWithExceptions(google);
@@ -1238,16 +1271,6 @@ describe('the fake Google: repeating events', () => {
           client.patchEvent({ ...series, event: { summary: 'Back' }, eventId: occurrenceId(2) }),
         ),
       ).toBe('NotFoundError');
-      // New times for a series with exceptions: they stay as they are.
-      yield* client.patchEvent({
-        ...series,
-        event: {
-          end: { dateTime: isoAt(SERIES_START + 2 * HOUR_MS) },
-          start: { dateTime: isoAt(SERIES_START + HOUR_MS) },
-        },
-        eventId: 'series',
-      });
-      expect(stateOf(google, 1)).toBe('confirmed 2026-07-07T12:00:00Z');
       // An exception that moved with its series has a new etag here, as
       // the series has on Google; whether Google's exception has one too
       // is not recorded, so a write on the old one says so.
@@ -1259,7 +1282,6 @@ describe('the fake Google: repeating events', () => {
       );
       expect(google.unverified).toEqual([
         'events.patch of series_20260708T090000Z, a cancelled occurrence',
-        'events.patch of series: new times for a series with exceptions',
         'DELETE of series_20260707T090000Z on its etag from before its series moved',
       ]);
       // Written since, its etag is its own again.
@@ -1268,7 +1290,7 @@ describe('the fake Google: repeating events', () => {
         'ConflictError',
       );
       yield* client.deleteEvent({ ...moved, baseEtag: patched.etag });
-      expect(google.unverified).toHaveLength(3);
+      expect(google.unverified).toHaveLength(2);
       // A slot a rule dropped and a later one draws again is a plain
       // occurrence (verified live); what a list reports then is not.
       const redrawn = newFake();
