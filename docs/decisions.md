@@ -122,7 +122,7 @@ was cut (pruned 2026-11-17).
   Solunivo", the webcam on dense codes, parked Google prefs untitled.
 - **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
   bump together when a release is worth a number.
-- **Schema baseline** (2026-09-15, again 2026-10-15 and 2026-11-21, `todo/sync-provider-copy`)
+- **Schema baseline** (2026-09-15, again 2026-10-15 and 2026-11-21, #374)
   — the pre-release migrations were collapsed into one, three times,
   since nothing had shipped;
   the second pass also dropped every upgrade of old data (zone lists
@@ -435,7 +435,7 @@ was cut (pruned 2026-11-17).
   projection of the queued op, storing Google's master text and each
   exception's own (nothing could be recomputed otherwise); discard,
   take-theirs and a permanent rejection restore the exceptions.
-- **A re-etag is no conflict** (2026-11-03, #282; `todo/sync-provider-copy`) — a series PATCH
+- **A re-etag is no conflict** (2026-11-03, #282; #374) — a series PATCH
   gives every exception a new etag (probed live), so an occurrence edit
   queued behind a rename or a new rule parked as "changed on Google" with
   nothing changed. It goes again on Google's etag, like every update that
@@ -463,7 +463,7 @@ was cut (pruned 2026-11-17).
   or serves its event. Rejected: a longer budget alone (the lag has no
   known bound), a full calendarList every pass (lagging replicas list it).
 - **A queued delete leaves no row for a pull to fill** (2026-10-30, #265,
-  #267, #270; `todo/sync-provider-copy`) — a page answered before a delete landed put the row
+  #267, #270; #374) — a page answered before a delete landed put the row
   back until the next poll (live nightly 40265233306). An events pass
   holds the drain like a task list's, and a pull writes no row for an
   event whose delete waits: Google's version becomes the copy that delete
@@ -482,7 +482,7 @@ was cut (pruned 2026-11-17).
   (it sent the move meanwhile). Open: a discarded sent move with Google
   unreachable goes back; a refused sent create takes only one move along.
 - **A waiting series delete holds Google's copies of its exceptions**
-  (2026-10-31 to 2026-11-02, #274, #279, #280; `todo/sync-provider-copy`) — as copies kept per
+  (2026-10-31 to 2026-11-02, #274, #279, #280; #374) — as copies kept per
   exception, which pulls and answers keep current while the master is
   gone; a discard puts them back only where no row is (an occurrence's
   own tombstone stays), and a landed delete takes them. What a cut or a
@@ -541,7 +541,7 @@ was cut (pruned 2026-11-17).
   periodic stat is the source of truth and directory watchers only the
   fast path (watching the home directory was rejected: noisy). Rejected:
   iCloud key-value sync of the document.
-- **Unsynced changes diff and revert** (2026-10-10; `todo/sync-provider-copy`) — the list's
+- **Unsynced changes diff and revert** (2026-10-10; #374) — the list's
   rows expand to a diff against what Google has, the discard action lives
   only there, and discarding — like a permanent rejection — puts the row
   back instead of marking the edit synced. The diff ships as display
@@ -551,7 +551,7 @@ was cut (pruned 2026-11-17).
   another change discarded meanwhile or a landed one: then an op puts
   back only the fields it owns, and a superseded op refused in flight
   puts nothing back.
-- **Google's copy of a held item** (2026-11-22, `todo/sync-provider-copy`) — while a change of
+- **Google's copy of a held item** (2026-11-22, #374) — while a change of
   an event or a to-do waits, Google's version is kept once per item,
   written by pulls, conflict fetches and answers, and the waiting changes
   are laid over it: different things changed on two devices both hold,
@@ -588,7 +588,7 @@ was cut (pruned 2026-11-17).
   invariants after every step, and found nine bugs, fixed here. Rejected:
   fast-check (steps read the app's state, and a seed must replay exactly)
   and a full model of the expected state. It covers repeating events
-  since `todo/sync-provider-copy`, on a fake that mirrors what is recorded of a series; the
+  since #374, on a fake that mirrors what is recorded of a series; the
   gaps it still finds are its `KNOWN_FAILING`, and todo.md's Tier 0.
 
 ## Calendar: editing, gestures, views
