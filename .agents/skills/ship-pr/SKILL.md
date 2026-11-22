@@ -71,6 +71,8 @@ file is lost with the machine.
   fixture accounts) are in `docs/google-sync-and-testing.md`.
 - macOS CI minutes are limited. Run the affected desktop specs and Maestro
   flows locally before pushing; push fixes in batches, not one per try.
+  `pnpm test:e2e` skips the property specs: a change to how events or
+  to-dos are saved also runs `pnpm test:bombadil` (CI's desktop job does).
 
 ## 4. Self-check before review
 

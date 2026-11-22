@@ -56,8 +56,6 @@ interface Segment {
   readonly exceptions: Map<string, Omit<Occurrence, 'masterId' | 'slot'>>;
   readonly firstDay: string;
   lastDay: string | null;
-  /** Exists on Google, so a rename reaches its exceptions there and here. */
-  readonly onGoogle: boolean;
   times: { readonly end: string; readonly start: string };
   title: string;
 }
@@ -75,8 +73,9 @@ const at = (iso: string, time: string): number => Date.parse(`${iso}T${time}:00Z
  * Replays the saves through the documented semantics
  * (docs/architecture.md → Recurring events), independent of the app's
  * code: "This event" stores one exception for its slot; "All events"
- * renames the series (copied onto its exceptions while the series exists
- * on Google) and takes the form's times when they are sent; "This and
+ * renames the series (copied onto its exceptions, as Google does; for a
+ * series not sent yet, onto what waits for them, so Google ends with the
+ * same text either way) and takes the form's times when they are sent; "This and
  * following" sends them always, ends the series the day
  * before the cut, drops its exceptions from there and starts a new one at
  * the cut with the form's title and times — at the series' first
@@ -121,10 +120,8 @@ const expectedSeries = (seed: Segment, saved: ReadonlyArray<Saved>): Map<string,
         segment.times = { end: form.endTime, start: form.startTime };
       }
       segment.title = form.title;
-      if (segment.onGoogle) {
-        for (const [key, exception] of segment.exceptions) {
-          segment.exceptions.set(key, { ...exception, title: form.title });
-        }
+      for (const [key, exception] of segment.exceptions) {
+        segment.exceptions.set(key, { ...exception, title: form.title });
       }
     } else {
       expect(form.date, 'the actions moved a split').toBe(slot);
@@ -133,7 +130,6 @@ const expectedSeries = (seed: Segment, saved: ReadonlyArray<Saved>): Map<string,
         exceptions: new Map(),
         firstDay: slot,
         lastDay: segment.lastDay,
-        onGoogle: false,
         times: { end: form.endTime, start: form.startTime },
         title: form.title,
       });
@@ -297,7 +293,6 @@ it.runIf(process.env['BOMBADIL'] === '1')(
           exceptions: new Map(),
           firstDay,
           lastDay: null,
-          onGoogle: true,
           times: { end: '09:30', start: '09:00' },
           title: seedSeries.title,
         },
