@@ -263,11 +263,18 @@ it whenever a kind is added. Rules that keep the queue correct:
   it keeps them; what it sends is the copy's guest list with those
   answers, never the row's, which may show a guest-list edit still
   queued or parked), an edit made on the very version that arrives is left
-  as it is — a full list names every event, changed or not — and the row
-  shows the result, still `pending`. The reply to a write sent without
+  as it is — a full list names every event, changed or not, and one the
+  user kept, sent without If-Match, counts as made on the copy — and the
+  row shows the result, still `pending`. A thing the user changed part of
+  stays the user's whole (a time's start with its end): mixed with
+  Google's other half it is a time nobody chose. The reply to a write sent without
   If-Match (an answer resent after its 412, keep-mine) may hold another
   device's change too, and is taken the same way by the ops still queued
-  (`take`). Nobody is asked unless both sides changed the
+  (`take`); so is a move's answer by what is queued behind the move when
+  the event changed meanwhile, and the record that settles a create by
+  what is queued behind it. Advanced to such a reply as it stood, the
+  copy made the fields that device changed read as the user's own, and
+  the next write sent the old values back. Nobody is asked unless both sides changed the
   same thing to different values — a time (start, end, all-day and zone
   are one thing), a place (its text and its coordinates), or any other
   field — or the update edits the guest list and Google's version moved
@@ -684,14 +691,18 @@ Rules a change to the queue keeps (each broke once):
   can only be in a page because that write landed: it is settled with
   the page's record as its answer and leaves the queue, right after the
   page's transaction and still under the pass's hold on the drain
-  (`landedInPull`, `acknowledge`). Left queued, a discard took back what
+  (`landedInPull`, `acknowledge`; such a record is the move's answer and
+  is not taken by what waits behind the move first — the move knows the
+  new etag for its own, and a delete made in the destination would park
+  on it). Left queued, a discard took back what
   Google has — the created row, or the event back to a calendar Google
   no longer has it in — for good, the token having moved past. Only an
   event's first queued move is read this way: a page tells of Google
   before that move or after it, never of one queued behind it. The
   source's side of a move: a page that reports the event gone from the
   calendar its next move takes it out of (or a full list that no longer
-  names it) marks the move (`PendingOp.sourceGone`), since the move
+  names it, for a move queued before that pass began) marks the move
+  (`PendingOp.sourceGone`), since the move
   landed or another device deleted the event. A move Google then turns
   out never to have made (a 404 in both calendars, a discard) puts
   nothing back there, and a move of it out of the same calendar queued

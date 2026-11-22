@@ -1474,6 +1474,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         const synced = theirsIn(
           local?.startTimeZone ?? holding?.beforePayload?.startTimeZone ?? 'UTC',
         );
+        // Another device changed the event before the move landed. What
+        // is queued behind the move is laid over Google's version while
+        // its copy is still the one it was made on: advanced first, a
+        // field that device changed read as the user's own, and was sent
+        // back over it.
+        if (synced && !unchanged) {
+          yield* heldEvents.take(synced);
+        }
         if (local) {
           yield* settle(op, synced, { calendarId: destination });
         } else if (synced && holding) {
@@ -2937,7 +2945,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
 
   const acknowledge = (op: PendingOp, record: EventRecord): Effect.Effect<boolean> => {
     if (op.kind === 'create') {
-      return Effect.orElseSucceed(Effect.as(settle(op, record), true), () => false);
+      // The record may hold what another device changed since the create
+      // landed: what is queued behind the create is laid over it first.
+      return Effect.orElseSucceed(
+        Effect.as(
+          Effect.andThen(transaction(heldEvents.take(record, op.id)), settle(op, record)),
+          true,
+        ),
+        () => false,
+      );
     }
     return op.kind === 'move' && op.targetCalendarId !== undefined
       ? Effect.orElseSucceed(

@@ -181,8 +181,11 @@ const due = (day: number): string =>
   `${new Date(START + day * DAY).toISOString().slice(0, 10)}T00:00:00.000Z`;
 
 /** The fake the sequences run against; `cal-3` only for a scripted test that needs three. */
-const newFake = (options: { readonly thirdCalendar?: boolean } = {}): FakeGoogle => {
+const newFake = (
+  options: { readonly pageSize?: number; readonly thirdCalendar?: boolean } = {},
+): FakeGoogle => {
   const google = new FakeGoogle({
+    ...(options.pageSize === undefined ? {} : { pageSize: options.pageSize }),
     calendars: [
       { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
       { accessRole: 'owner', id: 'cal-2', summary: 'Work' },
@@ -4404,6 +4407,250 @@ describe("pending-op queue: Google's copy and the changes laid over it", () => {
       );
     },
   );
+
+  it.effect("a rename behind a move keeps what the move's answer brought of another device", () => {
+    // Moved and renamed while offline; another device rewrote the
+    // description before the move landed. The move's answer became
+    // Google's copy as it stood, and the rename behind it, never laid over
+    // it, read the old description as the user's own and sent it back.
+    const google = newFake();
+    google.patchEventServerSide('cal-1', 'e1', { description: 'Dial-in 123' });
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-2',
+          changes: { title: 'Standup (mine)' },
+          eventId: 'e1',
+        });
+        google.patchEventServerSide('cal-1', 'e1', { description: 'Dial-in 456' });
+        network.down = false;
+        yield* drainAll(mutations);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        const theirs = google.eventOf('cal-2', 'e1');
+        expect(theirs?.summary).toBe('Standup (mine)');
+        expect(theirs?.description).toBe('Dial-in 456');
+      }),
+    );
+  });
+
+  it.effect('an edit behind a create keeps what the page that settles the create brought', () => {
+    // The create's answer was lost, another device rewrote the new event's
+    // description, and the user renamed it. The page that brings the event
+    // settles the create; the rename behind it is laid over that record,
+    // or it sends the description the event was made with back over it.
+    const google = newFake();
+    lostThenRefused(google, (call) => call.method !== 'GET');
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const created = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          description: 'Bring the form',
+          endUtc: START + 9 * DAY + 11 * HOUR,
+          isAllDay: false,
+          startTimeZone: 'UTC',
+          startUtc: START + 9 * DAY + 10 * HOUR,
+          title: 'Dentist',
+        });
+        yield* mutations.processPendingOps();
+        google.patchEventServerSide('cal-1', created.id, { description: 'Bring both forms' });
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Dentist (moved)' },
+          eventId: created.id,
+        });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        google.fault = undefined;
+        yield* drainAll(mutations);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        const theirs = google.eventOf('cal-1', created.id);
+        expect(theirs?.summary).toBe('Dentist (moved)');
+        expect(theirs?.description).toBe('Bring both forms');
+      }),
+    );
+  });
+
+  it.effect('a time both sides changed stays the user’s whole time while it waits', () => {
+    // The user shortened the event; another device moved it an hour on.
+    // That clashes, and what waits for the choice must be a time someone
+    // set: the user's start with the user's end. Only the field the user
+    // had changed was kept, over Google's start: it ended before it began.
+    const google = newFake();
+    const network = writesDown(google);
+    const start = START + DAY + 9 * HOUR;
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { endUtc: start + HOUR / 2 },
+          eventId: 'e1',
+        });
+        google.patchEventServerSide('cal-1', 'e1', {
+          end: { dateTime: iso(start + 2 * HOUR) },
+          start: { dateTime: iso(start + HOUR) },
+        });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        const [parked] = yield* (yield* PendingOpRepo).listAll();
+        expect(parked?.conflictAt).toBeDefined();
+        expect([parked?.payload?.startUtc, parked?.payload?.endUtc]).toEqual([
+          start,
+          start + HOUR / 2,
+        ]);
+        expect(parked?.beforePayload?.startUtc).toBe(start + HOUR);
+      }),
+    );
+  });
+
+  it.effect('a move that landed unseen lets a delete made in its destination through', () => {
+    // The move's answer was lost and the user deleted the event where the
+    // move had put it. The page of that calendar brought the event on the
+    // etag the move gave it: the delete, on the old one, was parked before
+    // the page settled the move — though nobody else had touched the event.
+    const google = newFake();
+    lostThenRefused(google, (call) => call.url.includes('/move') || call.method === 'DELETE');
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* mutations.processPendingOps();
+        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-2', eventId: 'e1' });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(
+          (yield* (yield* PendingOpRepo).listAll()).map((op) => [op.kind, op.conflictAt]),
+        ).toEqual([['delete', undefined]]);
+        google.fault = undefined;
+        yield* drainAll(mutations);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        expect(google.eventOf('cal-2', 'e1')?.status).toBe('cancelled');
+      }),
+    );
+  });
+
+  it.effect('a guest-list edit the user kept is not parked again by the version they saw', () => {
+    // Keep mine on a guest-list clash, and the retry meets a 503. A pull
+    // that brings the very version the user compared against parked the
+    // edit again: its guests differ from Google's, as they did.
+    const google = newFake();
+    google.putEvent('cal-1', {
+      ...timed('invite', 6, 9, 'Planning'),
+      attendees: [
+        { email: EMAIL, organizer: true, responseStatus: 'accepted', self: true },
+        { email: 'bob@example.com', responseStatus: 'needsAction' },
+      ],
+    });
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: {
+            attendees: [
+              new Attendee({
+                email: EMAIL,
+                isOrganizer: true,
+                isSelf: true,
+                responseStatus: 'accepted',
+              }),
+              new Attendee({ email: 'bob@example.com', responseStatus: 'needsAction' }),
+              new Attendee({ email: 'carol@example.com', responseStatus: 'needsAction' }),
+            ],
+          },
+          eventId: 'invite',
+        });
+        google.patchEventServerSide('cal-1', 'invite', { description: 'Agenda attached' });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        const [parked] = yield* ops.listAll();
+        expect(parked?.conflictAt).toBeDefined();
+        yield* mutations.resolveConflict({ choice: 'mine', opId: parked!.id });
+        yield* mutations.processPendingOps();
+        expect((yield* ops.listAll()).map((op) => op.conflictAt)).toEqual([undefined]);
+        // The same version again: a full list after an expired token.
+        google.expireSyncTokens('cal-1');
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* ops.listAll()).map((op) => op.conflictAt)).toEqual([undefined]);
+      }),
+    );
+  });
+
+  it.effect('a move queued while a full list pages is not told its event is gone', () => {
+    // A full list tells a queued move its event is gone from the source
+    // by not naming it. One queued after the page that named the event
+    // was judged by the same rule: never seen "leaving", so "gone" — and
+    // given up later, the event was deleted here though Google has it.
+    const google = newFake({ pageSize: 1 });
+    const network = writesDown(google);
+    let pages = 0;
+    let pagesWhenMoved = -1;
+    const gate: { release?: () => void } = {};
+    const firstPage = new Promise<void>((resolve) => {
+      gate.release = resolve;
+    });
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        google.expireSyncTokens('cal-1');
+        google.onRequest = (call) => {
+          const url = new URL(call.url);
+          if (
+            url.pathname.endsWith('/calendars/cal-1/events') &&
+            !url.searchParams.has('syncToken')
+          ) {
+            pages += 1;
+            // The second page is asked for: the first, which names e1, is in.
+            if (pages === 2) {
+              gate.release?.();
+            }
+          }
+        };
+        const moving = yield* Effect.forkChild(
+          Effect.andThen(
+            Effect.promise(() => firstPage),
+            Effect.andThen(
+              moveE1(mutations, 'cal-1', 'cal-2'),
+              Effect.sync(() => {
+                pagesWhenMoved = pages;
+              }),
+            ),
+          ),
+        );
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        yield* Fiber.join(moving);
+        // The move came in while the list was still paging.
+        expect(pagesWhenMoved).toBeGreaterThanOrEqual(2);
+        expect(pagesWhenMoved).toBeLessThan(pages);
+        const [move] = yield* (yield* PendingOpRepo).listAll();
+        expect(move?.kind).toBe('move');
+        expect(move?.sourceGone).toBeUndefined();
+      }),
+    );
+  });
 
   it.effect('a page with a deleted series and its exception writes neither', () => {
     // The user deleted the series (its delete waits) and another device

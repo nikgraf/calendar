@@ -130,7 +130,12 @@ export const rebaseOnto = (
   const clash =
     guestsClash ||
     moved.some((field) => mineGroups.has(groupOf(field)) && !same(now[field], ours[field]));
-  const kept = Object.fromEntries(Object.keys(mine).map((field) => [field, ours[field]]));
+  // A thing the user changed stays the user's whole: a start set here with
+  // an end set there is a time nobody chose, and can end before it begins.
+  const whole = Object.keys(FIELD_GROUP).filter((field) => mineGroups.has(groupOf(field)));
+  const kept = Object.fromEntries(
+    [...new Set([...Object.keys(mine), ...whole])].map((field) => [field, ours[field]]),
+  );
   return {
     kind: clash ? 'clash' : 'rebased',
     payload: withConsistentGeo(
@@ -245,7 +250,9 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
         // changed or not, and a page can bring a version again. Nothing
         // moved under the edit to lay it over anew (a guest-list edit,
         // which differs from Google's list by its nature, parked on it).
-        if (op.baseEtag !== undefined && op.baseEtag === theirs.etag && op.payload) {
+        // One sent without If-Match (the user kept it) was made on the
+        // copy: the version they compared against is no news either.
+        if (theirs.etag !== null && (op.baseEtag ?? old.etag) === theirs.etag && op.payload) {
           row = op.payload;
           continue;
         }

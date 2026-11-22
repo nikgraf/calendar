@@ -393,8 +393,13 @@ const make: Effect.Effect<
       const state = yield* syncStateRepo.get(account.id, scope);
       const passStartedAt = yield* Clock.currentTimeMillis;
       // The events a queued move takes out of this calendar that this
-      // pass's pages listed here all the same.
+      // pass's pages listed here all the same, and the moves queued when
+      // the pass began: one queued while it pages may follow the page that
+      // named its event, and is told nothing by not being seen leaving.
       const listedLeaving = new Set<string>();
+      const movesBefore = new Set(
+        [...(yield* nextMoves(account.id)).values()].map((move) => move.id),
+      );
 
       const applyItems = (items: ReadonlyArray<GcalEvent>, pageTimeZone: string | undefined) =>
         Effect.gen(function* () {
@@ -522,7 +527,20 @@ const make: Effect.Effect<
                 // An event a queued change holds: Google's version becomes
                 // its copy and the change is laid over it again, so neither
                 // is lost. The rest are Google's rows.
-                const rows = yield* heldEvents.receive(account.id, calendarId, kept);
+                // One that settles a move (below) is that move's answer: the
+                // move lays what waits behind it over it, knowing the new
+                // etag for its own. Taken here first, a delete made in the
+                // destination parked on it.
+                const settling = new Set(
+                  landed
+                    .filter(({ opId, record }) => next.get(record.id)?.id === opId)
+                    .map(({ record }) => record.id),
+                );
+                const rows = yield* heldEvents.receive(
+                  account.id,
+                  calendarId,
+                  kept.filter((record) => !settling.has(record.id)),
+                );
                 yield* eventRepo.applyPage(account.id, calendarId, {
                   deletions: gone,
                   mode: 'pull',
@@ -632,7 +650,10 @@ const make: Effect.Effect<
         // An event a queued move takes out of here that the full list no
         // longer names is gone from here too.
         const absent = [...(yield* nextMoves(account.id)).values()].filter(
-          (move) => move.calendarId === calendarId && !listedLeaving.has(move.eventId),
+          (move) =>
+            move.calendarId === calendarId &&
+            movesBefore.has(move.id) &&
+            !listedLeaving.has(move.eventId),
         );
         yield* pendingOpRepo.markSourceGone(absent.map((move) => move.id));
       }
