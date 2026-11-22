@@ -259,8 +259,13 @@ it whenever a kind is added. Rules that keep the queue correct:
   "Google's copy of a held item" below) and the queued changes are laid
   over it again (`heldEvents.ts`): an update keeps the fields it changed
   against the old copy and takes Google's in every other (`rebaseOnto`),
-  an RSVP lays its answers over Google's guests, and the row shows the
-  result, still `pending`. Nobody is asked unless both sides changed the
+  an RSVP lays its answers over Google's guests (and an edit queued after
+  it keeps them), an edit made on the very version that arrives is left
+  as it is — a full list names every event, changed or not — and the row
+  shows the result, still `pending`. The reply to a write sent without
+  If-Match (an answer resent after its 412, keep-mine) may hold another
+  device's change too, and is taken the same way by the ops still queued
+  (`take`). Nobody is asked unless both sides changed the
   same thing to different values — a time (start, end, all-day and zone
   are one thing), a place (its text and its coordinates), or any other
   field — or the update edits the guest list and Google's version moved
@@ -294,8 +299,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   ack mode, then drops the op — a series delete's exceptions come back
   with a live master, and a series gone on Google takes its synced
   exceptions along. Take-theirs is refused while a move of the series is
-  queued ahead. A new edit of a parked event coalesces as usual and
-  parks again if it still clashes.
+  queued ahead. A new edit or delete of a parked event replaces the
+  parked change and stays parked (`inheritedPark`): the row carries
+  Google's etag by then, and sent on it the new change would overwrite,
+  unasked, what the two clashed over.
 - **401**: the op stays queued, the account is flagged `reauth_required`;
   reconnecting (same account id, resolved by email) resets status and the
   queue drains at once.
@@ -557,8 +564,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   the row and out of what the other queued ops send, and the row stays
   `pending`. An op with no copy (`null`) removes the row it made. A task's
   row is rebuilt rather than patched: the copy with the queued edits and
-  toggles over it (`heldTasks.refresh`), shown where its queued moves and
-  reorders leave it (`placeOf`: a move of its own takes it out of its
+  toggles over it (`heldTasks.refresh`; with nothing left queued it is
+  the copy, in Google's list alone — a row a move of its parent took
+  elsewhere goes), shown where its queued moves and reorders leave it (`placeOf`: a move of its own takes it out of its
   parent, a move of its parent takes it along; `revertTaskMove`,
   `revertTaskReorder`). A delete's discard re-inserts the copy, and a
   series delete's the exceptions it holds, each only where no row is (an
@@ -698,7 +706,8 @@ Rules a change to the queue keeps (each broke once):
   when the page went in.
 - **A queued delete leaves no row, and a pull writes none**: Google's
   copy of an event or a task whose delete waits goes to its copy (a
-  delete of an event that changed since parks). A deletion a page
+  delete of an event that changed since parks), also when the delete
+  waits behind the event's own create, whose landing the page proves. A deletion a page
   reports removes the copy: the sync token has seen it and will never
   send it again, so nothing is left to put back (`forgetDeleted`,
   `heldTasks.forgetDeleted`; the copy of a task whose queued move shows

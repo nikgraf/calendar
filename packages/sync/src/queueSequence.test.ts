@@ -1,6 +1,7 @@
 import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
 import {
   Account,
+  Attendee,
   type EventInstance,
   expandRecurringEvent,
   failureText,
@@ -3554,6 +3555,35 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
     );
   });
 
+  it.effect(
+    'a subtask taken out of its parent elsewhere does not stay behind in the destination',
+    () => {
+      // The parent's move waits; another device drags a subtask out of it in
+      // the source. Google then leaves that task where it is. The move's
+      // landing put its row back in the source and left the one it had
+      // taken to the destination: pending under the parent, with no op.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          network.down = true;
+          yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+          expect(yield* placed).toEqual(['list-2/p', 'list-2/s1/p', 'list-2/s2/p']);
+          google.moveTaskServerSide('list-1', 's2', {});
+          google.now += MINUTE;
+          yield* TestClock.adjust('1 minute');
+          yield* (yield* SyncEngine).syncAll();
+          network.down = false;
+          yield* drainAll(mutations);
+          expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+          expect(yield* placed).toEqual(['list-2/p', 'list-2/s1/p', 'list-1/s2']);
+        }),
+      );
+    },
+  );
+
   it.effect('a subtask moved out and back stays out of its parent when the order is read', () => {
     // Sequence 1813: the subtask moved to another list and back while
     // offline, which takes it out of its parent. A pass that read the
@@ -4108,6 +4138,219 @@ describe('pending-op queue: what a pull tells of a queued create or move', () =>
           { calendar_id: 'cal-1', sync_status: 'synced', title: 'Sprint review' },
           { calendar_id: 'cal-1', sync_status: 'synced', title: 'Sprint review' },
         ]);
+      }),
+    );
+  });
+});
+
+/** The account's own answer on an event's row. */
+const selfResponse = (eventId: string) =>
+  Effect.gen(function* () {
+    const rows = yield* (yield* SqlClient)<{
+      readonly attendees: string | null;
+    }>`SELECT attendees FROM events WHERE id = ${eventId}`;
+    const guests = JSON.parse(rows[0]?.attendees ?? '[]') as ReadonlyArray<{
+      readonly email?: string;
+      readonly responseStatus?: string;
+    }>;
+    return guests.find((guest) => guest.email === EMAIL)?.responseStatus;
+  });
+
+/** An edit of e1. */
+const editE1 = (
+  mutations: EventMutationsShape,
+  changes: { readonly description?: string; readonly title?: string },
+) => mutations.updateEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-1', changes, eventId: 'e1' });
+
+describe("pending-op queue: Google's copy and the changes laid over it", () => {
+  it.effect('a second edit of an event whose edit is parked stays parked', () => {
+    // Both renamed the event, and a pull parked the user's rename. The row
+    // then carries Google's etag (it is Google's version with the user's
+    // title over it): a second edit replaced the parked op with one on
+    // that etag, the PATCH went through, and Google's title was gone
+    // without anyone having been asked.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        yield* editE1(mutations, { title: 'Standup (mine)' });
+        google.patchEventServerSide('cal-1', 'e1', { summary: 'Standup (theirs)' });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* ops.listAll()).map((op) => op.conflictAt !== undefined)).toEqual([true]);
+        yield* editE1(mutations, { description: 'Bring the numbers' });
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.eventOf('cal-1', 'e1')?.summary).toBe('Standup (theirs)');
+        const [parked] = yield* ops.listAll();
+        expect(parked?.conflictAt).toBeDefined();
+        expect(parked?.payload?.title).toBe('Standup (mine)');
+        expect(parked?.payload?.description).toBe('Bring the numbers');
+        expect(parked?.beforePayload?.title).toBe('Standup (theirs)');
+      }),
+    );
+  });
+
+  it.effect(
+    'a full list that brings an unchanged event leaves a queued guest-list edit alone',
+    () => {
+      // After an expired token the calendar is listed in full: every held
+      // event comes again, changed or not. A guest-list edit differs from
+      // Google's list by its nature, and parked as "changed on Google".
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          network.down = true;
+          yield* mutations.updateEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            changes: {
+              attendees: [
+                new Attendee({ email: 'guest@example.com', responseStatus: 'needsAction' }),
+              ],
+            },
+            eventId: 'e1',
+          });
+          google.expireSyncTokens('cal-1');
+          yield* TestClock.adjust('1 minute');
+          yield* (yield* SyncEngine).syncAll();
+          const [queued] = yield* (yield* PendingOpRepo).listAll();
+          expect(queued?.kind).toBe('update');
+          expect(queued?.conflictAt).toBeUndefined();
+        }),
+      );
+    },
+  );
+
+  it.effect('an answer queued before an edit stays on the row through a pull', () => {
+    // The user accepted, then renamed; the organizer wrote a description.
+    // The pull laid the rename over Google's version, guests and all, and
+    // the row showed "not answered" again until the rename landed.
+    const google = newFake();
+    google.putEvent('cal-1', {
+      ...timed('invite', 6, 9, 'Planning'),
+      attendees: [
+        { email: EMAIL, responseStatus: 'needsAction', self: true },
+        { email: 'host@example.com', organizer: true, responseStatus: 'accepted' },
+      ],
+      organizer: { email: 'host@example.com' },
+    });
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.respondToEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'invite',
+          response: 'accepted',
+        });
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Planning (mine)' },
+          eventId: 'invite',
+        });
+        expect(yield* selfResponse('invite')).toBe('accepted');
+        google.patchEventServerSide('cal-1', 'invite', { description: 'Agenda attached' });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* selfResponse('invite')).toBe('accepted');
+      }),
+    );
+  });
+
+  it.effect(
+    "an edit behind an answer keeps what the answer's reply brought of another device",
+    () => {
+      // The organizer wrote a description after the last pull. The user
+      // accepted and renamed: the answer met a 412, went again unchecked and
+      // came back with that description, which became Google's copy as it
+      // stood. The rename behind it was not laid over it: its payload still
+      // held the old, empty description, read as the user's own change, and
+      // the PATCH wrote it over the organizer's.
+      const google = newFake();
+      google.putEvent('cal-1', {
+        ...timed('invite', 6, 9, 'Planning'),
+        attendees: [
+          { email: EMAIL, responseStatus: 'needsAction', self: true },
+          { email: 'host@example.com', organizer: true, responseStatus: 'accepted' },
+        ],
+        organizer: { email: 'host@example.com' },
+      });
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          network.down = true;
+          yield* mutations.respondToEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            eventId: 'invite',
+            response: 'accepted',
+          });
+          yield* mutations.updateEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            changes: { title: 'Planning (mine)' },
+            eventId: 'invite',
+          });
+          google.patchEventServerSide('cal-1', 'invite', { description: 'Agenda attached' });
+          network.down = false;
+          yield* drainAll(mutations);
+          expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+          const theirs = google.eventOf('cal-1', 'invite');
+          expect(theirs?.summary).toBe('Planning (mine)');
+          expect(theirs?.description).toBe('Agenda attached');
+          expect(yield* selfResponse('invite')).toBe('accepted');
+        }),
+      );
+    },
+  );
+
+  it.effect('an event deleted while its create was out does not come back with a pull', () => {
+    // The create's answer was lost and the user deleted the event: its
+    // delete waits behind the create. The page that brings the event wrote
+    // it as a row again, there until the delete was sent.
+    const google = newFake();
+    lostThenRefused(google, (call) => call.method === 'POST' || call.method === 'DELETE');
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const created = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          endUtc: START + 9 * DAY + 11 * HOUR,
+          isAllDay: false,
+          startTimeZone: 'UTC',
+          startUtc: START + 9 * DAY + 10 * HOUR,
+          title: 'Dentist',
+        });
+        yield* mutations.processPendingOps();
+        yield* mutations.deleteEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: created.id,
+        });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* shownAt(created.id)).toEqual([]);
+        expect((yield* (yield* PendingOpRepo).listAll()).map((op) => op.kind)).toEqual(['delete']);
+        google.fault = undefined;
+        yield* drainAll(mutations);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        expect(yield* shownAt(created.id)).toEqual([]);
       }),
     );
   });

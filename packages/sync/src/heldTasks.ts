@@ -185,7 +185,15 @@ export const makeHeldTasks = (deps: HeldTaskDeps): HeldTasks => {
       }
       const now = yield* Clock.currentTimeMillis;
       if (ops.length === 0) {
-        // Nothing waits for it any more: the row is Google's again.
+        // Nothing waits for it any more: the row is Google's again, in
+        // the list Google has it in. A row a move of its parent took to
+        // another list while Google took the task out of that parent is
+        // left there by nothing else.
+        for (const list of yield* taskRepo.listLists(accountId)) {
+          if (list.id !== copy.listId && (yield* taskRepo.get(accountId, list.id, taskId))) {
+            yield* taskRepo.removeTask(accountId, list.id, taskId);
+          }
+        }
         yield* taskRepo.upsertTasks([copy], now);
         yield* taskRepo.removeCopies(accountId, copy.listId, [taskId]);
         return;

@@ -1753,8 +1753,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         yield* advanceCarried(op, synced, calendarId);
         const held = yield* takeIntoDelete(taken, synced);
         if (yield* othersQueued(op, calendarId)) {
-          // The row is theirs; what they replace is now what just landed.
-          yield* advanceOthers(op, event, synced);
+          if ((op.kind === 'rsvp' || op.kind === 'update') && options.sentEtag === undefined) {
+            // Sent without If-Match (an answer after its 412, keep-mine):
+            // the reply may hold another device's change too. To the ops
+            // still queued it is Google's newer version, and they are
+            // laid over it as over a pull's — taken as their copy as it
+            // stands, what that device changed read as theirs to send.
+            yield* heldEvents.take(synced, op.id);
+          } else {
+            // The row is theirs; what they replace is now what just landed.
+            yield* advanceOthers(op, event, synced);
+          }
         } else if (held) {
           // Google's copy is in the delete now; the op's own row goes.
           yield* eventRepo.deleteEvent(op.accountId, calendarId, op.eventId);

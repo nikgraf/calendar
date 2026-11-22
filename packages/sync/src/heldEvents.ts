@@ -163,12 +163,14 @@ export interface HeldEvents {
     records: ReadonlyArray<EventRecord>,
   ) => Effect.Effect<ReadonlyArray<EventRecord>, SqlError>;
   /**
-   * Google's newer version of one event (a pull's, or the fetch after a
-   * refused write): it becomes the event's copy, and every queued change
-   * of the event is laid over it again, row and all. A change that
-   * clashes with it is parked for the user.
+   * Google's newer version of one event (the fetch after a refused write,
+   * or the reply to a write sent without If-Match, which may hold another
+   * device's change too): it becomes the event's copy, and every queued
+   * change of the event is laid over it again, row and all. A change that
+   * clashes with it is parked for the user. `except` is the op whose
+   * reply this is, still queued: its change is in `theirs`.
    */
-  readonly take: (theirs: EventRecord) => Effect.Effect<void, SqlError>;
+  readonly take: (theirs: EventRecord, except?: string) => Effect.Effect<void, SqlError>;
 }
 
 /** The op kinds that hold an event Google has: the ones a newer copy concerns. */
@@ -201,6 +203,11 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
       }
       let row: EventRecord | undefined = undefined;
       let removed = false;
+      // The answers queued so far: an edit queued after one was made on a
+      // row that showed it, and shows it still.
+      const answers: Array<PendingOp> = [];
+      const answered = (record: EventRecord): EventRecord =>
+        answers.reduce((shown, answer) => withAnswers(shown, answer, old), record);
       for (const op of holding) {
         if (op.kind === 'delete') {
           removed = true;
@@ -220,7 +227,8 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
           // Parked already: its preview of Google's version moves on, and
           // it stays the user's version on screen.
           yield* pendingOpRepo.markConflict(op.id, op.conflictAt);
-          const kept = op.kind === 'rsvp' ? undefined : rebaseOnto(op, old, theirs).payload;
+          const kept =
+            op.kind === 'rsvp' ? undefined : answered(rebaseOnto(op, old, theirs).payload);
           if (kept) {
             row = kept;
             yield* pendingOpRepo.setPayload(op.id, kept);
@@ -230,11 +238,20 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
         if (op.kind === 'rsvp') {
           row = withAnswers(row ?? theirs, op, old);
           yield* pendingOpRepo.setPayload(op.id, row);
+          answers.push(op);
+          continue;
+        }
+        // Made on this very version: a full list names every event,
+        // changed or not, and a page can bring a version again. Nothing
+        // moved under the edit to lay it over anew (a guest-list edit,
+        // which differs from Google's list by its nature, parked on it).
+        if (op.baseEtag !== undefined && op.baseEtag === theirs.etag && op.payload) {
+          row = op.payload;
           continue;
         }
         const rebased = rebaseOnto(op, old, theirs);
-        row = rebased.payload;
-        yield* pendingOpRepo.setPayload(op.id, rebased.payload);
+        row = answered(rebased.payload);
+        yield* pendingOpRepo.setPayload(op.id, row);
         if (rebased.kind === 'clash') {
           yield* pendingOpRepo.markConflict(op.id, now);
         }
@@ -263,8 +280,19 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
       for (const record of records) {
         const ops = queued.get(record.id) ?? [];
         // A create still queued: Google's copy is that create landed, and
-        // its own answer (or its 409) settles the row.
-        if (!ops.some((op) => HOLDING.has(op.kind)) || ops.some((op) => op.kind === 'create')) {
+        // its own answer (or the engine, with this record) settles the row.
+        // Deleted here since: no row is written, and the record is the
+        // copy that delete holds.
+        const create = ops.find((op) => op.kind === 'create');
+        if (create && ops.some((op) => op.kind === 'delete')) {
+          yield* pendingOpRepo.advanceBefore(
+            { accountId, calendarId, eventId: record.id },
+            record,
+            create,
+          );
+          continue;
+        }
+        if (create || !ops.some((op) => HOLDING.has(op.kind))) {
           free.push(record);
           continue;
         }
@@ -273,14 +301,18 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
       return free;
     });
 
-  const take: HeldEvents['take'] = (theirs) =>
+  const take: HeldEvents['take'] = (theirs, except) =>
     Effect.flatMap(
       pendingOpRepo.listForEvent({
         accountId: theirs.accountId,
         calendarId: theirs.calendarId,
         eventId: theirs.id,
       }),
-      (ops) => takeOver(theirs, ops),
+      (ops) =>
+        takeOver(
+          theirs,
+          ops.filter((op) => op.id !== except),
+        ),
     );
 
   return { receive, take };

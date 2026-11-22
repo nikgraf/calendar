@@ -122,8 +122,9 @@ was cut (pruned 2026-11-17).
   Solunivo", the webcam on dense codes, parked Google prefs untitled.
 - **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
   bump together when a release is worth a number.
-- **Schema baseline** (2026-09-15, again 2026-10-15) — the pre-release
-  migrations were collapsed into one, twice, since nothing had shipped;
+- **Schema baseline** (2026-09-15, again 2026-10-15 and 2026-11-21, `todo/sync-provider-copy`)
+  — the pre-release migrations were collapsed into one, three times,
+  since nothing had shipped;
   the second pass also dropped every upgrade of old data (zone lists
   without the device entry, the old fired map and Keychain key, the
   Birthdays purge). The runner refuses rather than self-wipes: an applied
@@ -389,15 +390,15 @@ was cut (pruned 2026-11-17).
 - **Op queue invariants** (2026-09-11 sweep, #110, #118, #125) — the
   local write and the queue change commit in one transaction, with the
   drain kicked after commit (`Effect.suspend(forkDetach)` so a failed
-  transaction never starts a drain); pulls skip rows with a queued local
-  edit; a permanent rejection drops the op _and_ announces it; a row
+  transaction never starts a drain); a pull never overwrites a row a
+  queued change holds; a permanent rejection drops the op _and_ announces it; a row
   whose payload no longer decodes is quarantined by being skipped (no
   payload version tag — the schema is the tag); a response writes its row
   only while no later op of the event is queued; an update that lands
   moves its followers to the etag it produced, an RSVP only when its
   If-Match held; a 412 is done only when Google's copy yields exactly the
-  PATCH body, and re-sent on Google's etag when only the etag moved (see
-  "A re-etag is no conflict"); only a never-sent create is folded into or dropped; a sent
+  PATCH body (see "Google's copy of a held item" for the rest); only a
+  never-sent create is folded into or dropped; a sent
   create stays in its calendar on a move; a 410 on a write is "gone".
 - **Full event history** (2026-09-14) — the events pass sends no
   `timeMin`: one unbounded first pass rather than a quick window plus a
@@ -434,20 +435,20 @@ was cut (pruned 2026-11-17).
   projection of the queued op, storing Google's master text and each
   exception's own (nothing could be recomputed otherwise); discard,
   take-theirs and a permanent rejection restore the exceptions.
-- **A re-etag is no conflict** (2026-11-03, #282) — a series PATCH gives
-  every exception a new etag (probed live), so an occurrence edit queued
-  behind a rename or a new rule parked as "changed on Google" with
-  nothing changed. An update whose 412 copy equals its snapshot (of the
-  If-Match version) in every field we keep goes again on Google's etag.
-  Rejected: dropping If-Match behind a series edit (another client's
-  change would be overwritten). A guest-list edit and a delete still park:
-  Google replaces guest fields we lack, and a delete takes along what we
-  do not keep. Open: an occurrence delete behind a rename still asks.
-- **Conflicts with a choice** (2026-09-23, #85) — a 412 parks the op
-  instead of dropping it (server-wins deleted the user's version and lost
-  server changes a pull had skipped). Show Google's version, not just the
-  title (Nik's pick); the stored copy is a preview and take-theirs
-  re-fetches live; keep-mine re-sends without If-Match (the user saw the
+- **A re-etag is no conflict** (2026-11-03, #282; `todo/sync-provider-copy`) — a series PATCH
+  gives every exception a new etag (probed live), so an occurrence edit
+  queued behind a rename or a new rule parked as "changed on Google" with
+  nothing changed. It goes again on Google's etag, like every update that
+  does not clash with Google's version. Rejected: dropping If-Match
+  behind a series edit (another client's change would be overwritten). A
+  guest-list edit and a delete still park: Google replaces guest fields
+  we lack, and a delete takes along what we do not keep. Open: an
+  occurrence delete behind a rename still asks.
+- **Conflicts with a choice** (2026-09-23, #85) — a change that clashes
+  with Google's version parks instead of being dropped (server-wins
+  deleted the user's version). Show Google's version, not just the title
+  (Nik's pick); the event's copy is a preview and take-theirs re-fetches
+  live; keep-mine re-sends without If-Match (the user saw the
   comparison); an edit of an event Google deleted is restored under a new
   id; a parked op survives a move. The old `notice:conflict` toasts are
   gone.
@@ -461,36 +462,34 @@ was cut (pruned 2026-11-17).
   test polls six minutes, then skips while Google still lists the calendar
   or serves its event. Rejected: a longer budget alone (the lag has no
   known bound), a full calendarList every pass (lagging replicas list it).
-- **A queued delete and the copy a pull puts back** (2026-10-30, #265,
-  #267, #270) — a page answered before a delete landed put the row back
-  until the next poll (live nightly 40265233306). An events pass holds the
-  drain like a task list's, a landed delete removes the synced copy at
-  its id, and acting on that copy (an edit, a move, an answer) replaces
-  the delete and takes the copy as its snapshot. Rejected: a pull skipping
-  rows whose delete is queued (the token never resends them, so a discard
-  restored a stale copy); holding the drain per page; refusing the move;
-  the pull writing into the delete's snapshot. Open: a replica lagging
-  behind a landed delete; an occurrence edit leaves a series' queued delete.
+- **A queued delete leaves no row for a pull to fill** (2026-10-30, #265,
+  #267, #270; `todo/sync-provider-copy`) — a page answered before a delete landed put the row
+  back until the next poll (live nightly 40265233306). An events pass
+  holds the drain like a task list's, and a pull writes no row for an
+  event whose delete waits: Google's version becomes the copy that delete
+  holds, so a discard restores what Google has now. That copy is what
+  answers the first objection to skipping such rows (the token never
+  resends them). Rejected: holding the drain per page; refusing the move.
+  Open: a replica lagging behind a landed delete.
 - **A move Google never makes takes its queued edits back** (2026-10-31, #271)
   — Opus review of #267: a refused, unfound or discarded move put only
   the rows back; the edits behind it stayed addressed to the destination,
-  404'd and were dropped. They now go back in place, snapshots re-keyed; a
-  move onwards leaves from the source. A 404, or a discard of a move that
+  404'd and were dropped. They now go back in place, Google's copies
+  re-keyed with them; a move onwards leaves from the source. A 404, or a discard of a move that
   was sent, asks the destination first: a lost answer means it may have
   landed. Rejected: dropping the edits and restoring rows from snapshots
   (a 403 is no reason to lose an edit); a discard waiting for the drain
   (it sent the move meanwhile). Open: a discarded sent move with Google
   unreachable goes back; a refused sent create takes only one move along.
 - **A waiting series delete holds Google's copies of its exceptions**
-  (2026-10-31 to 2026-11-02, #274, #279, #280) — in its snapshot while the
-  master is gone, on the table once a pull put the master back; a discard
-  puts them back only where no row is (an occurrence's own tombstone
-  stays), and a landed delete takes them. What a cut or a rule change
-  dropped goes back where Google's master draws the slot, and the series
-  update records where its drop starts (`dropsFrom`). Rejected: putting
-  every taken exception back; the delete keeping copies too (an aging one
-  a discard could resurrect); telling the deletes apart by the queue or
-  the master's rule.
+  (2026-10-31 to 2026-11-02, #274, #279, #280; `todo/sync-provider-copy`) — as copies kept per
+  exception, which pulls and answers keep current while the master is
+  gone; a discard puts them back only where no row is (an occurrence's
+  own tombstone stays), and a landed delete takes them. What a cut or a
+  rule change dropped goes back where Google's master draws the slot,
+  and the series update records where its drop starts (`dropsFrom`).
+  Rejected: putting every taken exception back; telling the deletes
+  apart by the queue or the master's rule.
 - **A new rule keeps the exceptions it still draws** (2026-11-03, #281) —
   probed live: Google keeps an exception whose slot the new rule draws
   and cancels the rest, with new etags all round. So only skipped
@@ -542,23 +541,26 @@ was cut (pruned 2026-11-17).
   periodic stat is the source of truth and directory watchers only the
   fast path (watching the home directory was rejected: noisy). Rejected:
   iCloud key-value sync of the document.
-- **Unsynced changes diff and revert** (2026-10-10) — a queued op keeps
-  the row it replaced (`before*` columns, inherited across coalescing, so
-  the diff is always against what Google last acknowledged); the list's
-  rows expand to the diff and the discard action lives only there,
-  and discarding — like a permanent rejection — puts the row back instead
-  of marking the edit synced. The diff ships as display lines computed in
-  the handler, not as records. Rejected: a server-copy column on
-  events/tasks (every pull would write it), a per-op detail rpc, and
-  whole-row restore — four Codex rounds showed a discard resurrecting
-  another change discarded meanwhile, a landed one, a pulled color or a
-  remotely deleted item: an op puts back only the fields it owns (and
-  takes them out of the other queued snapshots and payloads), a landed
-  op moves every queued snapshot of the item, a confirming pull clears a
-  delete's, a superseded op refused in flight puts nothing back. Open: a
-  deletion a full re-list confirms only by absence clears no snapshot; a per-item
-  acknowledged copy would replace the per-op snapshots if more
-  interleavings turn up.
+- **Unsynced changes diff and revert** (2026-10-10; `todo/sync-provider-copy`) — the list's
+  rows expand to a diff against what Google has, the discard action lives
+  only there, and discarding — like a permanent rejection — puts the row
+  back instead of marking the edit synced. The diff ships as display
+  lines computed in the handler, not as records. Rejected: a per-op
+  detail rpc, and restoring the whole row while another change of the
+  item still waits — four Codex rounds showed a discard resurrecting
+  another change discarded meanwhile or a landed one: then an op puts
+  back only the fields it owns, and a superseded op refused in flight
+  puts nothing back.
+- **Google's copy of a held item** (2026-11-22, `todo/sync-provider-copy`) — while a change of
+  an event or a to-do waits, Google's version is kept once per item,
+  written by pulls, conflict fetches and answers, and the waiting changes
+  are laid over it: different things changed on two devices both hold,
+  and only the same thing changed twice, a guest-list edit or a delete
+  asks (Nik's picks, with: kept only while held, databases reset, one
+  PR). Replaces the per-change snapshots, which no pull could update.
+  Rejected: a copy of every item; an appended migration. Open: an event
+  change still holds the whole event; a discarded change that had landed;
+  the provider seam; and the series gaps in todo.md.
 - **UI action state** (2026-11-05, #296) — an async action of a
   component is one value (`useAction`: idle, running, failed with its
   line, done with the result) on the editors' one-write slot; a value
@@ -585,9 +587,9 @@ was cut (pruned 2026-11-17).
   user, network and other-device steps on the fake, checking its
   invariants after every step, and found nine bugs, fixed here. Rejected:
   fast-check (steps read the app's state, and a seed must replay exactly)
-  and a full model of the expected state. Open: a pull that skips a held
-  row loses Google's copy for an abandoned op; a task move discarded after
-  it landed; subtasks around a moved or deleted parent.
+  and a full model of the expected state. It covers repeating events
+  since `todo/sync-provider-copy`, on a fake that mirrors what is recorded of a series; the
+  gaps it still finds are its `KNOWN_FAILING`, and todo.md's Tier 0.
 
 ## Calendar: editing, gestures, views
 

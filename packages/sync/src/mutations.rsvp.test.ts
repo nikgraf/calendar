@@ -253,8 +253,9 @@ describe('EventMutations.respondToEvent', () => {
     'an RSVP lands when Google moved on; the edit behind it goes on Google’s version',
     () => {
       // Another client changed the event after it was pulled, in nothing
-      // the edit changes: the edit is laid over Google's version and sent
-      // again, and nobody is asked.
+      // the edit changes. The answer goes again unchecked, and its reply
+      // is Google's version now: the edit is laid over it and goes on its
+      // etag, and nobody is asked.
       const google = ifMatchGoogle('"remote"');
       return Effect.gen(function* () {
         yield* seed;
@@ -267,7 +268,6 @@ describe('EventMutations.respondToEvent', () => {
         expect(google.sent).toEqual([
           'attendees If-Match "inv-1" → 412',
           'attendees unchecked → "w1"',
-          'summary If-Match "inv-1" → 412',
           'summary If-Match "w1" → "w2"',
         ]);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);

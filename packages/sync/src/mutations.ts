@@ -153,6 +153,24 @@ const inheritedBefore = (
   return prior ? prior.beforePayload : (current ?? null);
 };
 
+/**
+ * The park of the queued change a new edit or delete replaces: one made
+ * while a change of the event waits for the user's choice waits for it
+ * too. The row carries Google's etag by then — it is Google's version
+ * with the user's fields over it — so sent on that etag the new change
+ * went through and overwrote, unasked, what the two clashed over.
+ */
+const inheritedPark = (
+  queued: ReadonlyArray<PendingOp>,
+): { readonly conflictAt?: number; readonly lastError?: string } => {
+  const parked = queued.find(
+    (op) => (op.kind === 'update' || op.kind === 'delete') && op.conflictAt !== undefined,
+  );
+  return parked?.conflictAt === undefined
+    ? {}
+    : { conflictAt: parked.conflictAt, lastError: parked.lastError ?? 'changed on Google' };
+};
+
 /** The queued series edit whose text the exceptions show locally, if any. */
 const seriesEditOf = (queued: ReadonlyArray<PendingOp>): PendingOp | undefined =>
   queued.findLast((op) => op.kind === 'update' && op.carriedText !== undefined);
@@ -540,6 +558,7 @@ const make: Effect.Effect<
           : new PendingOp({
               accountId,
               attempts: 0,
+              ...inheritedPark(queued),
               baseEtag: master.etag ?? undefined,
               beforePayload: inheritedBefore(queued, master),
               calendarId,
@@ -1218,6 +1237,7 @@ const make: Effect.Effect<
           accountId,
           attempts: 0,
           attendeesChanged: attendeesFlag(changes, queued),
+          ...inheritedPark(queued),
           baseEtag: existing?.etag ?? undefined,
           // Its own text, not what a queued series edit carried onto it.
           beforePayload: ownTextOf(
@@ -1346,6 +1366,7 @@ const make: Effect.Effect<
           accountId,
           attempts: 0,
           attendeesChanged: attendeesFlag(changes, queued),
+          ...inheritedPark(queued),
           baseEtag: master.etag ?? undefined,
           beforePayload: inheritedBefore(queued, master),
           calendarId,
@@ -1583,6 +1604,7 @@ const make: Effect.Effect<
             new PendingOp({
               accountId,
               attempts: 0,
+              ...inheritedPark(queued),
               baseEtag: existing.etag ?? undefined,
               beforePayload: inheritedBefore(queued, existing),
               calendarId,
@@ -1622,6 +1644,7 @@ const make: Effect.Effect<
             new PendingOp({
               accountId,
               attempts: 0,
+              ...inheritedPark(queued),
               baseEtag: existing?.etag ?? undefined,
               beforePayload: ownTextOf(inheritedBefore(queued, existing), seriesEdit),
               calendarId,
@@ -1680,6 +1703,7 @@ const make: Effect.Effect<
             new PendingOp({
               accountId,
               attempts: 0,
+              ...inheritedPark(queued),
               baseEtag: master.etag ?? undefined,
               beforeOverrides,
               beforePayload: inheritedBefore(queued, master),
@@ -1882,6 +1906,7 @@ const make: Effect.Effect<
             accountId,
             attempts: 0,
             attendeesChanged: attendeesFlag(changes, queued),
+            ...inheritedPark(queued),
             baseEtag: existing.etag ?? undefined,
             beforePayload: inheritedBefore(queued, existing),
             calendarId,
