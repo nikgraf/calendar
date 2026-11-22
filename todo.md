@@ -8,38 +8,23 @@ was written; re-verify before starting one.
 
 ## Tier 0 — bugs
 
-- [ ] A delete of a series that replaces a cut or a rule change lets
-      that change's exception deletes out ahead of itself (open since
-      #284 and #285). Offline: "this and following" (or another rule),
-      then delete the series. Online, the deletes the first change queued
-      for the exceptions go out on their own; discarding the series'
-      delete then leaves Google with the series back and those
-      occurrences cancelled. (#374 closed it for an event that no longer
-      repeats here: "does not repeat", then delete.) The series delete
-      keeps those deletes queued on purpose today (`engine.test.ts`, "a
-      series whose delete waits › after a cut"): handing them to it
-      changes nine of those tests. Seeds 1347 and 2936 of
-      `queueSequence.test.ts`.
-- [ ] A pull writes another device's exception past a queued cut as a
-      visible row (on `main` too; Opus round 9 of #374). Offline, "this
-      and following" from day X; another device changes that series'
-      occurrence at X; the pull shows it beside the new series' until the
-      cut lands, and an edit of it parks on our own cut. Hold such an
-      exception as a copy the cut's discard puts back
-      (`holdPulledExceptions`). Seeds 3532, 8967, 11424 of
-      `queueSequence.test.ts`.
-- [ ] A move of a series marks its landed occurrence deletes pending
-      again, and a cut made and discarded after it re-sends one (a 410,
-      harmless on Google; on `main` too). Tell the user's own occurrence
-      deletes by a flag on the op, not by the tombstone's sync status
-      (`isOwnDelete`). Seed 9760.
-- [ ] A change that had landed with its answer lost, then discarded, is
-      put back as if Google never got it until the next pull says
-      otherwise: a discarded move goes back to its source when Google
-      cannot be asked, a discarded edit or cut is not asked about at all.
-      What the user does to the item before that pull meets a 404 and is
-      dropped. Skipped test: "a change made after a discarded move that
-      had landed is kept".
+- [ ] A cut, a new rule, new times or a delete that landed with its
+      answer lost and is then discarded is put back as if Google never
+      got it, until the next pull says otherwise (a discarded edit of a
+      single event is harmless: the next write meets a 412 and is laid
+      over Google's version). Until that pull the app draws occurrences,
+      or an event, that Google has no more, and a change made to one is
+      refused and dropped with a notice. A move in that state waits for
+      Google instead (`PendingOp.discarded`, #374); the same wait here
+      would keep an accidental delete from being undone while offline,
+      since a request that failed offline and one whose answer was lost
+      look alike. Telling them apart needs the device's own word on
+      whether it was online (no such seam yet). The sequence test leaves
+      such occurrences unjudged (`reshapedAway`).
+- [ ] An "All events" edit that changes a series' start drops every
+      changed occurrence (Google cancels them with the new start,
+      verified live 2026-11-22, and the app follows since #374): say so
+      in the editor before the save, as the move and delete previews do.
 
 - [ ] Let agent refs resolve zero-duration Google series occurrences
       (`packages/agent/src/resolve.ts`, `ruleProduces`; found reviewing

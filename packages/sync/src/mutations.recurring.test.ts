@@ -2070,6 +2070,58 @@ describe('EventMutations recurrence rule edits', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect('new times drop the exceptions and the queued changes of their occurrences', () =>
+    // Verified live 2026-11-22: a new start cancels every exception whose
+    // slot is no longer drawn; a new end alone keeps them.
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([override]);
+      const mutations = yield* EventMutations;
+      // A waiting change of that occurrence, made before the retime.
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { location: 'Room 2' },
+        scope: 'instance',
+      });
+      const series = { ...target, originalStartUtc: master.startUtc, scope: 'series' as const };
+      yield* mutations.updateRecurring({
+        ...series,
+        changes: { endUtc: master.endUtc + 30 * 60_000, startUtc: master.startUtc },
+      });
+      expect((yield* rowOf(instanceId))?.location).toBe('Room 2');
+      expect((yield* listOps).map((op) => `${op.kind} ${op.eventId}`).sort()).toEqual([
+        'update master1',
+        `update ${instanceId}`,
+      ]);
+
+      yield* mutations.updateRecurring({
+        ...series,
+        changes: {
+          endUtc: master.endUtc + 60 * 60_000,
+          startUtc: master.startUtc + 60 * 60_000,
+        },
+      });
+      expect(yield* rowOf(instanceId)).toBeNull();
+      const ops = yield* listOps;
+      expect(ops.map((op) => `${op.kind} ${op.eventId}`)).toEqual(['update master1']);
+      // Google's copy of it, without the change that waited.
+      expect(ops[0]?.beforeOverrides?.map((copy) => [copy.id, copy.location])).toEqual([
+        [instanceId, undefined],
+      ]);
+
+      // Given up, the series and the exception are back as Google has them.
+      yield* mutations.discardPendingOp(ops[0]!.id);
+      expect((yield* rowOf('master1'))?.startUtc).toBe(master.startUtc);
+      const back = yield* rowOf(instanceId);
+      expect([back?.title, back?.location, back?.syncStatus]).toEqual([
+        'Daily (this one moved)',
+        undefined,
+        'synced',
+      ]);
+      expect(yield* listOps).toEqual([]);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect('a new rule keeps the exceptions whose slots it still draws, as Google does', () =>
     Effect.gen(function* () {
       const cancelled = new EventRecord({

@@ -442,6 +442,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
                 },
               }),
           ...(diff === undefined ? {} : { diff }),
+          ...(op.discarded === true ? { discarded: true } : {}),
           ...(op.lastError === undefined ? {} : { lastError: op.lastError }),
           ...(titles[index] === undefined ? {} : { title: titles[index] }),
         };

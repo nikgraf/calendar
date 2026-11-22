@@ -12,7 +12,6 @@ import {
   finderWindowOf,
   type FindSlotsConstraints,
   type FreeSlot,
-  isDrawnOccurrence,
   isSameEvent,
   type RecurringScope,
   withFinderBounds,
@@ -48,9 +47,10 @@ const hasFixedClock = (recurrence: ReadonlyArray<string> | undefined): boolean =
  * identity, not id — an occurrence's drawn id becomes Google's once it
  * is edited on its own, which a sync can land mid-edit). "All events",
  * and "This and following" from the series' first occurrence: the master
- * shifts, so every occurrence drawn from its rule moves, while a stored
- * exception keeps its own times — it stays busy, the opened row
- * included. "This and following" later in the series: the split drops
+ * shifts, so every occurrence drawn from its rule moves, and a stored
+ * exception goes: its slot is drawn no more, and Google cancels it with
+ * the new start (verified live), as `updateRecurring` does. "This and
+ * following" later in the series: the split drops
  * every row from the split point, drawn or stored, and the earlier ones
  * stay. An occurrence placed by a fixed RDATE, or by a rule that pins
  * the clock (BYHOUR), stays put through either edit, and a drawn row
@@ -86,10 +86,7 @@ export const rescheduledEventExclusion = (
     if (event.recurringEventId !== masterId || seriesStaysBusy) {
       return false;
     }
-    if (shiftsSeries) {
-      return isDrawnOccurrence(event);
-    }
-    return (event.originalStartUtc ?? event.startUtc) >= from;
+    return shiftsSeries || (event.originalStartUtc ?? event.startUtc) >= from;
   };
 };
 

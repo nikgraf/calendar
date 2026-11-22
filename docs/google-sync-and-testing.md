@@ -59,7 +59,11 @@ suite). When touching sync code, treat these as invariants.
   exception's own: a change of the exception queued under it is laid over
   Google's copy with that text carried onto it (`carriedChangesOf`), names
   only what the user set, and no longer sends the text of a series edit
-  that was given up.
+  that was given up. A text the series edit sets itself wins over a
+  queued change of an occurrence that had set the same field
+  (`carryOntoQueued`: that change sends the series' text from then on),
+  also while the series' own create is still unsent, and the occurrence's
+  own comes back if the series edit is given up.
 - **A PATCH of an occurrence without an exception names what changed**
   (verified live 2026-11-22, `recurring.live.ts`): `events.patch` on an
   instance id Google has no exception for creates the exception from the
@@ -79,11 +83,19 @@ suite). When touching sync code, treat these as invariants.
   Every exception gets a new etag and `updated` with the PATCH (so the
   next delta sends them all), and a DELETE with the etag from before
   meets a 412; a DELETE of an exception already cancelled meets a 410.
-  `updateRecurring` drops only the exceptions the new rule skips. The
-  deletes a cut or rule change queues for what it drops wait behind its
-  PATCH, and its landing takes them off the queue (`forgetDropped`):
-  Google cancelled those exceptions already, and the deletes' If-Match
-  would park a 412.
+  `updateRecurring` drops only the exceptions the new rule skips, and
+  queues nothing for them: Google cancels them with the PATCH. The series
+  update holds Google's copies of them until it lands or is given up
+  (`PendingOp.beforeOverrides`, takenExceptions.ts).
+- **New times redraw a series like a new rule** (verified live
+  2026-11-22, `recurring.live.ts`): a PATCH of a master's `start` cancels
+  every exception whose original slot the series no longer draws — moved
+  an hour, all of them: a moved or renamed occurrence is gone and a
+  cancelled one's day is drawn again — and a write to an old occurrence
+  id is refused (400). A PATCH of its `end` alone leaves every slot
+  drawn, and the exceptions as they were, their own times included. The
+  app follows: a series edit with a new start drops the exceptions it no
+  longer draws and the queued changes of those occurrences with them.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,
@@ -612,15 +624,15 @@ separate: it also covers tasks, moves, discards and other-device writes.
   device's edits and deletes — then the network recovers, every conflict
   is settled, the queue drains and a pull runs. Repeating events are in:
   a series created, one occurrence edited (its time, its text) or
-  deleted, all events edited (text; the time only of a series without
-  exceptions), another rule or none, "this and following", the series
+  deleted, all events edited (text or time), another rule or none, "this
+  and following", the series
   deleted or moved, each of them discarded while queued, and another
   device renaming or deleting a series, changing or cancelling an
   occurrence. A series is judged by what it draws: every occurrence is an
   item under Google's id for it, shown on the client by its exception row
   or else by its master's rule, on Google by the fake's `instancesOf`.
   The steps keep to what is recorded of Google (Events & recurrence
-  above): a series with exceptions is not retimed, no rule draws a slot
+  above): no rule draws a slot
   again that an earlier one dropped, nobody edits an occurrence Google
   holds cancelled, and nothing sends an exception's etag from before its
   series moved (a series is not moved while a queued change of one of
@@ -639,7 +651,14 @@ separate: it also covers tasks, moves, discards and other-device writes.
   drains run whenever the test fiber suspends (setImmediate order), ids
   come from a seeded `crypto.getRandomValues`, so a seed replays exactly;
   a failure prints the whole sequence and the requests of the failing
-  step.
+  step. The gate runs the first 50 seeds; the `Queue search` workflow
+  (`queue-search.yml`) runs 7,000 every night main has moved, and on
+  demand. Run a wide search before pushing any change to the queue
+  (`QUEUE_SEQUENCE_RUNS=7000 QUEUE_SEQUENCE_KNOWN=1`): a change in the
+  requests the app sends reshuffles every seed, so compare the count and
+  the classes of failures, never seed numbers. `QUEUE_SEQUENCE_STRICT=1`
+  fails where a difference is otherwise only listed as a known gap
+  (`World.heldTold`).
   `QUEUE_SEQUENCE_SEED=<n>` runs one seed, `QUEUE_SEQUENCE_RUNS` and
   `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take about a
   minute), `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. What
@@ -755,8 +774,8 @@ draw; `events.get` shows a cancelled one as `status: cancelled`. Such a
 write leaves the master's etag alone. Every PATCH of the master gives
 each exception a new etag and `updated`, copies a title, description or
 location it changed onto them (one sent with its old value leaves theirs
-alone) and, by the rule it leaves, keeps the exceptions it still draws
-as they were and cancels the others. A master's DELETE takes its
+alone) and, by the series it leaves (its rule, its start), keeps the
+exceptions it still draws as they were and cancels the others. A master's DELETE takes its
 exceptions, `events.move` takes them along (an instance id is refused),
 an incremental list sends each of these and a full one names a live
 series' cancelled occurrences. Which slots a rule draws is core's own
@@ -774,8 +793,6 @@ answers as it did before it knew series and names the request in
 Each is a probe for the live suite to settle:
 
 - a PATCH of a cancelled occurrence (the fake: 404, as for a deleted event);
-- new times for a series that has exceptions (they stay as they are; the
-  app assumes an exception keeps its slot, see decisions.md);
 - a rule that draws a slot again which an earlier rule or cut dropped: a
   plain occurrence, as verified, but what a list then reports for the
   exception that was there is not (the fake: nothing);
@@ -1007,8 +1024,8 @@ the series' first day to seven weeks past today, one stored master and
 one queued create per split, and one exception row per slot edited
 alone. Generation stays on documented ground: a series or split never
 changes the date, a moved occurrence is edited alone, and a series with
-exceptions is not retimed (an exception keeps its slot through a series
-retime, unverified on Google). Ledgers and the drawn and expected lists
+exceptions is not retimed (a new start drops them, as on Google; the
+spec's model does not replay that drop yet). Ledgers and the drawn and expected lists
 use `bombadil-recurring-<timestamp>/`; replay one with
 `E2E=1 BOMBADIL=1 BOMBADIL_RECURRING_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadilRecurring.e2e.ts`.
 

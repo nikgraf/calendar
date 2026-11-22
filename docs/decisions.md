@@ -428,7 +428,6 @@ was cut (pruned 2026-11-17).
   start. Rejected: deriving the bound from the move (by days, by the time
   of day on the series' calendar, at the nearest day) — each failed a
   review round; a cut written as the end of the day before the split.
-  Open: exceptions keep their slots through a series retime, unverified.
 - **A master edit reaches the exceptions** (2026-09-26, review of
   #88/#90) — Google copies a master's _changed_ title, description or
   location onto every exception, so the app mirrors that at save as a
@@ -479,34 +478,36 @@ was cut (pruned 2026-11-17).
   was sent, asks the destination first: a lost answer means it may have
   landed. Rejected: dropping the edits and restoring rows from snapshots
   (a 403 is no reason to lose an edit); a discard waiting for the drain
-  (it sent the move meanwhile). Open: a discarded sent move with Google
-  unreachable goes back; a refused sent create takes only one move along.
+  (it sent the move meanwhile). A discarded sent move Google cannot be
+  asked about stays queued, never sent again, until Google says where
+  the event is (#374: put back at once, a change made meanwhile went to
+  the wrong calendar). Open: a refused sent create takes only one move
+  along.
 - **A waiting series delete holds Google's copies of its exceptions**
   (2026-10-31 to 2026-11-02, #274, #279, #280; #374) — as copies kept per
   exception, which pulls and answers keep current while the master is
   gone; a discard puts them back only where no row is (an occurrence's
-  own tombstone stays), and a landed delete takes them. What a cut or a
-  rule change dropped goes back where Google's master draws the slot,
-  and the series update records where its drop starts (`dropsFrom`).
-  Rejected: putting every taken exception back; telling the deletes
-  apart by the queue or the master's rule.
+  own tombstone stays), and a landed delete takes them. A cut, a new
+  rule or new times hold what they drop the same way (#374): it goes
+  back where Google's master draws the slot, and the series update
+  records where its drop starts (`dropsFrom`). Rejected: putting every
+  taken exception back; a queued delete per dropped exception.
 - **A new rule keeps the exceptions it still draws** (2026-11-03, #281) —
   probed live: Google keeps an exception whose slot the new rule draws
-  and cancels the rest, with new etags all round. So only skipped
-  exceptions drop, their deletes wait behind the PATCH whose landing
-  takes them off the queue, and a later rule drawing a slot again takes
-  its delete back. Rejected: sending them without If-Match (a request
-  for nothing).
+  and cancels the rest, with new etags all round; new times do the same
+  (probed 2026-11-22, #374). So only exceptions no longer drawn drop,
+  nothing is sent for them, and a later rule drawing a slot again puts
+  its exception back. Rejected: a delete for each (a request for
+  nothing, with or without If-Match).
 - **An undone cut or rule change takes what it queued along** (2026-11-03,
-  #284, #285) — Nik's choice for both: its exception deletes (on a
-  discard, keep-theirs or refusal of it, or of a series delete that
-  replaced it) and, while unsent, the new series a this-and-following
-  edit split off; the user's own occurrence delete stays, and Google's
-  copy decides whether the new series goes. Rejected: a marker column,
-  keeping the series, asking at undo time, deciding by the local copy (a
-  cut can land unseen). Open: a series delete that replaced the cut lets
-  both out (todo.md, Tier 0); a discarded exception delete shows past a
-  waiting cut; beside another device's split a kept series shows twice.
+  #284, #285; #374) — Nik's choice for both: the exceptions it held come
+  back (on a discard, keep-theirs or refusal of it, or of a series delete
+  that replaced it) and, while unsent, the new series a
+  this-and-following edit split off goes; the user's own occurrence
+  delete stays, and Google's copy decides whether the new series goes.
+  Rejected: a marker column, keeping the series, asking at undo time,
+  deciding by the local copy (a cut can land unseen). Open: beside
+  another device's split a kept series shows twice.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
@@ -552,15 +553,15 @@ was cut (pruned 2026-11-17).
   back only the fields it owns, and a superseded op refused in flight
   puts nothing back.
 - **Google's copy of a held item** (2026-11-22, #374) — while a change of
-  an event or a to-do waits, Google's version is kept once per item. A
-  waiting change keeps only what its edit set; a version is the copy with
-  the queued changes over it in order (an occurrence without an
-  exception: its series at the slot). Different things changed on two
-  devices both hold; the same thing, a guest-list edit or a delete asks
-  (Nik's picks, with: kept while held, databases reset, one PR). A series'
-  update stays ahead of occurrence changes made under it; a later edit
-  takes its place or queues behind. Rejected: per-change snapshots; every
-  update its own op. Open: the provider seam; todo.md's Tier 0.
+  an event or a to-do waits, Google's version is kept once per item, and
+  a waiting change keeps only what its edit set (an occurrence without an
+  exception: over its series at the slot). Different things changed on
+  two devices both hold; the same thing, a guest-list edit or a delete
+  asks (Nik's picks, with: kept while held, databases reset, one PR). An
+  event has one waiting update; a series' text wins over an occurrence's,
+  a redrawn series drops and holds its exceptions, as on Google. Rejected:
+  per-change snapshots; updates sent in turn; a delete queued per dropped
+  exception. Open: the provider seam; todo.md's Tier 0.
 - **UI action state** (2026-11-05, #296) — an async action of a
   component is one value (`useAction`: idle, running, failed with its
   line, done with the result) on the editors' one-write slot; a value

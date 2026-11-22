@@ -106,6 +106,8 @@ const STEPS = envNumber('QUEUE_SEQUENCE_STEPS') ?? 40;
 const VERBOSE = process.env['QUEUE_SEQUENCE_VERBOSE'] === '1';
 /** Run the seeds KNOWN_FAILING skips (to check a change that closes their gap). */
 const RUN_KNOWN = process.env['QUEUE_SEQUENCE_KNOWN'] === '1';
+/** Fails where a difference is otherwise only listed as a known gap (World.heldTold). */
+const STRICT = process.env['QUEUE_SEQUENCE_STRICT'] === '1';
 
 const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
@@ -1308,7 +1310,7 @@ const staleOrBroken = (world: World, slotOrKey: string, message: string) => {
   const known = [...world.heldTold].some(
     ([slot, json]) => names(slot) && stillThatCopy(slot, json),
   );
-  if (known) {
+  if (known && !STRICT) {
     world.knownGaps.push(`#${world.step} ${message}`);
   } else {
     world.violations.push(message);
@@ -1587,9 +1589,16 @@ const forgetChanged = (world: World, before: ReadonlyArray<PendingOp>) =>
   Effect.map(readSnapshot, (after) => {
     const ids = new Set(after.ops.map((op) => op.id));
     const was = new Set(before.map((op) => op.id));
+    // A move given up after it was sent stays queued while Google cannot
+    // be asked whether it landed (PendingOp.discarded): where the item
+    // ends is Google's word then, not the user's last.
+    const givenUp = new Set(
+      before.filter((entry) => entry.discarded !== true).map((entry) => entry.id),
+    );
     for (const op of [
       ...before.filter((entry) => !ids.has(entry.id)),
       ...after.ops.filter((entry) => !was.has(entry.id)),
+      ...after.ops.filter((entry) => entry.discarded === true && givenUp.has(entry.id)),
     ]) {
       if (!EVENT_KINDS.has(op.kind)) {
         world.intents.delete(taskKey(op.eventId));
@@ -5371,8 +5380,8 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
       // behind the occurrence's delete, which waits only for a rule change
       // ahead of it: it went first, found no such slot on Google (404) and
       // counted as done. Then the new rule landed, and Google drew the day
-      // the user deleted. The rule change stays where it is now, and the
-      // location queues behind the delete as a change of its own.
+      // the user deleted. The edit goes into the rule change now, where
+      // that one stands, ahead of the delete.
       const google = newFake();
       const network = writesDown(google);
       return scripted(
@@ -5835,10 +5844,11 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
     'a new rule goes into the update that carries the first, also behind a later one',
     () => {
       // Review (Opus, round 4): every other day; an occurrence's own place; a
-      // place for all, which queues behind both; then daily again. The last
-      // rule replaced only the last update, and the first one, still ahead,
-      // sent "every other day": Google cancelled the occurrence another
-      // device had moved, and the daily rule drew its day again, plain.
+      // place for all, then queued behind both as a change of its own; then
+      // daily again. The last rule replaced only the last update, and the
+      // first one, still ahead, sent "every other day": Google cancelled
+      // the occurrence another device had moved, and the daily rule drew
+      // its day again, plain. One update holds them all now.
       const google = newFake();
       const network = writesDown(google);
       return scripted(
@@ -6229,15 +6239,15 @@ describe('pending-op queue: what goes with a change of a series', () => {
   });
 });
 
-describe('pending-op queue: open gaps the sequences found in series', () => {
-  it.effect('the deletes a cut queued go with it when a delete of the series replaces it', () => {
+describe('pending-op queue: gaps the sequences found in series, closed since', () => {
+  it.effect('a delete of the series that replaces a cut takes what the cut dropped', () => {
     // Sequences 1347 and 2936 (past the first thousand): a
-    // this-and-following cut queues, behind its PATCH, a delete of each
+    // this-and-following cut queued, behind its PATCH, a delete of each
     // exception past it; deleting the series replaced the cut, and those
     // deletes went out on their own. With the series' delete discarded,
-    // Google has the series as it was, less those occurrences. The series
-    // delete keeps them queued on purpose today (engine.test.ts, "a series
-    // whose delete waits › after a cut").
+    // Google had the series as it was, less those occurrences. The cut
+    // holds Google's copies of them now and queues nothing, and the
+    // series delete takes them over.
     const google = newFake();
     const network = writesDown(google);
     return scripted(

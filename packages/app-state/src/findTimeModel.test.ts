@@ -31,7 +31,7 @@ describe('rescheduledEventExclusion', () => {
   const first = occurrence(1000);
   const edited = occurrence(2000);
   const later = occurrence(3000);
-  // Edited on their own under Google's id: they keep their times through a series edit.
+  // Edited on their own under Google's id: a new start for the series drops them.
   const earlierException = occurrence(500, 'series_x1');
   const laterException = occurrence(4000, 'series_x2');
   const other = event('plain', { startUtc: 2000 });
@@ -56,18 +56,11 @@ describe('rescheduledEventExclusion', () => {
     expect(exclude(occurrence(2000, 'series_20261013T090000Z'))).toBe(true);
   });
 
-  it('frees every drawn occurrence for all events; stored exceptions keep their times', () => {
-    expect(freed(rescheduledEventExclusion(edited, 'series', MASTER)!)).toEqual([
-      'series__1000',
-      'series__2000',
-      'series__3000',
-    ]);
-    // Opened on an exception: the master shifts and the exception stays put.
-    expect(freed(rescheduledEventExclusion(laterException, 'series', MASTER)!)).toEqual([
-      'series__1000',
-      'series__2000',
-      'series__3000',
-    ]);
+  it('frees every occurrence for all events, stored exceptions too', () => {
+    const all = ['series__1000', 'series__2000', 'series__3000', 'series_x1', 'series_x2'];
+    expect(freed(rescheduledEventExclusion(edited, 'series', MASTER)!)).toEqual(all);
+    // Opened on an exception: the master shifts, and the exception goes with the rest.
+    expect(freed(rescheduledEventExclusion(laterException, 'series', MASTER)!)).toEqual(all);
   });
 
   it('frees everything from the split for this and following, drawn or stored', () => {
@@ -83,6 +76,8 @@ describe('rescheduledEventExclusion', () => {
       'series__1000',
       'series__2000',
       'series__3000',
+      'series_x1',
+      'series_x2',
     ]);
   });
 

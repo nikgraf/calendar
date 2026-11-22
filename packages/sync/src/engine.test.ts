@@ -1397,9 +1397,9 @@ describe('SyncEngine', () => {
         yield* mutations.processPendingOps();
       });
 
-      describe('abandoned, it takes the deletes it queued along', () => {
-        // Left queued, they deleted July 3 and July 4 on Google although
-        // the cut was undone.
+      describe('abandoned, it leaves nothing queued for the exceptions it dropped', () => {
+        // The deletes it once queued for them, left behind, deleted July 3
+        // and July 4 on Google although the cut was undone.
         const cutJuly3 = Effect.gen(function* () {
           yield* (yield* EventMutations).deleteRecurring({
             accountId: 'acc-1',
@@ -2696,9 +2696,9 @@ describe('SyncEngine', () => {
       });
     });
 
-    it.effect('a cut’s exception deletes go with its landing: Google cancelled them', () => {
+    it.effect('a cut sends no delete for the exceptions past it: Google cancels them', () => {
       // Verified live: the truncation cancels July 3 and July 4 and gives
-      // them new etags, so their deletes' If-Match met a 412 and parked.
+      // them new etags, so a delete queued for each met a 412 and parked.
       let deletes = 0;
       const truncated = { ...series, etag: '"evt-r-t"', recurrence: ['RRULE:FREQ=DAILY;COUNT=1'] };
       const client: GoogleCalendarClientShape = {

@@ -155,6 +155,11 @@ export const PendingOpSummary = Schema.Struct({
    * the op has no snapshot to compare against: no details.
    */
   diff: Schema.optional(Schema.Array(PendingOpDiffLine)),
+  /**
+   * A move the user gave up after it was sent, waiting for Google to say
+   * whether it landed (`PendingOp.discarded`).
+   */
+  discarded: Schema.optional(Schema.Boolean),
   eventId: Schema.String,
   id: Schema.String,
   kind: Schema.Literals([

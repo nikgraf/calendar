@@ -129,10 +129,18 @@ The class found in the most PRs (54), almost all by Opus.
   change of ours put there (its landing, sent without If-Match) and what
   only stopped being laid under the change (a series' carried text)?
   Both parked conflicts nobody caused (#374, seeds 2368 and 1782).
-- Two changes of one event sent one after the other: does the first one's
-  value reach Google where only the last should (a rule that drops
-  exceptions the next one draws)? And is a change made on top of one that
-  is given up given up with it?
+- Does the diff queue a second update of an event, or a request for
+  something Google does itself with another write (a delete for each
+  exception a cut's PATCH cancels)? An event has one waiting update, and
+  what Google's own order would decide is settled when the edit is made
+  (#374: each of the other shapes took review rounds to keep correct).
+- Does the code assume what Google does with a series' exceptions, ids or
+  etags? Probe it against the live test account first: "a retimed series
+  keeps its exceptions" stood unverified for weeks and was wrong (#374).
+- A discard or a rejection of a change that may already have landed (its
+  answer lost): what does the app show until the next pull, and where
+  does a change made in between go? A move's goes to the wrong calendar
+  unless the move waits for Google's answer (`PendingOp.discarded`).
 - Does anything read the queue or a copy and then write a row in two
   steps outside a transaction? The desktop's store answers within the
   fiber's turn; the iPhone's does not, and a discard gets in between.
