@@ -185,6 +185,20 @@ const inheritedChanged = (queued: ReadonlyArray<PendingOp>): ReadonlyArray<strin
   return names.length > 0 ? names : undefined;
 };
 
+/** Per exception, the text fields its queued changes among `behind` set themselves (`planCarry`). */
+const ownedText = (behind: ReadonlyArray<PendingOp>): ReadonlyMap<string, ReadonlySet<string>> => {
+  const owned = new Map<string, Set<string>>();
+  for (const op of behind) {
+    if (op.kind === 'update') {
+      owned.set(op.eventId, new Set([...(owned.get(op.eventId) ?? []), ...(op.changed ?? [])]));
+    }
+  }
+  return owned;
+};
+
+/** The text of a series that Google copies onto its exceptions when it changes. */
+const TEXT_FIELDS = ['description', 'location', 'title'] as const;
+
 /**
  * When a new update of the event is queued: now, and not before an op of
  * it that is queued already. A move re-queues what waited for its event a
@@ -518,45 +532,60 @@ const make: Effect.Effect<
   /**
    * What a new update of the event does with the queued one, the last:
    * `replaced` is the one it takes over from, `inPlace` whether it then
-   * stands where that one stood in the queue. Nothing of the series queued
-   * behind the queued update: replaced, as ever. A change of one of the
-   * series' occurrences queued behind it, made under it: replaced at the
-   * back, the update went behind that change — a delete of an occurrence
-   * only its new rule draws met a 404 and counted as done, and the day
-   * came back with the rule; an occurrence's own place went out first, and
-   * Google copied the series' over it. So the queued update stays ahead:
-   * - a new rule (`setsRule`) replaces it where it stands: sent after it,
-   *   the first rule reached Google too, and dropped exceptions there that
-   *   the second draws.
-   * - any other edit queues behind as a change of its own, with what it
-   *   set, and each goes in its turn (`applyOp` seriesOrderGate).
+   * stands where that one stood in the queue, `behind` the queued changes
+   * of the series' occurrences made under that one. Nothing behind it:
+   * replaced, as ever. With a change of an occurrence behind it, replaced
+   * at the back the update went behind that change — a delete of an
+   * occurrence only its new rule draws met a 404 and counted as done, and
+   * the day came back with the rule; an occurrence's own place went out
+   * first, and Google copied the series' over it. So the queued update
+   * stays ahead:
+   * - the new edit takes its place where it stands, one PATCH with both;
+   * - but where their order shows on Google, it queues behind as a change
+   *   of its own, and each goes in its turn (`applyOp` seriesOrderGate):
+   *   new times (they give the occurrences other ids, and a change of one
+   *   made before them names the old), and a text an occurrence behind it
+   *   set for itself (Google copies the series' over it, as it shows
+   *   here). Never a new rule: sent after the queued one, that one reached
+   *   Google too, and dropped exceptions there that the new one draws.
    * An update queued ahead of the last one stayed for that reason, and
    * stays.
    */
   const replacedUpdate = (
-    accountId: string,
-    calendarId: string,
-    eventId: string,
+    event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
     queued: ReadonlyArray<PendingOp>,
-    setsRule: boolean,
+    edit: {
+      readonly setsRule: boolean;
+      readonly setsTimes: boolean;
+      readonly text: ReadonlyArray<string>;
+    },
   ) =>
     Effect.gen(function* () {
       const last = queued.findLast((op) => op.kind === 'update');
       if (!last) {
-        return { inPlace: false, replaced: undefined };
+        return { behind: [], inPlace: false, replaced: undefined };
       }
       const all = yield* pendingOpRepo.listAll();
-      const followed = all
+      const behind = all
         .slice(all.findIndex((op) => op.id === last.id) + 1)
-        .some(
+        .filter(
           (op) =>
-            op.accountId === accountId &&
-            op.calendarId === calendarId &&
-            op.eventId.startsWith(`${eventId}_`),
+            op.accountId === event.accountId &&
+            op.calendarId === event.calendarId &&
+            op.eventId.startsWith(`${event.eventId}_`),
         );
-      return followed
-        ? { inPlace: setsRule, replaced: setsRule ? last : undefined }
-        : { inPlace: false, replaced: last };
+      if (behind.length === 0) {
+        return { behind, inPlace: false, replaced: last };
+      }
+      const ordered =
+        !edit.setsRule &&
+        (edit.setsTimes ||
+          behind.some(
+            (op) => op.kind === 'update' && op.changed?.some((name) => edit.text.includes(name)),
+          ));
+      return ordered
+        ? { behind, inPlace: false, replaced: undefined }
+        : { behind, inPlace: true, replaced: last };
     });
 
   const taken = { eventRepo, pendingOpRepo };
@@ -620,7 +649,11 @@ const make: Effect.Effect<
       const queued = yield* opsForEvent(accountId, calendarId, master.id);
       const { inPlace, replaced } = unsentCreate
         ? { inPlace: false, replaced: queued.findLast((op) => op.kind === 'update') }
-        : yield* replacedUpdate(accountId, calendarId, master.id, queued, true);
+        : yield* replacedUpdate({ accountId, calendarId, eventId: master.id }, queued, {
+            setsRule: true,
+            setsTimes: false,
+            text: [],
+          });
       const inherits = takenOver(queued, replaced);
       // The carried text of the series edit the truncation replaces: its
       // payload still shows that edit's text, so abandoning it must still
@@ -1518,18 +1551,22 @@ const make: Effect.Effect<
       const queued = yield* opsForEvent(accountId, calendarId, masterId);
       // A queued update with a change of an occurrence behind it stays
       // where it is: this edit queues behind both, with what it set.
-      const { inPlace, replaced } = yield* replacedUpdate(
-        accountId,
-        calendarId,
-        masterId,
+      const { behind, inPlace, replaced } = yield* replacedUpdate(
+        { accountId, calendarId, eventId: masterId },
         queued,
-        changes.recurrence !== undefined,
+        {
+          setsRule: changes.recurrence !== undefined,
+          setsTimes: merged.startUtc !== master.startUtc || merged.endUtc !== master.endUtc,
+          text: TEXT_FIELDS.filter((field) => merged[field] !== master[field]),
+        },
       );
       const inherits = takenOver(queued, replaced);
       const { carriedText, rows } = planCarry({
         master,
         merged,
         overrides: yield* eventRepo.listOverrides(accountId, calendarId, masterId),
+        // Standing ahead of them, it leaves the occurrences' own text alone.
+        ...(inPlace ? { owned: ownedText(behind) } : {}),
         queued: replaced,
       });
       yield* eventRepo.upsertMany(rows);
@@ -2086,11 +2123,13 @@ const make: Effect.Effect<
         // A series cleared while offline keeps that change where it is
         // while the deletes of its exceptions wait behind it (`replacedUpdate`).
         const { inPlace, replaced } = yield* replacedUpdate(
-          accountId,
-          calendarId,
-          eventId,
+          { accountId, calendarId, eventId },
           queued,
-          changes.recurrence !== undefined,
+          {
+            setsRule: changes.recurrence !== undefined,
+            setsTimes: merged.startUtc !== existing.startUtc || merged.endUtc !== existing.endUtc,
+            text: [],
+          },
         );
         const inherits = takenOver(queued, replaced);
         yield* supersedeForUpdate(accountId, calendarId, eventId, inPlace ? undefined : replaced);

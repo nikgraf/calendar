@@ -66,6 +66,30 @@ const shown = (opId: string) =>
   });
 
 describe('PendingOpRepo', () => {
+  it.effect('what stood back for an op of its event or series is due once that op left', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const waiting = (id: string, eventId: string, reason: string) =>
+        Effect.andThen(repo.enqueue(op(id, { eventId })), repo.markFailed(id, 1, 60_000, reason));
+      yield* waiting(
+        'occurrence',
+        'evt-1_20260701T100000Z',
+        'waiting for the change of its series',
+      );
+      yield* waiting('series', 'evt-1', 'waiting for the change ahead of it');
+      yield* waiting('other', 'evt-2', 'waiting for the change ahead of it');
+      // In backoff for a failure of its own: not what this is about.
+      yield* waiting('failed', 'evt-1_20260702T100000Z', 'Backend Error');
+      expect(yield* repo.wakeWaiting({ accountId: 'acc-1', eventId: 'evt-1' })).toBe(2);
+      expect((yield* repo.listDue(0)).map((one) => one.id)).toEqual(['occurrence', 'series']);
+      // An occurrence's op that left wakes what waited for it in its series.
+      yield* repo.markFailed('series', 2, 60_000, 'waiting for the change ahead of it');
+      expect(
+        yield* repo.wakeWaiting({ accountId: 'acc-1', eventId: 'evt-1_20260701T100000Z' }),
+      ).toBe(1);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('an op queued in place of another stands where that one stood', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

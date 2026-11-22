@@ -226,14 +226,20 @@ it whenever a kind is added. Rules that keep the queue correct:
   occurrences queued behind it, made under it (`replacedUpdate`): at the
   back of the queue the update went behind that change (a delete of an
   occurrence only its new rule draws met a 404, an occurrence's own place
-  went out first and Google copied the series' over it). There a new rule
-  takes the queued update's place where it stands (`enqueue` with
-  `replaces`: one PATCH, the final rule — sent after the first, it found
-  the exceptions the first had dropped on Google gone), and any other
-  edit queues behind as a change of its own, never before one already
-  queued for its event (`notBefore`); the drain then sends an event's
-  updates in the order they were made, and a series' update after the
-  updates of its occurrences made before it (`seriesOrderGate`). An op
+  went out first and Google copied the series' over it). There the new
+  edit takes the queued update's place where it stands (`enqueue` with
+  `replaces`: one PATCH with both), and carries no text over what an
+  occurrence behind it set for itself (`planCarry`'s `owned`). Only where
+  the order of the two shows on Google does it queue behind as a change
+  of its own, never before one already queued for its event
+  (`notBefore`): new times (they give the occurrences other ids, and a
+  change of one made before them names the old) and a text an occurrence
+  behind it set itself (Google copies the series' over it, as it shows
+  here) — never a new rule, which sent after the queued one would let
+  that one reach Google too and drop exceptions the new one draws. The
+  drain sends an event's updates in the order they were made, and a
+  series' update after the updates of its occurrences made before it
+  (`seriesOrderGate`). An op
   that stood back for another is due as soon as that one leaves the queue
   (`wakeWaiting`), not after its backoff. A task edit folds into an undispatched `createTask`
   and queues as `updateTask` behind a dispatched one; task updates merge

@@ -56,17 +56,22 @@ const withText = (row: EventRecord, text: Text, geo?: GeoLocation | null): Event
 /**
  * The exception rows a series edit rewrites and the `CarriedText` its op
  * keeps. `master` is the local row before this edit (it may already show
- * a queued edit), `queued` the series op this edit replaces.
+ * a queued edit), `queued` the series op this edit replaces. `owned` names,
+ * per exception, the text fields a change of that exception queued behind
+ * the series op set itself: sent after it, that change's value is what
+ * Google ends with, so the series' text is not carried over it.
  */
 export const planCarry = ({
   master,
   merged,
   overrides,
+  owned,
   queued,
 }: {
   readonly master: EventRecord;
   readonly merged: EventRecord;
   readonly overrides: ReadonlyArray<EventRecord>;
+  readonly owned?: ReadonlyMap<string, ReadonlySet<string>>;
   readonly queued: PendingOp | undefined;
 }): {
   readonly carriedText: CarriedText | undefined;
@@ -100,7 +105,7 @@ export const planCarry = ({
         stillCarried(row, queued, before, field);
       const ownValue = kept ? previous : (row[field] ?? null);
       const geo = kept ? (before.geo ?? null) : (row.geo ?? null);
-      if (changed.has(field)) {
+      if (changed.has(field) && owned?.get(row.id)?.has(field) !== true) {
         text[field] = merged[field] ?? null;
         own[field] = ownValue;
         if (field === 'location') {

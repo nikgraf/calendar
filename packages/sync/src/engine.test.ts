@@ -2697,10 +2697,9 @@ describe('SyncEngine', () => {
         },
       );
 
-      describe('a later series change, queued behind its deletes,', () => {
-        // The cut stays where it is, ahead of its deletes and the user's
-        // own; the later change waits behind them as a change of its own.
-        // (Replacing the cut, it went to the back of the queue, and the
+      describe('a later series change that replaces it,', () => {
+        // The replacement takes the cut's place in the queue, ahead of its
+        // deletes and the user's own. (At the back of the queue, the
         // deletes went out ahead of it, past taking back.)
         const july3At = Date.parse('2026-07-03T10:00:00Z');
         const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'evt-r' } as const;
@@ -2746,8 +2745,6 @@ describe('SyncEngine', () => {
               choice: 'theirs',
               opId: (yield* opOf('evt-r', 'update'))!.id,
             });
-            // The cut goes with its deletes, and the rename made on top of
-            // it with it.
             expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
             expect(yield* shown).toEqual(googleSeries);
             expect(yield* strays).toEqual([]);

@@ -2702,8 +2702,8 @@ const runSequence = (seed: number) => {
  * Seeds that still fail, with the open gap each one meets (the skipped
  * tests at the end show each gap on its own): none in the first thousand.
  * Past it, 1347 and 2936 (the deletes a cut queued, sent after a delete of
- * the series replaced it) and 1876 and 2506 (a change discarded after it
- * had landed with its answer lost). Found with QUEUE_SEQUENCE_RUNS=3000;
+ * the series replaced it) and 1876, 2506 and 2901 (a change discarded
+ * after it had landed with its answer lost). Found with QUEUE_SEQUENCE_RUNS=3000;
  * a change to the steps, their odds or the requests the app sends
  * reshuffles every sequence, so search again rather than trust these
  * after one.
@@ -4998,8 +4998,9 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
     // one's op and sent both fields in one PATCH, after the occurrence's;
     // the location differed from Google's, so Google copied it onto every
     // exception (verified live), over the occurrence's own, which the user
-    // set after it. Each goes in its turn now, with what it set: the
-    // location, the occurrence's own, then the title alone.
+    // set after it. The second edit takes the first one's place in the
+    // queue now, ahead of the occurrence's: one PATCH with both fields,
+    // then the occurrence's own place.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -5017,6 +5018,17 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
           scope: 'instance',
         });
         yield* mutations.updateRecurring({ ...series, changes: { title: 'Sprint review' } });
+        // One update of the series, where the first stood; the occurrence
+        // shows the series' new title and keeps its own place.
+        expect((yield* (yield* PendingOpRepo).listAll()).map((op) => op.eventId)).toEqual([
+          'r2',
+          googleInstanceId('r2', moved, false),
+        ]);
+        const shown = yield* (yield* SqlClient)<{
+          readonly location: string | null;
+          readonly title: string;
+        }>`SELECT title, location FROM events WHERE id = ${googleInstanceId('r2', moved, false)}`;
+        expect(shown).toEqual([{ location: 'Room 2', title: 'Sprint review' }]);
         network.down = false;
         google.requests.length = 0;
         yield* drainAll(mutations);
@@ -5028,12 +5040,11 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
                 `${new URL(call.url).pathname.split('/').at(-1)}: ${Object.keys(call.body ?? {}).join(',')}`,
             ),
         ).toEqual([
-          'r2: location',
-          // Refused once: the series' location, copied onto it, moved its
+          'r2: location,summary',
+          // Refused once: the series' text, copied onto it, moved its
           // etag. Laid over that version, it goes again.
           `${googleInstanceId('r2', moved, false)}: location`,
           `${googleInstanceId('r2', moved, false)}: location`,
-          'r2: summary',
         ]);
         expect(google.eventOf('cal-2', googleInstanceId('r2', moved, false))).toMatchObject({
           location: 'Room 2',
@@ -5048,7 +5059,8 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
     // Sequence 829 of the search with the changes kept in order: "does
     // not repeat", then new times for what was a single event by then;
     // the first met a conflict and was given up for Google's version, and
-    // the second moved the whole series. Made on top of it, it goes too.
+    // the second moved the whole series. Made on top of it, it goes too
+    // (here: two places for all, with an occurrence's own between them).
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -5065,7 +5077,9 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
           originalStartUtc: R2_START + DAY,
           scope: 'instance',
         });
-        yield* mutations.updateRecurring({ ...series, changes: { title: 'Sprint review' } });
+        // A place for all once more: its order with the occurrence's own
+        // shows on Google, so it queues behind as a change of its own.
+        yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 3' } });
         const queued = (yield* ops.listAll()).map((op) => op.eventId);
         expect(queued).toEqual(['r2', googleInstanceId('r2', R2_START + DAY, false), 'r2']);
         yield* mutations.discardPendingOp((yield* ops.listAll())[0]!.id);
@@ -5136,9 +5150,9 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
   });
 
   it.effect('a later change of a series is not asked about what the one before it set', () => {
-    // Sequence 2368 of that search: a rule and a title for all, the event
-    // moved, an occurrence deleted, a place for all, then a cut — two
-    // changes of the series queued in order. The first went without
+    // Sequence 2368 of that search: a rule and a title for all, an
+    // occurrence's own place, the event moved, a place for all, then a cut
+    // — two changes of the series queued in order. The first went without
     // If-Match (the move had moved the etag), so its answer was laid under
     // the second as Google's newer version, and the rule it had set itself
     // counted as changed on Google: the cut was parked for the user to
@@ -5174,12 +5188,6 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
         });
         const moved = { ...R1, calendarId: 'cal-2' };
         yield* TestClock.adjust('1 second');
-        yield* mutations.deleteRecurring({
-          ...moved,
-          originalStartUtc: R1_START + DAY,
-          scope: 'instance',
-        });
-        yield* TestClock.adjust('1 second');
         yield* mutations.updateRecurring({
           ...moved,
           changes: { location: 'location 37' },
@@ -5196,10 +5204,11 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
         network.down = false;
         google.requests.length = 0;
         yield* drainAll(mutations);
-        expect(writes(google).filter((write) => write.includes('events/r1'))).toEqual([
+        expect(
+          writes(google).filter((write) => write.endsWith('events/r1') || write.includes('/move')),
+        ).toEqual([
           'POST calendars/cal-1/events/r1/move → cal-2',
           'PATCH calendars/cal-2/events/r1',
-          `DELETE calendars/cal-2/events/${googleInstanceId('r1', R1_START + DAY, false)}`,
           'PATCH calendars/cal-2/events/r1',
         ]);
         expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
