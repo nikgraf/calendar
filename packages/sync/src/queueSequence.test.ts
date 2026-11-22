@@ -23,7 +23,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer, Result, Scheduler } from 'effect';
+import { Deferred, Effect, Fiber, Layer, Result, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { TestClock } from 'effect/testing';
@@ -244,10 +244,35 @@ const newFake = (options: { readonly thirdCalendar?: boolean } = {}): FakeGoogle
   return google;
 };
 
-const layerFor = (google: FakeGoogle) =>
+/**
+ * A store slow enough to let other work in: `pause.current` runs after
+ * every read of one task's queued ops, where a rebuild of its row has read
+ * the queue and not yet written. The desktop's SQLite answers within the
+ * fiber's turn; the iPhone's does not.
+ */
+interface Pause {
+  current: Effect.Effect<void>;
+}
+
+const pausingReads = (pause: Pause) =>
+  Layer.effect(PendingOpRepo)(
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      return {
+        ...repo,
+        listForTask: (accountId: string, taskId: string) =>
+          Effect.tap(repo.listForTask(accountId, taskId), () =>
+            Effect.suspend(() => pause.current),
+          ),
+      };
+    }),
+  );
+
+const layerFor = (google: FakeGoogle, pause: Pause = { current: Effect.void }) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
+    Layer.provideMerge(pausingReads(pause)),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
@@ -3556,6 +3581,68 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
   });
 
   it.effect(
+    'a discard made while a pull rebuilds the task’s row leaves no pending row behind',
+    () => {
+      // A pull rebuilds a held task's row from Google's copy and the queue.
+      // Read and written apart, a discard could come in between: it put
+      // Google's copy back and took the op and the copy away, and the pull
+      // then wrote the row with the change just taken back — pending, with
+      // no op, for good.
+      const google = newFake();
+      const network = writesDown(google);
+      const pause: Pause = { current: Effect.void };
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(START);
+        yield* (yield* AccountRepo).upsert(
+          new Account({
+            contactsEnabled: false,
+            createdAt: 1,
+            email: EMAIL,
+            id: ACCOUNT_ID,
+            provider: 'google',
+            status: 'ok',
+            tasksEnabled: true,
+          }),
+        );
+        const engine = yield* SyncEngine;
+        yield* engine.syncAll();
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { title: 'Mine' },
+          taskId: 't1',
+          taskListId: 'list-1',
+        });
+        const [edit] = yield* (yield* PendingOpRepo).listAll();
+        google.putTask('list-1', { ...google.taskOf('list-1', 't1')!, title: 'Theirs' });
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        // The discard starts once the pull has read the task's queue.
+        const reading = yield* Deferred.make<void>();
+        pause.current = Effect.suspend(() => {
+          pause.current = Effect.void;
+          return Effect.andThen(
+            Deferred.succeed(reading, undefined),
+            Effect.forEach(Array.from({ length: 20 }), () => Effect.yieldNow, { discard: true }),
+          );
+        });
+        const discard = yield* Effect.forkChild(
+          Effect.andThen(Deferred.await(reading), mutations.discardPendingOp(edit!.id)),
+        );
+        yield* engine.syncAll();
+        yield* Fiber.join(discard);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly sync_status: string;
+          readonly title: string;
+        }>`SELECT sync_status, title FROM tasks WHERE id = 't1'`;
+        expect(rows).toEqual([{ sync_status: 'synced', title: 'Theirs' }]);
+      }).pipe(Effect.provide(layerFor(google, pause)));
+    },
+  );
+
+  it.effect(
     'a subtask taken out of its parent elsewhere does not stay behind in the destination',
     () => {
       // The parent's move waits; another device drags a subtask out of it in
@@ -4317,6 +4404,36 @@ describe("pending-op queue: Google's copy and the changes laid over it", () => {
       );
     },
   );
+
+  it.effect('a page with a deleted series and its exception writes neither', () => {
+    // The user deleted the series (its delete waits) and another device
+    // renamed it, which gives its exceptions the title too: the page
+    // brings the master and the exception together. The master is the
+    // copy its delete holds and is not written; the exception, let
+    // through to go on the table with it, showed alone.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.deleteRecurring({ ...R2, originalStartUtc: R2_START, scope: 'series' });
+        google.patchEventServerSide('cal-2', 'r2', { summary: 'Sprint (renamed)' });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        const rows = yield* (yield* SqlClient)<{
+          readonly id: string;
+        }>`SELECT id FROM events WHERE id LIKE 'r2%' ORDER BY id`;
+        expect(rows).toEqual([]);
+        // The delete asks, and what it would put back is Google's version.
+        const [remove] = yield* (yield* PendingOpRepo).listAll();
+        expect(remove?.conflictAt).toBeDefined();
+        expect(remove?.beforePayload?.title).toBe('Sprint (renamed)');
+        expect(remove?.beforeOverrides?.map((row) => row.title)).toContain('Sprint (renamed)');
+      }),
+    );
+  });
 
   it.effect('a series deleted elsewhere takes its other changed occurrences along', () => {
     // The user deleted one changed occurrence (its delete waits) and

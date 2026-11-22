@@ -7,6 +7,7 @@ import {
   isAppleRemindersAccount,
   type PendingOp,
   SyncState,
+  type TaskRecord,
   tasksScope,
   type Account,
 } from '@calendar/core';
@@ -791,8 +792,7 @@ const make: Effect.Effect<
             taskListId,
           }),
         );
-        const leaving = yield* leavingNow;
-        const listed = [];
+        const listed: Array<TaskRecord> = [];
         const deletions: Array<string> = [];
         for (const item of page.items ?? []) {
           if (fullPass && !item.deleted) {
@@ -805,29 +805,38 @@ const make: Effect.Effect<
             deletions.push(item.id);
           }
         }
-        // A task a queued change holds: Google's version goes to its copy
-        // and the row is rebuilt from that and the change, so the change is
-        // never clobbered and Google's newer copy never lost.
-        const heldNow = yield* taskRepo.updateCopies(listed);
-        const heldIds = new Set(heldNow.map((record) => record.id));
-        const deleting = yield* deletingNow;
-        const upserts = listed.filter(
-          (record) =>
-            !heldIds.has(record.id) &&
-            !deleting.has(record.id) &&
-            !leaving.has(record.id) &&
-            !leaving.has(record.parentId ?? ''),
+        // One transaction per page, as for events: a row is rebuilt from
+        // the copy and the queue as they are read here, and a discard that
+        // came between the reading and the writing left the row pending
+        // with the change it had just taken back, and no op.
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            const leaving = yield* leavingNow;
+            // A task a queued change holds: Google's version goes to its
+            // copy and the row is rebuilt from that and the change, so the
+            // change is never clobbered and Google's newer copy never lost.
+            const heldNow = yield* taskRepo.updateCopies(listed);
+            const heldIds = new Set(heldNow.map((record) => record.id));
+            const deleting = yield* deletingNow;
+            const upserts = listed.filter(
+              (record) =>
+                !heldIds.has(record.id) &&
+                !deleting.has(record.id) &&
+                !leaving.has(record.id) &&
+                !leaving.has(record.parentId ?? ''),
+            );
+            // A row of a task Google has not got yet (its create is queued)
+            // is pending with no copy: a pull leaves it alone.
+            yield* taskRepo.upsertTasks(upserts, passStartedAt, { mode: 'pull' });
+            yield* Effect.forEach(heldNow, (record) => heldTasks.refresh(account.id, record.id), {
+              discard: true,
+            });
+            yield* taskRepo.removeTasksByIds(account.id, taskListId, deletions);
+            // Google has these no more: a queued delete of one has nothing
+            // left to put back.
+            yield* heldTasks.forgetDeleted(account.id, taskListId, deletions);
+          }),
         );
-        // A row of a task Google has not got yet (its create is queued) is
-        // pending with no copy: a pull leaves it alone.
-        yield* taskRepo.upsertTasks(upserts, passStartedAt, { mode: 'pull' });
-        yield* Effect.forEach(heldNow, (record) => heldTasks.refresh(account.id, record.id), {
-          discard: true,
-        });
-        yield* taskRepo.removeTasksByIds(account.id, taskListId, deletions);
-        // Google has these no more: a queued delete of one has nothing left
-        // to put back.
-        yield* heldTasks.forgetDeleted(account.id, taskListId, deletions);
         pageToken = page.nextPageToken;
       } while (pageToken !== undefined);
 
@@ -862,7 +871,8 @@ const make: Effect.Effect<
         if (!fullPass) {
           yield* removeTasksMovedAway(account, taskListId, listUpdated, entries);
         }
-        yield* applyTaskOrder(account.id, taskListId, entries);
+        // Read and written as one: it replays the queue over the rows.
+        yield* sql.withTransaction(applyTaskOrder(account.id, taskListId, entries));
         // The stamp from before the read: a change since then moves it
         // again, and the next pass reads once more.
         yield* syncStateRepo.set(

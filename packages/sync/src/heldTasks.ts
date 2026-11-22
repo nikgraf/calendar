@@ -102,7 +102,10 @@ export interface HeldTasks {
    * more the row is Google's copy again and the copy goes. A task with no
    * copy is one Google has not got yet, or has no more: with nothing
    * queued for it, its row is handed back to sync. `except` is an op about
-   * to leave the queue.
+   * to leave the queue. It reads the copy and the queue and then writes
+   * the row: run in one transaction with whatever else the caller decides
+   * from the queue (a pull's page, an answer's landing, a discard), or a
+   * change made in between is written over.
    */
   readonly refresh: (
     accountId: string,

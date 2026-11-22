@@ -410,8 +410,9 @@ const handToOwnDeletes = (pendingOpRepo: PendingOpRepoShape, copy: EventRecord) 
 
 /**
  * A pull page against the deletes waiting in its calendar. An exception
- * whose series delete waits with the master gone locally, and not in the
- * page either, goes into that delete where no row is (as
+ * whose series delete waits with the master gone locally — in the page
+ * or not: a pull writes no row for a master whose delete waits — goes
+ * into that delete where no row is (as
  * `takeIntoDelete`, with one write per series), and is what the
  * exception's own queued delete (a cut's) puts back too. A live exception a queued
  * series update drops (`dropsFrom`: a cut's, a rule change's), whose own
@@ -439,7 +440,6 @@ export const holdPulledExceptions = (
     if (waiting.size === 0) {
       return upserts;
     }
-    const inPage = new Set(upserts.map((record) => record.id));
     const gone = new Map<string, boolean>();
     // The earliest original start a queued update of each master drops from.
     const dropping = new Map<string, number | undefined>();
@@ -455,7 +455,7 @@ export const holdPulledExceptions = (
         kept.push(record);
         continue;
       }
-      if (waiting.has(masterId) && !inPage.has(masterId)) {
+      if (waiting.has(masterId)) {
         if (!gone.has(masterId)) {
           gone.set(masterId, !(yield* deps.eventRepo.getById(accountId, calendarId, masterId)));
         }

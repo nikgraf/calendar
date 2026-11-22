@@ -490,18 +490,20 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * the row follows.
    */
   const landedUnseen = (op: PendingOp, listId: string) =>
-    Effect.gen(function* () {
-      const copy = yield* held.copyOf(op.accountId, op.eventId);
-      if (!copy) {
-        return yield* taskRepo.markSynced(op.accountId, listId, op.eventId);
-      }
-      const row =
-        op.kind === 'reorderTask'
-          ? yield* taskRepo.get(op.accountId, listId, op.eventId)
-          : undefined;
-      yield* taskRepo.putCopy(row ? placedTask(copy, row) : withTaskChange(copy, op));
-      yield* held.refresh(op.accountId, op.eventId, op.id);
-    });
+    transaction(
+      Effect.gen(function* () {
+        const copy = yield* held.copyOf(op.accountId, op.eventId);
+        if (!copy) {
+          return yield* taskRepo.markSynced(op.accountId, listId, op.eventId);
+        }
+        const row =
+          op.kind === 'reorderTask'
+            ? yield* taskRepo.get(op.accountId, listId, op.eventId)
+            : undefined;
+        yield* taskRepo.putCopy(row ? placedTask(copy, row) : withTaskChange(copy, op));
+        yield* held.refresh(op.accountId, op.eventId, op.id);
+      }),
+    );
 
   /** One queued reorder shown on its row: under its parent, after the sibling it names. */
   const showReorder = (reorder: PendingOp, listId: string) =>
@@ -528,25 +530,27 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * shown over that in queue order, as Google will apply them.
    */
   const revertTaskReorder = (op: PendingOp, listId: string) =>
-    Effect.gen(function* () {
-      const copy = yield* held.copyOf(op.accountId, op.eventId);
-      const current = yield* taskRepo.get(op.accountId, listId, op.eventId);
-      if (!copy || !current) {
-        return yield* held.refresh(op.accountId, op.eventId, op.id);
-      }
-      yield* taskRepo.upsertTasks([placedTask(current, copy)], yield* Clock.currentTimeMillis);
-      const rest = (yield* held.holders(op.accountId, op.eventId, op.id)).filter(
-        (other) => other.kind === 'reorderTask' && other.calendarId === listId,
-      );
-      for (const reorder of rest) {
-        yield* showReorder(reorder, listId);
-      }
-      yield* held.refresh(op.accountId, op.eventId, op.id);
-      const parentId = copy.parentId;
-      if (rest.length === 0 && parentId !== undefined && parentId !== current.parentId) {
-        yield* keepParent(op.accountId, listId, parentId);
-      }
-    });
+    transaction(
+      Effect.gen(function* () {
+        const copy = yield* held.copyOf(op.accountId, op.eventId);
+        const current = yield* taskRepo.get(op.accountId, listId, op.eventId);
+        if (!copy || !current) {
+          return yield* held.refresh(op.accountId, op.eventId, op.id);
+        }
+        yield* taskRepo.upsertTasks([placedTask(current, copy)], yield* Clock.currentTimeMillis);
+        const rest = (yield* held.holders(op.accountId, op.eventId, op.id)).filter(
+          (other) => other.kind === 'reorderTask' && other.calendarId === listId,
+        );
+        for (const reorder of rest) {
+          yield* showReorder(reorder, listId);
+        }
+        yield* held.refresh(op.accountId, op.eventId, op.id);
+        const parentId = copy.parentId;
+        if (rest.length === 0 && parentId !== undefined && parentId !== current.parentId) {
+          yield* keepParent(op.accountId, listId, parentId);
+        }
+      }),
+    );
 
   /**
    * A task back under a parent whose delete is queued (its reorder or its
@@ -580,7 +584,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const refreshTaskOrder = (landed: PendingOp, listId: string) =>
     Effect.ignore(
       Effect.flatMap(readTaskOrder(tasksClient, landed.accountId, listId), (entries) =>
-        applyTaskOrder(landed.accountId, listId, entries, landed.id),
+        transaction(applyTaskOrder(landed.accountId, listId, entries, landed.id)),
       ),
     );
 
@@ -655,106 +659,108 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     });
 
   const revertTaskMove = (op: PendingOp) =>
-    Effect.gen(function* () {
-      const from = op.targetTaskListId;
-      const to = op.taskListId;
-      if (from === undefined || to === undefined) {
-        return;
-      }
-      const moved = yield* taskRepo.get(op.accountId, from, op.eventId);
-      // Its subtasks' rows go back even when the task's own is gone (deleted
-      // there since): Google still has them in the source. Moved on, they
-      // went along, and none are left here.
-      const subtasks = yield* taskRepo.listSubtasks(op.accountId, from, op.eventId);
-      const ids = new Set([op.eventId, ...subtasks.map((subtask) => subtask.id)]);
-      // What was queued for them behind the move (edits, a further move)
-      // goes back with them: Google still has them in the source. A subtask
-      // deleted since has no row; its delete names its parent. What was
-      // queued before it stays where it is — an earlier move out of the
-      // destination (the task was there, left, and came back) re-keyed here
-      // became a move into its own source. The task's next move out of the
-      // destination ends what goes back, as for an event (releaseMove): it
-      // now leaves from the source, or, back to the source, has nothing left
-      // to move and goes — re-keyed, it was a move into its own list, whose
-      // answer took the task's row away.
-      const all = yield* pendingOpRepo.listAll();
-      const at = all.findIndex((queued) => queued.id === op.id);
-      // The parent Google has each of them under: a subtask deleted since
-      // the move has no row, and its delete is found by it.
-      const parentOf = new Map(
-        (yield* taskRepo.listCopies(op.accountId)).map((copy) => [copy.id, copy.parentId]),
-      );
-      // Where a task is once this move is undone: what was queued before
-      // it for the task still places it.
-      const parentWithout = (taskId: string) =>
-        Effect.map(held.placeOf(op.accountId, taskId, op.id), (place) => place?.parentId);
-      const owned = new Set<string>();
-      // Moved back to the source since (the task, or a subtask on its own),
-      // with the parent Google still has it under.
-      const cameBack = new Map<string, string | undefined>();
-      for (const other of at === -1 ? all : all.slice(at + 1)) {
-        if (
-          other.id === op.id ||
-          other.accountId !== op.accountId ||
-          other.calendarId !== from ||
-          !(ids.has(other.eventId) || parentOf.get(other.eventId) === op.eventId)
-        ) {
-          continue;
+    transaction(
+      Effect.gen(function* () {
+        const from = op.targetTaskListId;
+        const to = op.taskListId;
+        if (from === undefined || to === undefined) {
+          return;
         }
-        const movesOn = other.kind === 'moveTask' && other.eventId === op.eventId;
-        if (other.kind === 'moveTask' && other.targetTaskListId === to) {
+        const moved = yield* taskRepo.get(op.accountId, from, op.eventId);
+        // Its subtasks' rows go back even when the task's own is gone (deleted
+        // there since): Google still has them in the source. Moved on, they
+        // went along, and none are left here.
+        const subtasks = yield* taskRepo.listSubtasks(op.accountId, from, op.eventId);
+        const ids = new Set([op.eventId, ...subtasks.map((subtask) => subtask.id)]);
+        // What was queued for them behind the move (edits, a further move)
+        // goes back with them: Google still has them in the source. A subtask
+        // deleted since has no row; its delete names its parent. What was
+        // queued before it stays where it is — an earlier move out of the
+        // destination (the task was there, left, and came back) re-keyed here
+        // became a move into its own source. The task's next move out of the
+        // destination ends what goes back, as for an event (releaseMove): it
+        // now leaves from the source, or, back to the source, has nothing left
+        // to move and goes — re-keyed, it was a move into its own list, whose
+        // answer took the task's row away.
+        const all = yield* pendingOpRepo.listAll();
+        const at = all.findIndex((queued) => queued.id === op.id);
+        // The parent Google has each of them under: a subtask deleted since
+        // the move has no row, and its delete is found by it.
+        const parentOf = new Map(
+          (yield* taskRepo.listCopies(op.accountId)).map((copy) => [copy.id, copy.parentId]),
+        );
+        // Where a task is once this move is undone: what was queued before
+        // it for the task still places it.
+        const parentWithout = (taskId: string) =>
+          Effect.map(held.placeOf(op.accountId, taskId, op.id), (place) => place?.parentId);
+        const owned = new Set<string>();
+        // Moved back to the source since (the task, or a subtask on its own),
+        // with the parent Google still has it under.
+        const cameBack = new Map<string, string | undefined>();
+        for (const other of at === -1 ? all : all.slice(at + 1)) {
+          if (
+            other.id === op.id ||
+            other.accountId !== op.accountId ||
+            other.calendarId !== from ||
+            !(ids.has(other.eventId) || parentOf.get(other.eventId) === op.eventId)
+          ) {
+            continue;
+          }
+          const movesOn = other.kind === 'moveTask' && other.eventId === op.eventId;
+          if (other.kind === 'moveTask' && other.targetTaskListId === to) {
+            yield* pendingOpRepo.remove(other.id);
+            cameBack.set(other.eventId, yield* parentWithout(other.eventId));
+            if (movesOn) {
+              break;
+            }
+            continue;
+          }
+          owned.add(other.eventId);
           yield* pendingOpRepo.remove(other.id);
-          cameBack.set(other.eventId, yield* parentWithout(other.eventId));
+          yield* pendingOpRepo.enqueue(new PendingOp({ ...other, calendarId: to, taskListId: to }));
           if (movesOn) {
             break;
           }
-          continue;
         }
-        owned.add(other.eventId);
-        yield* pendingOpRepo.remove(other.id);
-        yield* pendingOpRepo.enqueue(new PendingOp({ ...other, calendarId: to, taskListId: to }));
-        if (movesOn) {
-          break;
+        // Moved on or deleted since: the later ops own the task's row.
+        const now = yield* Clock.currentTimeMillis;
+        let backUnder: string | undefined;
+        for (const row of moved ? [moved, ...subtasks] : subtasks) {
+          // Where it is without this move: the source, or wherever a move
+          // still queued puts it — back under a parent whose own move waits,
+          // Google will take it along, so its row goes where that parent is.
+          const place:
+            | { readonly listId: string; readonly parentId: string | undefined }
+            | undefined = yield* held.placeOf(op.accountId, row.id, op.id);
+          const listId: string = place?.listId ?? to;
+          const { parentId: current, ...rest } = row;
+          const parentId = row.id === op.eventId ? place?.parentId : current;
+          if (row.id === op.eventId && listId === to) {
+            backUnder = parentId;
+          }
+          yield* taskRepo.removeTask(op.accountId, from, row.id);
+          yield* taskRepo.upsertTasks(
+            [
+              new TaskRecord({
+                ...rest,
+                listId,
+                ...(parentId === undefined ? {} : { parentId }),
+              }),
+            ],
+            now,
+          );
+          if (owned.has(row.id) || listId !== to) {
+            yield* taskRepo.markPending(op.accountId, listId, row.id);
+          }
+          // Google's copy with what still waits for it; Google's alone otherwise.
+          yield* held.refresh(op.accountId, row.id, op.id);
         }
-      }
-      // Moved on or deleted since: the later ops own the task's row.
-      const now = yield* Clock.currentTimeMillis;
-      let backUnder: string | undefined;
-      for (const row of moved ? [moved, ...subtasks] : subtasks) {
-        // Where it is without this move: the source, or wherever a move
-        // still queued puts it — back under a parent whose own move waits,
-        // Google will take it along, so its row goes where that parent is.
-        const place:
-          | { readonly listId: string; readonly parentId: string | undefined }
-          | undefined = yield* held.placeOf(op.accountId, row.id, op.id);
-        const listId: string = place?.listId ?? to;
-        const { parentId: current, ...rest } = row;
-        const parentId = row.id === op.eventId ? place?.parentId : current;
-        if (row.id === op.eventId && listId === to) {
-          backUnder = parentId;
+        if (backUnder !== undefined) {
+          yield* keepParent(op.accountId, to, backUnder);
         }
-        yield* taskRepo.removeTask(op.accountId, from, row.id);
-        yield* taskRepo.upsertTasks(
-          [
-            new TaskRecord({
-              ...rest,
-              listId,
-              ...(parentId === undefined ? {} : { parentId }),
-            }),
-          ],
-          now,
-        );
-        if (owned.has(row.id) || listId !== to) {
-          yield* taskRepo.markPending(op.accountId, listId, row.id);
-        }
-        // Google's copy with what still waits for it; Google's alone otherwise.
-        yield* held.refresh(op.accountId, row.id, op.id);
-      }
-      if (backUnder !== undefined) {
-        yield* keepParent(op.accountId, to, backUnder);
-      }
-      yield* settleCameBack(op, to, cameBack, now);
-    });
+        yield* settleCameBack(op, to, cameBack, now);
+      }),
+    );
 
   /**
    * A move whose 404 may only mean an earlier attempt landed and its
@@ -864,42 +870,44 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * that left a list.
    */
   const settleTaskMove = (op: PendingOp, destination: string, task: GcalTask) =>
-    Effect.gen(function* () {
-      const synced = mapGcalTask(task, { accountId: op.accountId, taskListId: destination });
-      const source = op.taskListId;
-      // The subtasks Google took along: its copies of them are in the
-      // destination now, like the task's own.
-      const carried =
-        source === undefined
-          ? []
-          : (yield* taskRepo.listCopies(op.accountId)).filter(
-              (copy) => copy.listId === source && copy.parentId === op.eventId,
-            );
-      // The row there settles, unless the user moved it on (or deleted it)
-      // while this op waited: those ops hold it, on Google's copy.
-      if (synced) {
-        yield* settleTask(op, synced);
-      }
-      for (const copy of carried) {
-        yield* taskRepo.removeCopies(op.accountId, copy.listId, [copy.id]);
-        yield* taskRepo.putCopy(new TaskRecord({ ...copy, listId: destination }));
-        yield* held.refresh(op.accountId, copy.id, op.id);
-      }
-      // A subtask's row the move took along with no copy of Google's (it
-      // has none there any more, or never had): nothing holds it now, and
-      // sync has it again.
-      const known = new Set(carried.map((copy) => copy.id));
-      for (const subtask of yield* taskRepo.listSubtasks(op.accountId, destination, op.eventId)) {
-        if (!known.has(subtask.id)) {
-          yield* held.refresh(op.accountId, subtask.id, op.id);
+    transaction(
+      Effect.gen(function* () {
+        const synced = mapGcalTask(task, { accountId: op.accountId, taskListId: destination });
+        const source = op.taskListId;
+        // The subtasks Google took along: its copies of them are in the
+        // destination now, like the task's own.
+        const carried =
+          source === undefined
+            ? []
+            : (yield* taskRepo.listCopies(op.accountId)).filter(
+                (copy) => copy.listId === source && copy.parentId === op.eventId,
+              );
+        // The row there settles, unless the user moved it on (or deleted it)
+        // while this op waited: those ops hold it, on Google's copy.
+        if (synced) {
+          yield* settleTask(op, synced);
         }
-      }
-      if (source !== undefined) {
-        for (const id of [op.eventId, ...carried.map((copy) => copy.id)]) {
-          yield* taskRepo.removeSyncedTask(op.accountId, source, id);
+        for (const copy of carried) {
+          yield* taskRepo.removeCopies(op.accountId, copy.listId, [copy.id]);
+          yield* taskRepo.putCopy(new TaskRecord({ ...copy, listId: destination }));
+          yield* held.refresh(op.accountId, copy.id, op.id);
         }
-      }
-    });
+        // A subtask's row the move took along with no copy of Google's (it
+        // has none there any more, or never had): nothing holds it now, and
+        // sync has it again.
+        const known = new Set(carried.map((copy) => copy.id));
+        for (const subtask of yield* taskRepo.listSubtasks(op.accountId, destination, op.eventId)) {
+          if (!known.has(subtask.id)) {
+            yield* held.refresh(op.accountId, subtask.id, op.id);
+          }
+        }
+        if (source !== undefined) {
+          for (const id of [op.eventId, ...carried.map((copy) => copy.id)]) {
+            yield* taskRepo.removeSyncedTask(op.accountId, source, id);
+          }
+        }
+      }),
+    );
 
   /**
    * A parent's delete landed, or found it gone: Google deleted its subtasks
@@ -1083,7 +1091,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return op.taskListId
           ? Effect.ignore(
               revert
-                ? held.refresh(op.accountId, op.eventId, op.id)
+                ? transaction(held.refresh(op.accountId, op.eventId, op.id))
                 : landedUnseen(op, op.taskListId),
             )
           : Effect.void;
@@ -1091,7 +1099,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // landed leaves nothing to hold.
       case 'deleteTask':
         return op.taskListId
-          ? Effect.ignore(revert ? held.refresh(op.accountId, op.eventId, op.id) : forgetCopy(op))
+          ? Effect.ignore(
+              revert ? transaction(held.refresh(op.accountId, op.eventId, op.id)) : forgetCopy(op),
+            )
           : Effect.void;
       case 'reorderTask':
         return op.taskListId
@@ -1845,7 +1855,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * that with whatever is still queued for the task over it (an edit made
    * while this one was in flight) — or simply that.
    */
-  const settleTask = (op: PendingOp, synced: TaskRecord) => held.land(op, synced);
+  const settleTask = (op: PendingOp, synced: TaskRecord) => transaction(held.land(op, synced));
 
   /** Google has the task no more (deleted there, or our delete landed): nothing to hold. */
   const forgetCopy = (op: PendingOp) =>
