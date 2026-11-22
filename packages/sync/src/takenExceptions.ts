@@ -10,14 +10,18 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { withAnswers } from './heldEvents.ts';
 
 /**
- * A series delete takes the series' exceptions off the table and holds
- * Google's copy of each (`beforeOverrides`, read from `event_copies`:
- * they queue no op of their own). While it waits with the master gone
- * locally, what Google sends or acknowledges for one becomes that copy,
- * and a discard puts them back with the master. Without its master an
- * exception row would show as an event of its own, and a master without
- * its exceptions shows a moved occurrence at its slot and a cancelled
- * one again.
+ * A change of a series that takes exceptions off the table holds Google's
+ * copy of each (`beforeOverrides`, read from `event_copies`): they queue
+ * no op of their own, since Google cancels them with the series' own
+ * write. A series delete takes them all: while it waits with the master
+ * gone locally, what Google sends or acknowledges for one becomes that
+ * copy, and a discard puts them back with the master. An update that
+ * redraws the series (a this-and-following cut, a new rule, new times)
+ * takes the ones it no longer draws: given up, they come back where
+ * Google's series draws them; landed, they are gone on Google too.
+ * Without its master an exception row would show as an event of its own,
+ * and a master without its exceptions shows a moved occurrence at its
+ * slot and a cancelled one again.
  */
 export interface TakenDeps {
   readonly eventRepo: EventRepoShape;
@@ -115,183 +119,72 @@ export const drawsSlot = (master: EventRecord, copy: EventRecord): boolean => {
   }
 };
 
-/** `putBack` of the copies the occurrences' own deletes (`deletes`) took off `master`. */
-const putBackDropped = (
-  deps: TakenDeps,
-  master: EventRecord,
-  deletes: ReadonlyArray<PendingOp>,
-): Effect.Effect<void, SqlError> =>
-  master.recurrence === undefined || master.recurrence.length === 0 || master.status === 'cancelled'
-    ? Effect.void
-    : putBack(
-        deps,
-        master.accountId,
-        master.calendarId,
-        deletes.flatMap((remove) => {
-          const copy = remove.beforePayload;
-          return copy?.id === remove.eventId &&
-            copy.recurringEventId === master.id &&
-            drawsSlot(master, copy)
-            ? [copy]
-            : [];
-        }),
-      );
-
 /**
- * Google's master is on the table again (a discard or keep-theirs put it
- * back, or a discarded change gave it Google's rule back): the exceptions
- * that queued deletes of its occurrences took off the table — a
- * this-and-following cut's, or a rule change's, which leave no tombstone
- * — are Google's while those wait. They go back where no row is
- * (`putBack`: synced, as a delete owns no row — `isPulledCopy`), for each
- * delete to take when it lands. Off the table, a moved occurrence showed
- * at its slot, a cancelled one came back, and an edit of one was built on
- * the slot. Only where the master's rule draws the slot: past the end of a
- * cut that reached Google, one would show on its own.
+ * A change of a series that had dropped exceptions was given up (a
+ * discard, a rejection for good, keep-theirs) and the series is on the
+ * table as Google has it: the exceptions `op` held come back where that
+ * series draws their slots (`putBack`: synced, a row there is newer).
+ * Past the end of a cut that reached Google, one would show on its own.
  */
-export const restoreDropped = (
-  deps: TakenDeps,
-  accountId: string,
-  calendarId: string,
-  masterId: string,
-): Effect.Effect<void, SqlError> =>
+export const restoreDropped = (deps: TakenDeps, op: PendingOp): Effect.Effect<void, SqlError> =>
   Effect.gen(function* () {
-    const master = yield* deps.eventRepo.getById(accountId, calendarId, masterId);
-    if (master?.recurrence !== undefined) {
-      yield* putBackDropped(
-        deps,
-        master,
-        yield* deps.pendingOpRepo.listDeletes(accountId, calendarId),
-      );
+    if (op.kind !== 'update' || !op.beforeOverrides?.length) {
+      return;
     }
+    const master = yield* deps.eventRepo.getById(op.accountId, op.calendarId, op.eventId);
+    if (!master || master.status === 'cancelled') {
+      return;
+    }
+    yield* putBack(
+      deps,
+      op.accountId,
+      op.calendarId,
+      op.beforeOverrides.filter((copy) => drawsSlot(master, copy)),
+    );
   });
 
 /**
- * An occurrence delete the user made: its payload is the tombstone it wrote.
- * A cut's or rule change's carries the exception it took off the table,
- * and keep-mine may leave a tombstone at its id too (`takeBackPulled`).
- */
-const isOwnDelete = (remove: PendingOp): boolean =>
-  remove.payload?.status === 'cancelled' && remove.payload.syncStatus === 'pending';
-
-/**
- * A cut's or rule change's delete of an exception goes unsent (its change
- * was abandoned, or a later rule draws the slot again): the exception is
- * Google's copy again, the one the delete held. Where no row is, or the
- * tombstone keep-mine left (`takeBackPulled`), the copy goes on the table
- * where `master` draws its slot. An answer still waiting on it shows: put
- * back as Google's while the delete waited, the copy showed Google's
- * answer until that answer landed.
- */
-const releaseDropDelete = (
-  { eventRepo, pendingOpRepo }: TakenDeps,
-  master: EventRecord | null,
-  remove: PendingOp,
-): Effect.Effect<void, SqlError> =>
-  Effect.gen(function* () {
-    const { accountId, calendarId, eventId } = remove;
-    yield* pendingOpRepo.remove(remove.id);
-    const row = yield* eventRepo.getById(accountId, calendarId, eventId);
-    const answer = (yield* pendingOpRepo.listForEvent(remove)).find(
-      (owner) => owner.kind === 'rsvp',
-    )?.payload;
-    const answered = answer ? { attendees: answer.attendees, syncStatus: 'pending' as const } : {};
-    if (!row || (row.syncStatus === 'pending' && row.status === 'cancelled')) {
-      const copy = remove.beforePayload;
-      if (copy?.id === eventId && master && drawsSlot(master, copy)) {
-        yield* eventRepo.upsertMany([
-          new EventRecord({ ...copy, calendarId, syncStatus: 'synced', ...answered }),
-        ]);
-      } else if (row) {
-        yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
-      }
-    } else if (row.syncStatus === 'synced' && answer) {
-      yield* eventRepo.upsertMany([new EventRecord({ ...row, ...answered })]);
-    }
-  });
-
-/**
- * A change of the series' rule (`master`, as it will go to Google) draws
- * slots again that a cut or rule change queued before it dropped: the
- * deletes those queued for them, still waiting, go, and the exceptions they
- * hold come back as Google's copies (`putBack`, synced) — Google keeps an
- * exception whose slot the rule it gets still draws. Sent, those deletes
- * cancelled what the new rule keeps. If the earlier change reached Google
- * after all, its landing forgets the copies again (`forgetDropped`): Google
- * cancelled them, and draws the slots plain once the new rule lands. An
- * occurrence delete the user made stays (`isOwnDelete`).
+ * A new edit of the series (`master`, as it will go to Google) draws
+ * slots again that the queued update it takes over from (`queued`) had
+ * dropped: Google keeps an exception whose slot the series it gets still
+ * draws, so those come back as Google's copies (`putBack`, synced).
+ * Returns the ones the new edit still holds.
  */
 export const takeBackDropped = (
   deps: TakenDeps,
   master: EventRecord,
-): Effect.Effect<void, SqlError> =>
+  queued: PendingOp | undefined,
+): Effect.Effect<ReadonlyArray<EventRecord>, SqlError> =>
   Effect.gen(function* () {
-    const { accountId, calendarId } = master;
-    for (const remove of yield* deps.pendingOpRepo.listDeletes(accountId, calendarId)) {
-      const slot = remove.payload;
-      if (
-        remove.eventId !== master.id &&
-        slot?.recurringEventId === master.id &&
-        drawsSlot(master, slot) &&
-        !isOwnDelete(remove)
-      ) {
-        yield* releaseDropDelete(deps, master, remove);
-      }
+    const held = queued?.kind === 'update' ? (queued.beforeOverrides ?? []) : [];
+    const back = held.filter((copy) => drawsSlot(master, copy));
+    if (queued && back.length > 0) {
+      yield* putBack(deps, master.accountId, master.calendarId, back);
+      // On the table again, they are no change's to hold.
+      yield* deps.pendingOpRepo.setBeforeOverrides(
+        queued.id,
+        held.filter((copy) => !back.includes(copy)),
+      );
     }
-  });
-
-/**
- * A series change that dropped exceptions was abandoned — a discard, a
- * rejection for good or keep-theirs of a cut's or a rule change's update
- * (from its `dropsFrom` on), or of a series delete that replaced one (all
- * of them) — and the series is back as Google has it: the deletes it
- * queued for those exceptions (`dropOverridesFrom`) go with it, or they
- * still deleted those occurrences on Google. An occurrence delete the user
- * made stays (`isOwnDelete`). Run after `restoreDropped`, which put their
- * copies back as Google's where no row is (`releaseDropDelete` does the
- * rest).
- */
-export const dropChangeDeletes = (
-  deps: TakenDeps,
-  accountId: string,
-  calendarId: string,
-  masterId: string,
-  from = Number.NEGATIVE_INFINITY,
-): Effect.Effect<void, SqlError> =>
-  Effect.gen(function* () {
-    const master = yield* deps.eventRepo.getById(accountId, calendarId, masterId);
-    for (const remove of yield* deps.pendingOpRepo.listDeletes(accountId, calendarId)) {
-      const exception = remove.payload;
-      if (
-        exception?.recurringEventId === masterId &&
-        remove.eventId === exception.id &&
-        (exception.originalStartUtc ?? exception.startUtc) >= from &&
-        !isOwnDelete(remove)
-      ) {
-        yield* releaseDropDelete(deps, master, remove);
-      }
-    }
+    return held.filter((copy) => !back.includes(copy));
   });
 
 /**
  * A series update that drops exceptions on Google landed (`dropsFrom`: a
- * cut's occurrence, 0 for a new rule; `landed`: the master it sent). From
- * that original start on, Google cancelled every exception whose slot the
- * landed rule no longer draws (past the cut's end, or skipped by the new
- * rule) and kept the others as they were (verified live). What still holds
- * a cancelled one is Google's no more — its copy goes, so a queued op of
- * it (an edit that replaced a cut's delete) has nothing to put back and a
- * waiting series delete holds it no more; a synced row (Google's copy a
- * discard put back, a landed delete's tombstone) goes; and the delete the cut or rule change queued
- * for one goes with nothing left to do: the PATCH gave the exception a new
- * etag, so its If-Match would meet a 412 and park. So does one the user
- * made (it owns its pending tombstone, which Google's copy now is) unless
+ * cut's occurrence, 0 for a new rule or new times; `landed`: the master
+ * it sent). From that original start on, Google cancelled every exception
+ * whose slot the landed series no longer draws and kept the others as
+ * they were (verified live). What still holds a cancelled one is Google's
+ * no more: its copy goes, so a queued op of it has nothing to put back
+ * and a waiting change of the series holds it no more; a synced row
+ * (Google's copy a discard put back, a landed delete's tombstone) goes;
+ * and a delete of one the user made goes with nothing left to do (it owns
+ * its pending tombstone, which Google's copy now is; the PATCH gave the
+ * exception a new etag, so its If-Match would meet a 412 and park) unless
  * a later update queued (`landedId` is the one that landed) draws the
  * slot again: then it was made under that rule and still has work to do.
- * Put back under a later master whose rule
- * draws those slots, they showed over it. Until the update lands they are
- * Google's, and its discard brings them back (`restoreDropped`). A pending
- * row is a queued op's.
+ * Until the update lands they are Google's, and giving it up brings them
+ * back (`restoreDropped`). A pending row is a queued op's.
  */
 export const forgetDropped = (
   { eventRepo, pendingOpRepo }: TakenDeps,
@@ -318,10 +211,9 @@ export const forgetDropped = (
       if (op.accountId !== accountId || op.calendarId !== calendarId) {
         continue;
       }
-      // The cut's or rule change's own delete owns no row. One with its
-      // pending tombstone is an occurrence delete the user made: before the
-      // change, Google's cancellation did its work; under a later rule that
-      // draws the slot again, it still has work to do.
+      // An occurrence delete the user made owns its pending tombstone:
+      // before the change, Google's cancellation did its work; under a
+      // later rule that draws the slot again, it still has work to do.
       if (op.kind === 'delete' && op.eventId !== masterId && dropped(op.payload)) {
         const payload = op.payload!;
         const row = yield* eventRepo.getById(accountId, calendarId, op.eventId);
@@ -389,9 +281,8 @@ export const takeIntoDelete = (
   });
 
 /**
- * Google's live copy of an exception, for the exception's own queued
- * delete (a cut's): the copy that delete reads, and puts back on a
- * discard.
+ * Google's live copy of an exception, for a delete of that occurrence
+ * that waits too: the copy that delete reads, and puts back on a discard.
  */
 const handToOwnDeletes = (pendingOpRepo: PendingOpRepoShape, copy: EventRecord) =>
   Effect.gen(function* () {
@@ -409,19 +300,18 @@ const handToOwnDeletes = (pendingOpRepo: PendingOpRepoShape, copy: EventRecord) 
   });
 
 /**
- * A pull page against the deletes waiting in its calendar. An exception
- * whose series delete waits with the master gone locally — in the page
- * or not: a pull writes no row for a master whose delete waits — goes
- * into that delete where no row is (as
- * `takeIntoDelete`, with one write per series), and is what the
- * exception's own queued delete (a cut's) puts back too. A live exception a queued
- * series update drops (`dropsFrom`: a cut's, a rule change's), whose own
- * delete waits, goes into that delete where no row is: the update took it
- * off the table, where it showed past the cut on its own, or over the new
- * rule; a discard of the update puts it back as Google has it now
- * (`restoreDropped`), its landing forgets it (`forgetDropped`). A row at
- * its id takes the page as any row does (`heldEvents.receive` next: one
- * a queued op holds takes it into its copy). The records left for that.
+ * A pull page against the changes of series waiting in its calendar. An
+ * exception whose series delete waits with the master gone locally (in
+ * the page or not: a pull writes no row for a master whose delete waits)
+ * goes into that delete where no row is (as `takeIntoDelete`, with one
+ * write per series). One that a queued update of its series drops
+ * (`dropsFrom`: a cut's, a new rule's, new times') goes into that update
+ * the same way: the update took it off the table, where it showed past
+ * the cut on its own, or over the new rule; given up, the update puts it
+ * back as Google has it now (`restoreDropped`), and its landing forgets
+ * it (`forgetDropped`). A row at its id takes the page as any row does
+ * (`heldEvents.receive` next: one a queued op holds takes it into its
+ * copy). The records left for that.
  */
 export const holdPulledExceptions = (
   deps: TakenDeps,
@@ -430,72 +320,65 @@ export const holdPulledExceptions = (
   upserts: ReadonlyArray<EventRecord>,
 ): Effect.Effect<ReadonlyArray<EventRecord>, SqlError> =>
   Effect.gen(function* () {
-    // The first queued delete of each event, as `takeIntoDelete` takes a master's.
-    const waiting = new Map<string, PendingOp>();
-    for (const remove of yield* deps.pendingOpRepo.listDeletes(accountId, calendarId)) {
-      if (!waiting.has(remove.eventId)) {
-        waiting.set(remove.eventId, remove);
-      }
-    }
-    if (waiting.size === 0) {
-      return upserts;
-    }
-    const gone = new Map<string, boolean>();
-    // The earliest original start a queued update of each master drops from.
-    const dropping = new Map<string, number | undefined>();
-    const held = new Map<string, Array<EventRecord>>();
+    // Per series: the queued change that holds its exceptions off the
+    // table, if one does — its delete while the master is gone locally,
+    // else an update that drops exceptions.
+    const holders = new Map<string, { readonly drops?: PendingOp; readonly gone?: PendingOp }>();
+    const holderOf = (masterId: string) =>
+      Effect.gen(function* () {
+        const known = holders.get(masterId);
+        if (known) {
+          return known;
+        }
+        const queued = yield* deps.pendingOpRepo.listForEvent({
+          accountId,
+          calendarId,
+          eventId: masterId,
+        });
+        const remove = queued.find((op) => op.kind === 'delete');
+        const gone =
+          remove && !(yield* deps.eventRepo.getById(accountId, calendarId, masterId))
+            ? remove
+            : undefined;
+        const drops = queued.find((op) => op.kind === 'update' && op.dropsFrom !== undefined);
+        const holder = { ...(drops ? { drops } : {}), ...(gone ? { gone } : {}) };
+        holders.set(masterId, holder);
+        return holder;
+      });
+    const held = new Map<string, { readonly by: PendingOp; readonly copies: Array<EventRecord> }>();
+    const hold = (by: PendingOp, record: EventRecord) => {
+      const entry = held.get(by.id) ?? { by, copies: [] };
+      entry.copies.push(record);
+      held.set(by.id, entry);
+    };
     const kept: Array<EventRecord> = [];
     for (const record of upserts) {
       const masterId = record.recurringEventId;
       if (
         masterId === undefined ||
-        !(waiting.has(masterId) || waiting.has(record.id)) ||
         (yield* deps.eventRepo.getById(accountId, calendarId, record.id))
       ) {
         kept.push(record);
         continue;
       }
-      if (waiting.has(masterId)) {
-        if (!gone.has(masterId)) {
-          gone.set(masterId, !(yield* deps.eventRepo.getById(accountId, calendarId, masterId)));
-        }
-        if (gone.get(masterId)) {
-          const copies = held.get(masterId) ?? [];
-          copies.push(record);
-          held.set(masterId, copies);
-          continue;
-        }
-      }
-      if (!dropping.has(masterId)) {
-        const updates = (yield* deps.pendingOpRepo.listForEvent({
-          accountId,
-          calendarId,
-          eventId: masterId,
-        })).flatMap((op) =>
-          op.kind === 'update' && op.dropsFrom !== undefined ? [op.dropsFrom] : [],
-        );
-        dropping.set(masterId, updates.length > 0 ? Math.min(...updates) : undefined);
-      }
-      const from = dropping.get(masterId);
-      if (
-        record.status !== 'cancelled' &&
-        waiting.has(record.id) &&
-        from !== undefined &&
-        (record.originalStartUtc ?? record.startUtc) >= from
+      const { drops, gone } = yield* holderOf(masterId);
+      if (gone) {
+        hold(gone, record);
+      } else if (
+        drops?.payload &&
+        drops.dropsFrom !== undefined &&
+        (record.originalStartUtc ?? record.startUtc) >= drops.dropsFrom &&
+        !drawsSlot(drops.payload, record)
       ) {
-        yield* handToOwnDeletes(deps.pendingOpRepo, record);
-        continue;
+        hold(drops, record);
+      } else {
+        kept.push(record);
       }
-      kept.push(record);
     }
     // One write per series: a full pass can page many exceptions of one
     // before its master.
-    for (const [masterId, copies] of held) {
-      const remove = waiting.get(masterId)!;
-      yield* deps.pendingOpRepo.setBeforeOverrides(
-        remove.id,
-        withCopies(remove.beforeOverrides, copies),
-      );
+    for (const { by, copies } of held.values()) {
+      yield* deps.pendingOpRepo.setBeforeOverrides(by.id, withCopies(by.beforeOverrides, copies));
       for (const copy of copies) {
         yield* handToOwnDeletes(deps.pendingOpRepo, copy);
       }
@@ -511,11 +394,8 @@ export const holdPulledExceptions = (
  * have re-sent its exceptions, as the sync token sends only what changed.
  * A series the page reports deleted takes the exceptions put back with
  * its master along (`dropSeriesExceptions`), as the delete's landing
- * would — also when only its occurrences' own deletes (a cut's) wait: a
- * discard of one would write the exception back without its master. A
- * master the page wrote as Google's brings back what those deletes took
- * (`restoreDropped`): a cut's deletes outlive a series delete, which no
- * longer finds their rows.
+ * would — also when only deletes of its occurrences wait: a discard of
+ * one would write the exception back without its master.
  */
 export const settlePulledSeries = (
   deps: TakenDeps,
@@ -552,20 +432,6 @@ export const settlePulledSeries = (
       yield* putBack(deps, accountId, calendarId, remove.beforeOverrides);
       yield* deps.pendingOpRepo.setBeforeOverrides(remove.id, undefined);
     }
-    const masters = new Set(
-      deletes.flatMap((remove) => {
-        const masterId = remove.beforePayload?.recurringEventId;
-        return masterId !== undefined && written.has(masterId) ? [masterId] : [];
-      }),
-    );
-    for (const masterId of masters) {
-      // Pending, the pull skipped it: the master is the user's (a cut's or
-      // a rule change's), and its exceptions stay off the table.
-      const master = yield* deps.eventRepo.getById(accountId, calendarId, masterId);
-      if (master?.syncStatus === 'synced') {
-        yield* putBackDropped(deps, master, deletes);
-      }
-    }
   });
 
 /**
@@ -576,8 +442,8 @@ export const settlePulledSeries = (
  * op holding Google's copy of it already).
  * A pending row an occurrence change made since owns is the user's own
  * and stays. The delete takes them when it lands. An occurrence's copy
- * whose slot the master on the table draws (a cut's delete under the
- * series back as Google has it) leaves the delete's own tombstone, pending
+ * whose slot the master on the table draws (under a series that is
+ * Google's again) leaves the delete's own tombstone, pending
  * as an occurrence delete leaves one: gone, the slot showed until a pull;
  * Google's own tombstone there stays as it is.
  */

@@ -46,7 +46,6 @@ import { makeHeldTasks, withTaskChange } from './heldTasks.ts';
 import { askSplits, holdsSplit, ofSplitSeries, settleSplit } from './splitSeries.ts';
 import {
   drawsSlot,
-  dropChangeDeletes,
   dropSeriesExceptions,
   forgetDropped,
   putBack,
@@ -298,10 +297,10 @@ export interface ApplyOp {
   /**
    * A discarded move that was sent (an event's or a task's): Google may
    * have made it, its answer lost. The destination decides whether it
-   * lands or goes back. Run with no request out (under the drain's gate),
-   * the move still queued.
+   * lands or goes back: `done` once Google said. Run with no request out
+   * (under the drain's gate), the move still queued.
    */
-  readonly settleDiscardedMove: (op: PendingOp) => Effect.Effect<void>;
+  readonly settleDiscardedMove: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
 }
 
 /**
@@ -460,16 +459,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       } else {
         yield* eventRepo.upsertMany([row]);
       }
-      // A series edit gone: the master's rule is Google's again, and so are
-      // the exceptions its occurrences' own deletes took (a cut's, a rule
-      // change's), which go with the change that queued them, as does the
-      // series a this-and-following edit split off. Another update of the
-      // series may still be queued: the row above is drawn with it, so what
-      // comes back is what its rule draws.
+      // A series edit gone: the series is Google's again, and so are the
+      // exceptions the edit held off the table (a cut's, a new rule's, new
+      // times'): they come back where that series draws them. The series
+      // a this-and-following edit split off goes.
       if (op.kind === 'update') {
-        yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
+        yield* restoreDropped(taken, op);
         if (op.dropsFrom !== undefined) {
-          yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
           yield* askSplits(taken, op);
         }
       }
@@ -503,9 +499,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           id: op.eventId,
           syncStatus: yield* releasedStatus(op),
         });
-        // An exception (a cut's, say) whose series delete waits with the
-        // master gone goes into that delete: on the table it showed as an
-        // event of its own.
+        // An exception whose series delete waits with the master gone
+        // goes into that delete: on the table it showed as an event of its
+        // own.
         if (yield* takeIntoDelete(taken, restored)) {
           if (current) {
             yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
@@ -516,12 +512,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       // A series delete took the exceptions with it and owns no row at
       // their ids: one there since is newer and stays. The series is back
-      // as Google has it, with what its occurrences' own deletes took — and
-      // without those deletes, or the series split off it: a cut or a rule
-      // change it replaced queued them.
+      // as Google has it, with what a cut or a rule change this delete
+      // replaced had dropped, and without the series split off it.
       yield* putBack(taken, op.accountId, op.calendarId, op.beforeOverrides ?? []);
-      yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
-      yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId);
       yield* askSplits(taken, op);
     });
 
@@ -827,13 +820,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * A move whose 404 may only mean an earlier attempt landed and its
    * answer was lost: Google then has the task in the destination already.
    * Found there, the move is settled; otherwise it is put back. A lookup
-   * with no answer decides nothing and the move asks again — unless the
-   * user discarded it (`unanswered: 'release'`): then it goes back as
-   * asked, a move that never reached Google being the likely case.
+   * with no answer decides nothing and the move asks again, also one the
+   * user discarded (`givenUp`, `PendingOp.discarded`).
    */
   const settleOrRevertTaskMove = (
     op: PendingOp,
-    unanswered: 'release' | 'retry' = 'retry',
+    givenUp = op.discarded === true,
   ): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
       const destination = op.targetTaskListId;
@@ -862,9 +854,6 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             ) {
               break;
             }
-            if (unanswered === 'release') {
-              break;
-            }
             return retry('Google did not say where the task is');
           }
           landed = page.success.items?.find((item) => item.id === op.eventId && !item.deleted);
@@ -885,9 +874,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // Nobody asked for this: a 404 that is the task gone from its source
       // too (deleted on another device) puts nothing back under a parent.
       const gone =
-        unanswered === 'retry' && op.taskListId !== undefined
-          ? yield* deletedIn(op, op.taskListId)
-          : false;
+        !givenUp && op.taskListId !== undefined ? yield* deletedIn(op, op.taskListId) : false;
       yield* Effect.ignore(revertTaskMove(op, !gone));
       if (gone && op.taskListId !== undefined) {
         // Put back as a row Google has no more: it goes, copy and all.
@@ -1384,8 +1371,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * A move Google never made (discarded, refused, or a 404 for the event
    * or the destination): the server still has the event in the source.
    * Its rows go back there, and so does what googleServerMove re-queued
-   * behind the move — edits, a this-and-following cut's master update and
-   * exception deletes, a move onwards — Google's copies with them: addressed to
+   * behind the move — edits, a this-and-following cut's master update, a
+   * move onwards — Google's copies with them: addressed to
    * the destination it would 404 and be dropped, while the source row
    * showed what Google never got. The series' next move out of the
    * destination ends what goes back: it now leaves from the source (one
@@ -1627,15 +1614,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * the event gone from there (`sourceGone`: another device deleted it,
    * and that page's token has moved on), when nothing goes back. One the
    * source's pull has not told of yet comes with its next page. A lookup
-   * with no answer decides nothing: the move stays queued and asks again
-   * — unless the user discarded it (`unanswered: 'release'`): then it
-   * goes back as asked, a move that never reached Google being the likely
-   * case, and one that did reach it is in the destination's next page.
+   * with no answer decides nothing: the move stays queued and asks again,
+   * also one the user discarded (`PendingOp.discarded`): sent back as a
+   * move that never reached Google, one that had landed left the event
+   * shown in the source, and a change made there met a 404 and was lost.
    */
-  const settleOrReleaseMove = (
-    op: PendingOp,
-    unanswered: 'release' | 'retry' = 'retry',
-  ): Effect.Effect<ApplyOutcome> =>
+  const settleOrReleaseMove = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
       const destination = op.targetCalendarId;
       if (destination === undefined) {
@@ -1649,7 +1633,6 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return 'done' as const;
       }
       if (
-        unanswered === 'retry' &&
         found._tag === 'Failure' &&
         found.failure._tag !== 'NotFoundError' &&
         found.failure._tag !== 'SyncTokenExpiredError'
@@ -1727,8 +1710,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * at its id. That copy goes. A cancelled override (one occurrence's
    * delete) stays, and a pending row is an op's queued since — read and
    * delete in one transaction, so an edit of the copy cannot slip between.
-   * An occurrence's copy whose slot the master's rule still draws (a cut's
-   * delete under a series back as Google has it) becomes the cancelled
+   * An occurrence's copy whose slot the master's rule still draws (put
+   * back under a series that is Google's again) becomes the cancelled
    * tombstone Google has now, or the slot would show until a pull. The
    * delete's own tombstone (an occurrence delete's) is Google's now too,
    * once no other op owns it: left pending, nothing ever settled it. A
@@ -3019,13 +3002,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         case 'delete':
           return yield* sendDelete(op);
         case 'moveTask':
-          return yield* sendMoveTask(op);
+          // Given up: never sent again, only settled.
+          return yield* op.discarded ? settleOrRevertTaskMove(op) : sendMoveTask(op);
         case 'reorderTask':
           return yield* sendReorderTask(op);
         case 'deleteTask':
           return yield* sendDeleteTask(op);
         case 'move':
-          return yield* sendMove(op, guestMode);
+          return yield* op.discarded ? settleOrReleaseMove(op) : sendMove(op, guestMode);
         case 'rsvp':
           return yield* sendRsvp(op);
         case 'update':
@@ -3099,12 +3083,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }),
     );
 
-  const settleDiscardedMove = (op: PendingOp) =>
-    Effect.asVoid(
-      op.kind === 'moveTask'
-        ? settleOrRevertTaskMove(op, 'release')
-        : settleOrReleaseMove(op, 'release'),
-    );
+  /**
+   * A move the user gave up after it was sent: Google says where the item
+   * is, and the move is settled there or put back. `done` once it did.
+   */
+  const settleDiscardedMove = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
+    op.kind === 'moveTask' ? settleOrRevertTaskMove(op, true) : settleOrReleaseMove(op);
 
   const acknowledge = (op: PendingOp, record: EventRecord): Effect.Effect<boolean> => {
     if (op.kind === 'create') {

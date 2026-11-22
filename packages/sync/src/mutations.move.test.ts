@@ -612,7 +612,7 @@ describe('moveEvent inside one Google account', () => {
         scope: 'following',
       });
       yield* mutations.processPendingOps();
-      expect((yield* queued).map((op) => op.kind)).toEqual(['update', 'delete']);
+      expect((yield* queued).map((op) => op.kind)).toEqual(['update']);
       yield* (yield* EventRepo).upsertMany([override], { mode: 'pull' });
 
       yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'ser'], ['acc-1', 'cal-2']));
@@ -621,7 +621,7 @@ describe('moveEvent inside one Google account', () => {
       yield* (yield* PendingOpRepo).retryNow();
       yield* mutations.processPendingOps();
 
-      // The exception's delete waited for the cut's patch and went with it.
+      // The cut's patch cancels the exception on Google: its row goes with it.
       expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([
         'move:cal-1',
         'patch:cal-2',
@@ -1246,8 +1246,8 @@ describe('a move Google never makes', () => {
   });
 
   it.effect('a this-and-following cut carried behind a move Google cannot find goes back', () => {
-    // A pull put the exception past the cut back while its delete waited,
-    // so the move carries the master update and that delete along.
+    // A pull put the exception past the cut back while the cut waited: the
+    // move carries the master update along, and the exception with it.
     const calls: Array<Call> = [];
     const google = sourceOnly(calls, () => Effect.fail(new NotFoundError({ resource: 'event' })));
     const down = recordingGoogle(calls, {
@@ -1276,14 +1276,13 @@ describe('a move Google never makes', () => {
       expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual([
         'move:cal-1',
         'update:cal-2',
-        'delete:cal-2',
       ]);
       online = true;
       yield* (yield* PendingOpRepo).retryNow();
       yield* mutations.processPendingOps();
       yield* mutations.processPendingOps();
 
-      // Back in the source, the cut lands there and takes the exception's delete along.
+      // Back in the source, the cut lands there and takes the exception along.
       expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual(['patch:cal-1']);
       expect(yield* queued).toEqual([]);
       expect(yield* rowAt('acc-1', 'cal-2', 'ser')).toBeNull();
@@ -1293,10 +1292,10 @@ describe('a move Google never makes', () => {
     }).pipe(Effect.provide(testLayer(switching, appleFake())));
   });
 
-  it.effect('a cut moved along takes its exception deletes when it is discarded there', () => {
-    // The cut's delete of the exception owns no row: the move left it in
-    // the source, where the cut's discard in the destination missed it,
-    // and it cancelled the exception on Google.
+  it.effect('a cut moved along puts its exceptions back where it is discarded', () => {
+    // The cut holds Google's copy of the exception past it, and the move
+    // takes both to the destination: discarded there, the exception shows
+    // again, and nothing cancels it on Google.
     const calls: Array<Call> = [];
     let online = false;
     const plain = recordingGoogle(calls);
@@ -1317,13 +1316,19 @@ describe('a move Google never makes', () => {
         scope: 'following',
       });
       yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'ser'], ['acc-1', 'cal-2']));
-      expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual([
-        'move:cal-1',
-        'update:cal-2',
-        'delete:cal-2',
+      expect(
+        (yield* queued).map((op) => [
+          `${op.kind}:${op.calendarId}`,
+          op.beforeOverrides?.map((copy) => copy.calendarId),
+        ]),
+      ).toEqual([
+        ['move:cal-1', undefined],
+        ['update:cal-2', ['cal-2']],
       ]);
+      expect(yield* rowAt('acc-1', 'cal-2', exception.id)).toBeNull();
       yield* mutations.discardPendingOp((yield* queued).find((op) => op.kind === 'update')!.id);
       expect((yield* queued).map((op) => op.kind)).toEqual(['move']);
+      expect(yield* rowAt('acc-1', 'cal-2', exception.id)).not.toBeNull();
       online = true;
       yield* (yield* PendingOpRepo).retryNow();
       yield* mutations.processPendingOps();
@@ -1710,13 +1715,20 @@ describe('a move Google never makes', () => {
     }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
   });
 
-  it.effect('discarding a sent move Google cannot be asked about puts it back', () => {
-    // Offline: the attempt most likely never reached Google, and the user
-    // asked for the move to go.
+  it.effect('discarding a sent move Google cannot be asked about waits for its answer', () => {
+    // The attempt may have reached Google, its answer lost. Put back at
+    // once, an event that had moved showed in its source, and a change made
+    // there met a 404 and was lost. Given up, the move is never sent
+    // again: it stays queued until Google says where the event is.
     const offline = new ApiUnavailableError({ cause: 'offline', status: 503 });
-    const google = recordingGoogle([], {
-      getEvent: () => Effect.fail(offline),
+    const calls: Array<Call> = [];
+    let online = false;
+    const plain = recordingGoogle(calls);
+    const google = recordingGoogle(calls, {
+      getEvent: (params) =>
+        online ? Effect.fail(new NotFoundError({ resource: 'event' })) : Effect.fail(offline),
       moveEvent: () => Effect.fail(offline),
+      patchEvent: (params) => (online ? plain.patchEvent(params) : Effect.fail(offline)),
     });
     return Effect.gen(function* () {
       yield* seed([googleEvent()]);
@@ -1732,7 +1744,20 @@ describe('a move Google never makes', () => {
       const moving = (yield* queued).find((op) => op.kind === 'move');
       yield* mutations.discardPendingOp(moving!.id);
 
-      expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual(['update:cal-1']);
+      expect(
+        (yield* queued).map((op) => `${op.kind}:${op.calendarId}:${op.discarded === true}`),
+      ).toEqual(['move:cal-1:true', 'update:cal-2:false']);
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.title).toBe('Renamed');
+
+      // Google answers: the event is not in the destination, so the move
+      // never happened. Everything goes back, and the rename with it.
+      online = true;
+      calls.length = 0;
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual(['patch:cal-1']);
+      expect(yield* queued).toEqual([]);
       expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
       expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.title).toBe('Renamed');
     }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));

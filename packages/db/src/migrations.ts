@@ -4,7 +4,7 @@ import type { ResolvedMigration } from 'effect/sql/Migrator';
 
 // The whole schema in one migration. The incremental migrations that
 // accreted while building were collapsed before the first release, three
-// times (2026-09-15, 2026-10-15, and 2026-11-21 when Google's copy of a
+// times (2026-09-15, 2026-10-15, and 2026-11-22 when Google's copy of a
 // held item replaced the snapshots each queued change kept); a database
 // from before a collapse holds migration rows this build does not know, so
 // it refuses to open (see the runner's identity guard) and is reset with
@@ -137,6 +137,8 @@ const baseline = Effect.gen(function* () {
   //   whether it asks Google for that series before it goes.
   // - source_gone: on a move, that a pull found the event gone from the
   //   calendar it leaves (PendingOp.sourceGone).
+  // - discarded: on a move that was sent, that the user gave it up before
+  //   Google could be asked whether it landed (PendingOp.discarded).
   // - copy_source: on the create a move or a conversion queued toward
   //   Google, what it was copied from (PendingOp.copySource) — the
   //   source's deletes it holds back, or an Apple source as it was.
@@ -172,6 +174,7 @@ const baseline = Effect.gen(function* () {
       split_at INTEGER,
       split_check INTEGER NOT NULL DEFAULT 0,
       source_gone INTEGER NOT NULL DEFAULT 0,
+      discarded INTEGER NOT NULL DEFAULT 0,
       copy_source TEXT,
       color_hex TEXT,
       task_list_id TEXT,
@@ -316,16 +319,19 @@ const baseline = Effect.gen(function* () {
   // row (`TaskRepo.holdTasks`; an event op's `beforePayload`). The row
   // then shows the user's version; pulls and answers write what Google has
   // here, and the row is laid over it again. One per item — every queued
-  // change of it reads the same copy — keyed where Google has it, and gone
-  // again once nothing queued holds the item. A queued delete of a series
-  // holds the copies of its exceptions too.
+  // change of it reads the same copy — and gone again once nothing queued
+  // holds the item. An event's is keyed by its calendar (one id can exist
+  // in two calendars of an account); a task keeps its id across lists, so
+  // its copy is keyed by the id alone and names the list Google has it
+  // in. A queued change of a series that takes exceptions off the table
+  // (its delete, a cut, a new rule, new times) holds their copies too.
   yield* sql`
     CREATE TABLE task_copies (
       account_id TEXT NOT NULL,
       list_id TEXT NOT NULL,
       id TEXT NOT NULL,
       payload TEXT NOT NULL,
-      PRIMARY KEY (account_id, list_id, id)
+      PRIMARY KEY (account_id, id)
     )`;
   yield* sql`
     CREATE TABLE event_copies (
@@ -340,5 +346,5 @@ const baseline = Effect.gen(function* () {
 // The third tuple element is a *loader* whose result is the migration effect.
 // A migration is never renamed: the runner matches applied rows by id and name.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
-  [1, 'baseline-2026-11-21', Effect.succeed(baseline)],
+  [1, 'baseline-2026-11-22', Effect.succeed(baseline)],
 ];

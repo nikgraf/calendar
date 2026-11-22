@@ -122,7 +122,7 @@ was cut (pruned 2026-11-17).
   Solunivo", the webcam on dense codes, parked Google prefs untitled.
 - **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
   bump together when a release is worth a number.
-- **Schema baseline** (2026-09-15, again 2026-10-15 and 2026-11-21, #374)
+- **Schema baseline** (2026-09-15, again 2026-10-15 and 2026-11-22, #374)
   — the pre-release migrations were collapsed into one, three times,
   since nothing had shipped;
   the second pass also dropped every upgrade of old data (zone lists

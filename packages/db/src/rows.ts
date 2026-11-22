@@ -463,6 +463,7 @@ export interface PendingOpRow {
   readonly task_title: string | null;
   readonly task_notes: string | null;
   readonly task_due: string | null;
+  readonly discarded: number;
   readonly dispatched_at: number | null;
   readonly drops_from: number | null;
   readonly split_at: number | null;
@@ -856,6 +857,7 @@ export const pendingOpFromRow = (
         conflictAt: row.conflict_at ?? undefined,
         copySource: decodeOr(CopySource, parseJson(row.copy_source)),
         createdAt: row.created_at,
+        discarded: row.discarded === 1 ? true : undefined,
         dispatchedAt: row.dispatched_at ?? undefined,
         dropsFrom: row.drops_from ?? undefined,
         eventId: row.event_id,

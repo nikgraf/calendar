@@ -427,11 +427,13 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    */
   changed: Schema.optional(Schema.Array(Schema.String)),
   /**
-   * A series delete only: Google's copies of the exceptions it took off
-   * the table with the master (Google cascades, so they queue no op of
-   * their own). Kept per exception like any copy and read here; a discard
-   * re-inserts them with the master. One whose own delete waits is that
-   * delete's.
+   * A change of a series that takes exceptions off the table: Google's
+   * copies of them. A series delete takes them all with the master; an
+   * update that redraws the series (`dropsFrom`: a cut, a new rule, new
+   * times) takes the ones it no longer draws. Google cancels them with
+   * that one write, so they queue no op of their own. Kept per exception
+   * like any copy and read here; giving the change up puts them back.
+   * One whose own delete waits is that delete's.
    */
   beforeOverrides: Schema.optional(Schema.Array(EventRecord)),
   /**
@@ -464,6 +466,15 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   copySource: Schema.optional(CopySource),
   createdAt: Schema.Number,
   /**
+   * A move only (an event's or a task's): the user gave it up after it
+   * was sent, and Google could not be asked whether it had landed. It is
+   * never sent again. It stays queued, and the item where the move put
+   * it, until Google says where the item is: there, the move landed and
+   * stays; not there, everything goes back. What is changed meanwhile
+   * waits behind it and follows the item either way.
+   */
+  discarded: Schema.optional(Schema.Boolean),
+  /**
    * Set just before a non-idempotent network call (createTask). A re-run
    * that finds it set must verify with the server before inserting again
    * — the first request may have landed even though we never saw the
@@ -473,7 +484,8 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   /**
    * Set on a series update that drops exceptions on Google: the earliest
    * original start it drops them from — a this-and-following cut's
-   * occurrence, 0 for a new rule (Google drops them with the old one).
+   * occurrence, 0 for a new rule or new times (Google drops the ones the
+   * series no longer draws).
    * An update that replaces it keeps the earlier of the two. Once it
    * lands, the copies of those exceptions are Google's no more; until
    * then they are.

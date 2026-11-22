@@ -789,10 +789,12 @@ describe('EventMutations recurring scopes', () => {
       expect(truncated!.recurrence).toEqual(['RRULE:FREQ=DAILY;UNTIL=20260704T085959Z']);
       expect(yield* events.getById('acc-1', 'cal-1', 'master1_20260705T090000Z')).toBeNull();
 
+      // Google cancels it with the cut: nothing is queued for it, and the
+      // cut holds Google's copy of it for as long as it waits.
       const ops = yield* listOps;
-      expect(ops.map((op) => `${op.kind}:${op.eventId}`).sort()).toEqual([
-        'delete:master1_20260705T090000Z',
-        'update:master1',
+      expect(ops.map((op) => `${op.kind}:${op.eventId}`)).toEqual(['update:master1']);
+      expect(ops[0]?.beforeOverrides?.map((copy) => [copy.id, copy.etag])).toEqual([
+        ['master1_20260705T090000Z', '"o-1"'],
       ]);
     }).pipe(Effect.provide(testLayer)),
   );
@@ -1021,10 +1023,10 @@ describe('discarding a change of a series', () => {
           scope: 'series',
         });
         yield* mutations.deleteRecurring({ ...target, scope: 'following' });
-        const drop = (yield* listOps).find(
-          (op) => op.kind === 'delete' && op.eventId === instanceId,
-        );
-        expect(drop?.beforePayload?.title).toBe('Daily (moved)');
+        const [cut] = yield* listOps;
+        expect(cut?.beforeOverrides?.map((copy) => [copy.id, copy.title])).toEqual([
+          [instanceId, 'Daily (moved)'],
+        ]);
       }).pipe(Effect.provide(testLayer)),
   );
 
@@ -2060,8 +2062,9 @@ describe('EventMutations recurrence rule edits', () => {
       // The exception belonged to the old rule's occurrences.
       expect(yield* events.getById('acc-1', 'cal-1', instanceId)).toBeNull();
       const ops = yield* listOps;
-      expect(ops.map((op) => op.kind).sort()).toEqual(['delete', 'update']);
+      expect(ops.map((op) => op.kind)).toEqual(['update']);
       const update = ops.find((op) => op.kind === 'update')!;
+      expect(update.beforeOverrides?.map((copy) => copy.id)).toEqual([instanceId]);
       expect(update.payload?.recurrence).toEqual(['RRULE:FREQ=WEEKLY;COUNT=4']);
       expect(update.recurrenceCleared).toBeUndefined();
     }).pipe(Effect.provide(testLayer)),
@@ -2097,10 +2100,8 @@ describe('EventMutations recurrence rule edits', () => {
       expect((yield* rowOf(cancelled.id))?.status).toBe('cancelled');
       expect(yield* rowOf(pastTheEnd.id)).toBeNull();
       const ops = yield* listOps;
-      expect(ops.map((op) => `${op.kind} ${op.eventId}`).sort()).toEqual([
-        `delete ${pastTheEnd.id}`,
-        'update master1',
-      ]);
+      expect(ops.map((op) => `${op.kind} ${op.eventId}`)).toEqual(['update master1']);
+      expect(ops[0]?.beforeOverrides?.map((copy) => copy.id)).toEqual([pastTheEnd.id]);
     }).pipe(Effect.provide(testLayer)),
   );
 

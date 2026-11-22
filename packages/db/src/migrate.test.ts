@@ -151,7 +151,7 @@ describe('runMigrations', () => {
     }).pipe(Effect.provide(sqlLayer())),
   );
 
-  // What a database from before the 2026-11-21 baseline looks like to this
+  // What a database from before the 2026-11-22 baseline looks like to this
   // build: four rows, the first under the old baseline's name.
   it.effect('dies on a database from before the schema baseline', () =>
     Effect.gen(function* () {

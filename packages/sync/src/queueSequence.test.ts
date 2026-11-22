@@ -1037,13 +1037,39 @@ const lostLanded = (world: World, call: FakeCall) => {
   }
 };
 
+/**
+ * Whether the key is an occurrence Google no longer draws because a PATCH
+ * of ours redrew its series there with the answer lost (World.reshaped: a
+ * cut, a new rule, new times). The client learns of it with the next
+ * pull; until then, and above all once the user discarded that change,
+ * it draws the occurrence, and a change of it is refused and dropped. A
+ * documented limit (todo.md, Tier 0): no edit keeps such an occurrence.
+ */
+const reshapedAway = (world: World, key: string): boolean => {
+  const series = seriesKeyOf(key);
+  const id = key.slice('event:'.length);
+  const masterId = masterIdOf(id);
+  const slot = slotOfId(id);
+  if (series === undefined || masterId === undefined || slot === undefined) {
+    return false;
+  }
+  return (
+    world.reshaped.has(series) &&
+    !CALENDARS.some((calendarId) =>
+      world.google
+        .instancesOf(calendarId, masterId, slot - DAY, slot + DAY)
+        .some((instance) => instance.id === id),
+    )
+  );
+};
+
 const setIntent = (
   world: World,
   key: string,
   change: Partial<Omit<Intent & { kind: 'set' }, 'kind'>>,
 ) => {
   // Gone from Google behind the user's back: no later edit brings it back.
-  if (touches(world.vanished, key)) {
+  if (touches(world.vanished, key) || reshapedAway(world, key)) {
     return;
   }
   const before = world.intents.get(key);
@@ -1682,15 +1708,6 @@ const cancelledOnGoogle = (world: World, occurrenceId: string): boolean =>
     (calendarId) => world.google.eventOf(calendarId, occurrenceId)?.status === 'cancelled',
   );
 
-/** Whether a queued op of the series carries other times than Google has for it. */
-const retiming = (world: World, snapshot: Snapshot, masterId: string): boolean =>
-  googleSeries(world, masterId).some((theirs) =>
-    snapshot.ops.some(
-      (op) =>
-        op.eventId === masterId && op.payload != null && op.payload.startUtc !== theirs.startUtc,
-    ),
-  );
-
 /**
  * Whether a queued change of one of the series' occurrences waits on a
  * version of that occurrence the client has not seen: Google holds an
@@ -2214,6 +2231,15 @@ const userActions = (
                 world.etagsAtMove.set(override.id, override.etag);
               }
             }
+            // And the exceptions a queued change of the series holds off
+            // the table: given up, it puts them back with these etags.
+            for (const op of snapshot.ops) {
+              for (const copy of op.eventId === row.id ? (op.beforeOverrides ?? []) : []) {
+                if (copy.etag !== null) {
+                  world.etagsAtMove.set(copy.id, copy.etag);
+                }
+              }
+            }
           },
         ),
       };
@@ -2312,12 +2338,7 @@ const worldActions = (
     );
   /** A series another device may change an occurrence of, and one of the occurrences Google draws. */
   const anOccurrence = () => {
-    // An exception made under a retime of ours still queued would meet
-    // it on Google: not recorded (see hasExceptions).
-    const series = pick(
-      random,
-      liveSeries().filter(({ event }) => !retiming(world, snapshot, event.id)),
-    );
+    const series = pick(random, liveSeries());
     // One a queued change holds while its series moves: see
     // unseenOccurrenceNews.
     const moving = snapshot.ops.some((op) => op.kind === 'move' && op.eventId === series?.event.id);
@@ -5550,6 +5571,60 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
     );
   });
 
+  it.effect("a series' text set while its create waits wins over an occurrence's own", () => {
+    // Sequence 6296 of a search to 7,000: a series made offline, one
+    // occurrence's description, then a description for all events. The
+    // edit went into the unsent create and left the occurrence's queued
+    // change as it was, which then put its older text over the series' on
+    // Google, where a series' new text wins once the series is there.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        const start = R2_START + 30 * DAY;
+        const series = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-2',
+          endUtc: start + HOUR,
+          isAllDay: false,
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=4'],
+          startTimeZone: 'UTC',
+          startUtc: start,
+          title: 'Review',
+        });
+        const at = { accountId: ACCOUNT_ID, calendarId: 'cal-2', masterId: series.id };
+        yield* mutations.updateRecurring({
+          ...at,
+          changes: { description: 'Second day', location: 'Room 2' },
+          originalStartUtc: start + DAY,
+          scope: 'instance',
+        });
+        yield* mutations.updateRecurring({
+          ...at,
+          changes: { description: 'For all' },
+          originalStartUtc: start,
+          scope: 'series',
+        });
+        const occurrenceId = googleInstanceId(series.id, start + DAY, false);
+        const shown = yield* (yield* SqlClient)<{
+          readonly description: string | null;
+          readonly location: string | null;
+        }>`SELECT description, location FROM events WHERE id = ${occurrenceId}`;
+        expect(shown).toEqual([{ description: 'For all', location: 'Room 2' }]);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.eventOf('cal-2', occurrenceId)).toMatchObject({
+          description: 'For all',
+          location: 'Room 2',
+        });
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
   it.effect('an edit made right after a move goes behind the change it was made on', () => {
     // Sequence 934 of that search: "does not repeat", the event moved,
     // then new times, all while offline. A move re-queues what waits for
@@ -6155,103 +6230,97 @@ describe('pending-op queue: what goes with a change of a series', () => {
 });
 
 describe('pending-op queue: open gaps the sequences found in series', () => {
-  it.effect.skip(
-    'the deletes a cut queued go with it when a delete of the series replaces it',
-    () => {
-      // Sequences 1347 and 2936 (past the first thousand): a
-      // this-and-following cut queues, behind its PATCH, a delete of each
-      // exception past it; deleting the series replaced the cut, and those
-      // deletes went out on their own. With the series' delete discarded,
-      // Google has the series as it was, less those occurrences. The series
-      // delete keeps them queued on purpose today (engine.test.ts, "a series
-      // whose delete waits › after a cut").
-      const google = newFake();
-      const network = writesDown(google);
-      return scripted(
-        google,
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          const ops = yield* PendingOpRepo;
-          network.down = true;
-          yield* mutations.deleteRecurring({
-            ...R2,
-            originalStartUtc: R2_START + DAY,
-            scope: 'following',
-          });
-          yield* mutations.deleteRecurring({ ...R2, originalStartUtc: R2_START, scope: 'series' });
-          // Back online, the series' own delete still fails.
-          google.fault = (call) =>
-            call.method === 'DELETE' && call.url.endsWith('/events/r2') ? 'refused' : undefined;
-          yield* drainAll(mutations);
-          const remove = (yield* ops.listAll()).find((op) => op.eventId === 'r2')!;
-          yield* mutations.discardPendingOp(remove.id);
-          expect(
-            google.eventOf('cal-2', googleInstanceId('r2', R2_START + DAY, false))?.status,
-          ).toBe('confirmed');
-          expect(drawnOnGoogle(google, 'cal-2', 'r2')).toHaveLength(4);
-        }),
-      );
-    },
-  );
+  it.effect('the deletes a cut queued go with it when a delete of the series replaces it', () => {
+    // Sequences 1347 and 2936 (past the first thousand): a
+    // this-and-following cut queues, behind its PATCH, a delete of each
+    // exception past it; deleting the series replaced the cut, and those
+    // deletes went out on their own. With the series' delete discarded,
+    // Google has the series as it was, less those occurrences. The series
+    // delete keeps them queued on purpose today (engine.test.ts, "a series
+    // whose delete waits › after a cut").
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        yield* mutations.deleteRecurring({
+          ...R2,
+          originalStartUtc: R2_START + DAY,
+          scope: 'following',
+        });
+        yield* mutations.deleteRecurring({ ...R2, originalStartUtc: R2_START, scope: 'series' });
+        // Back online, the series' own delete still fails.
+        google.fault = (call) =>
+          call.method === 'DELETE' && call.url.endsWith('/events/r2') ? 'refused' : undefined;
+        yield* drainAll(mutations);
+        const remove = (yield* ops.listAll()).find((op) => op.eventId === 'r2')!;
+        yield* mutations.discardPendingOp(remove.id);
+        expect(google.eventOf('cal-2', googleInstanceId('r2', R2_START + DAY, false))?.status).toBe(
+          'confirmed',
+        );
+        expect(drawnOnGoogle(google, 'cal-2', 'r2')).toHaveLength(4);
+      }),
+    );
+  });
 
-  it.effect.skip(
-    "a move of an event whose rule was cleared takes its occurrences' rows along",
-    () => {
-      // Sequence 2323 (past the first thousand; 2138 with an exception a pull
-      // brought): one occurrence deleted, then "does not repeat", then the
-      // event moved, all while offline. The move takes a series' exception
-      // rows along; this event repeats no more here, so only the ops of its
-      // occurrences went to the destination, and the deleted occurrence's
-      // tombstone stayed in the source: pending, with no op there, for good.
-      const google = newFake();
-      const network = writesDown(google);
-      return scripted(
-        google,
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          network.down = true;
-          yield* mutations.deleteRecurring({
-            ...R1,
-            originalStartUtc: R1_START + DAY,
-            scope: 'instance',
-          });
-          yield* mutations.updateRecurring({
-            ...R1,
-            changes: { recurrence: null },
-            originalStartUtc: R1_START,
-            scope: 'series',
-          });
-          yield* mutations.moveEvent({
-            accountId: ACCOUNT_ID,
-            calendarId: 'cal-1',
-            eventId: 'r1',
-            target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
-          });
-          network.down = false;
-          yield* drainAll(mutations);
-          yield* TestClock.adjust('1 minute');
-          yield* (yield* SyncEngine).syncAll();
-          expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
-          const rows = yield* (yield* SqlClient)<{
-            readonly calendar_id: string;
-            readonly id: string;
-            readonly sync_status: string;
-          }>`SELECT calendar_id, id, sync_status FROM events
+  it.effect("a move of an event whose rule was cleared takes its occurrences' rows along", () => {
+    // Sequence 2323 (past the first thousand; 2138 with an exception a pull
+    // brought): one occurrence deleted, then "does not repeat", then the
+    // event moved, all while offline. The move takes a series' exception
+    // rows along; this event repeats no more here, so only the ops of its
+    // occurrences went to the destination, and the deleted occurrence's
+    // tombstone stayed in the source: pending, with no op there, for good.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.deleteRecurring({
+          ...R1,
+          originalStartUtc: R1_START + DAY,
+          scope: 'instance',
+        });
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { recurrence: null },
+          originalStartUtc: R1_START,
+          scope: 'series',
+        });
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'r1',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        network.down = false;
+        yield* drainAll(mutations);
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly calendar_id: string;
+          readonly id: string;
+          readonly sync_status: string;
+        }>`SELECT calendar_id, id, sync_status FROM events
           WHERE id LIKE 'r1%' AND (calendar_id = 'cal-1' OR sync_status != 'synced')`;
-          expect(rows).toEqual([]);
-        }),
-      );
-    },
-  );
+        expect(rows).toEqual([]);
+      }),
+    );
+  });
 
-  it.effect.skip('a change made after a discarded move that had landed is kept', () => {
+  it.effect('a change made after a discarded move that had landed is kept', () => {
     // Sequences 1876 and 2506 (past the first thousand; 2506 with a cut in
     // place of the move): a move landed with its answer lost and was
     // discarded while Google could not be asked where the event is. It
     // went back to its source, as a move that never reached Google would,
     // and until the next pull the user saw it there: a change made then
-    // met a 404 and was dropped. A discarded change Google may have is
-    // only settled once Google answers; until then it would have to wait.
+    // met a 404 and was dropped. Given up, the move now waits for Google's
+    // answer, and the change behind it follows the event.
     const google = newFake();
     lostThenRefused(
       google,
@@ -6267,7 +6336,7 @@ describe('pending-op queue: open gaps the sequences found in series', () => {
         google.fault = undefined;
         yield* mutations.updateEvent({
           accountId: ACCOUNT_ID,
-          calendarId: 'cal-1',
+          calendarId: 'cal-2',
           changes: { title: 'Standup (new room)' },
           eventId: 'e1',
         });
@@ -6275,6 +6344,7 @@ describe('pending-op queue: open gaps the sequences found in series', () => {
         yield* TestClock.adjust('1 minute');
         yield* (yield* SyncEngine).syncAll();
         expect(google.eventOf('cal-2', 'e1')?.summary).toBe('Standup (new room)');
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
       }),
     );
   });
