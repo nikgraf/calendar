@@ -116,8 +116,9 @@ suite). When touching sync code, treat these as invariants.
   (`events.get`) and an update is laid over it: sent again when the two
   changed different things, parked when they changed the same one or the
   update edits the guest list, for the user to keep theirs (re-sent
-  without If-Match) or take Google's (re-fetched live). A delete parks;
-  an RSVP is resent unchecked. A stale-etag PATCH of a deleted event and a stale If-Match
+  without If-Match) or take Google's (re-fetched live). A delete parks,
+  unless the fetch finds the event gone or cancelled already: then it is
+  done; an RSVP is resent unchecked. A stale-etag PATCH of a deleted event and a stale If-Match
   DELETE are 412s too. `events.get` answers a deleted event with 404 or
   410 — the client maps both to `NotFoundError`, and a 410 on any write
   means "gone", like a 404 (never an expired sync token there). A series

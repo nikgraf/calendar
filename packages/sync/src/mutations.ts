@@ -634,13 +634,12 @@ const make: Effect.Effect<
    * What an occurrence edit or delete starts from: the occurrence's row,
    * else the exception a queued series delete took there — Google still
    * has it while that delete waits, and the master may be on the table
-   * again (keep-theirs on another change of it). Built on the master's slot instead, the edit would patch
-   * the exception's own changes away and the delete would remember
-   * nothing to put back. The series delete stays queued, so nothing else
-   * it took comes back. A cancellation it took is no base: the slot
-   * shows, and the change starts from it as before. (An exception's own
-   * queued delete is no base either: a cut or a rule change queues one for
-   * each exception it drops, and Google cancels those with its PATCH.)
+   * again (keep-theirs on another change of it). Built on the master's
+   * slot instead, the edit would patch the exception's own changes away
+   * and the delete would remember nothing to put back. The series delete
+   * stays queued, so nothing else it took comes back. A cancellation it
+   * took is no base: the slot shows, and the change starts from it as
+   * before.
    */
   const occurrenceRow = (
     accountId: string,
@@ -1138,9 +1137,11 @@ const make: Effect.Effect<
    * Keep mine: re-send without If-Match. A parked delete also takes any
    * row of Google's still at its id, or of its series' exceptions, back
    * off the table as copies it holds (`takeBackPulled`; a pending row —
-   * an instance tombstone — is the user's own and stays). An edit of an event Google deleted is restored
-   * as a new event: patching it would 404 and the NotFound arm would drop
-   * the edit.
+   * an instance tombstone — is the user's own and stays). An edit of an
+   * event Google deleted is restored as a new event: patching it would 404
+   * and the NotFound arm would drop the edit. Of an occurrence Google
+   * cancelled, that new event stands on its own and the occurrence stays
+   * cancelled in its series.
    */
   const keepMine = (op: PendingOp, now: number) =>
     Effect.gen(function* () {
@@ -1166,7 +1167,14 @@ const make: Effect.Effect<
         syncStatus: 'pending',
         updatedAt: now,
       });
-      yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+      // An occurrence Google holds cancelled stays hidden: its tombstone
+      // is Google's copy, and the row. Taken away with the edit, the
+      // series drew that day again beside the copy, and no later pull
+      // says it is cancelled.
+      const tombstone = op.beforePayload;
+      yield* tombstone?.status === 'cancelled' && tombstone.recurringEventId !== undefined
+        ? eventRepo.upsertMany([new EventRecord({ ...tombstone, syncStatus: 'synced' })])
+        : eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
       yield* eventRepo.upsertMany([restored]);
       yield* enqueue(
         new PendingOp({
@@ -2140,7 +2148,7 @@ const make: Effect.Effect<
           return yield* enqueue(foldIntoCreate(unsentCreate, merged));
         }
         // A series cleared while offline keeps that change where it is,
-        // ahead of the deletes of its exceptions that wait behind it.
+        // ahead of the user's own deletes of its occurrences behind it.
         const { replaced } = yield* queuedUpdate({ accountId, calendarId, eventId }, queued);
         yield* pendingOpRepo.enqueue(
           new PendingOp({

@@ -309,13 +309,19 @@ it whenever a kind is added. Rules that keep the queue correct:
   can say nothing changed. That includes our own series PATCH, which
   gives every exception a new etag (verified live): an occurrence
   deleted after it and before the next pull asks. One the user kept (no
-  If-Match) goes whatever Google has. After a 412 three more outcomes:
+  If-Match) goes whatever Google has, and one that finds the event
+  already gone or cancelled on Google after its 412 is done (an earlier
+  attempt landed with its answer lost, or another device deleted it too:
+  parked, it asked the user about their own delete). After a 412 three more outcomes:
   Google's copy already yields exactly the PATCH body the update would
   send (`updateBody`: our own earlier attempt landed with its answer
   lost), which is done; an update laid over Google's version without a
   clash goes again at once on Google's etag, and a second 412 there is a
   newer change still and meets the same check; a failed fetch is an
-  ordinary retry. A series PATCH that changed text lands that text on
+  ordinary retry. What Google answers outside a pull is kept
+  (`learned`): the fetch after a 412 for a change that left the queue
+  meanwhile, and the series a split-off one asks about, are laid under
+  what is queued for the event or, with nothing queued, become the row. A series PATCH that changed text lands that text on
   its exceptions too (`advanceCarried` folds it into their copies, and
   into the payload of an edit queued before the series edit, or of one
   queued after it in the fields it did not change itself, which would
@@ -330,7 +336,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   queue rows — and `resolveConflict` settles it: **mine** unparks with
   `base_etag` cleared so the re-send overwrites Google (an edit of an
   event Google deleted is re-created under a new id as a standalone
-  event); **theirs** re-fetches Google's _current_ copy and writes it in
+  event; of an occurrence Google cancelled, beside the series, where the
+  occurrence stays cancelled); **theirs** re-fetches Google's _current_ copy and writes it in
   ack mode, then drops the op — a series delete's exceptions come back
   with a live master, and a series gone on Google takes its synced
   exceptions along. Take-theirs is refused while a move of the series is
@@ -820,11 +827,12 @@ Rules a change to the queue keeps (each broke once):
   copies that delete holds** (`takenExceptions.ts`), not rows: without
   their master they would show as events of their own. A pull's copy of
   one (where no row sits at its id) or an answer's ack of one goes there,
-  and so does one a discard of a cut's delete of it, keep-theirs on that
-  delete, or an occurrence edit undone after keep-mine would write back
-  (`takeIntoDelete`; such an undone edit only once no op but an answer
-  owns the row). An exception's own queued delete (a cut's) reads the
-  same copy. A discard of the series delete puts them back with the
+  and so does one that a discard of the user's own delete of that
+  occurrence, keep-theirs on that delete, or an occurrence edit undone
+  after keep-mine would write back (`takeIntoDelete`; such an undone
+  edit only once no op but an answer owns the row). What a cut, a new
+  rule or new times had dropped before the delete replaced them is among
+  those copies. A discard of the series delete puts them back with the
   master, where no row is, a waiting answer laid over Google's copy
   (`putBack`). A page that reports the series deleted on Google forgets
   them, as the delete's landing would.
@@ -853,7 +861,7 @@ Rules a change to the queue keeps (each broke once):
   carries where its drop starts (`dropsFrom`: the cut's occurrence, 0 for
   a new rule or new times; an update that takes its place keeps the
   earlier, and drops nothing more once one it replaced in flight landed
-  the same rule), and however it lands (a 2xx, a lost answer a 412 finds
+  the same rule from the same start), and however it lands (a 2xx, a lost answer a 412 finds
   on Google) everything that still holds one of those exceptions — one
   the landed series does not draw — forgets it (`forgetDropped`): its
   copy goes, so nothing is left to put back, a synced row (Google's copy

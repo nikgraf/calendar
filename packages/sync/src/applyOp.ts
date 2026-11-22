@@ -41,6 +41,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
+import { cancelledOverrideTombstone } from './tombstone.ts';
 import { changedFields, makeHeldEvents, responseOf, withAnswers } from './heldEvents.ts';
 import { makeHeldTasks, withTaskChange } from './heldTasks.ts';
 import { askSplits, holdsSplit, ofSplitSeries, settleSplit } from './splitSeries.ts';
@@ -107,6 +108,10 @@ export interface ApplyOpDeps {
  * user; a conflict parks the op with Google's version (null = deleted on
  * Google) until the user chooses.
  */
+/** What decides which slots a series draws: its rule and its start. Two updates with the same draw the same. */
+const slotsOf = (payload: EventRecord | undefined): string =>
+  JSON.stringify([payload?.recurrence ?? null, payload?.startUtc, payload?.startTimeZone]);
+
 export type ApplyOutcome =
   | 'done'
   | { readonly conflict: EventRecord | null }
@@ -340,6 +345,32 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const taken = { eventRepo, pendingOpRepo };
   const held = makeHeldTasks({ pendingOpRepo, taskRepo });
   const heldEvents = makeHeldEvents({ eventRepo, pendingOpRepo });
+
+  /**
+   * Google's version of an event, learned outside a pull: fetched after a
+   * 412 for a change that left the queue meanwhile, or by a split-off
+   * series asking where its source ends. Kept, not thrown away: the
+   * queued changes of the event are laid over it as over a pull's page,
+   * and where nothing is queued for it, it is the row. Left to the next
+   * pull, the row showed the older version until then.
+   */
+  const learned = (theirs: EventRecord) =>
+    transaction(
+      Effect.gen(function* () {
+        const event = {
+          accountId: theirs.accountId,
+          calendarId: theirs.calendarId,
+          eventId: theirs.id,
+        };
+        if ((yield* pendingOpRepo.listForEvent(event)).length > 0) {
+          return yield* heldEvents.take(theirs);
+        }
+        const row = yield* eventRepo.getById(event.accountId, event.calendarId, event.eventId);
+        if (row?.syncStatus === 'synced' && row.etag !== theirs.etag) {
+          yield* eventRepo.upsertMany([theirs]);
+        }
+      }),
+    );
 
   /**
    * Where a put-back row stands with sync: still pending while another op
@@ -1843,8 +1874,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   /**
    * A landed series update that drops exceptions on Google forgets what
    * holds them. An update of the series that replaced it while it was out
-   * inherited its drop: sending the same rule, it drops nothing more —
-   * forgetting again when it lands would take the exceptions made since.
+   * inherited its drop: drawing the same slots (the same rule from the
+   * same start), it drops nothing more — forgetting again when it lands
+   * would take the exceptions made since. One with another start redraws
+   * the series whatever its rule, and keeps holding what it drops.
    */
   const forgetDroppedBy = (op: PendingOp, calendarId: string = op.calendarId) =>
     Effect.gen(function* () {
@@ -1853,14 +1886,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return;
       }
       yield* forgetDropped(taken, op.accountId, calendarId, op.eventId, op.payload, from, op.id);
-      const rule = JSON.stringify(op.payload?.recurrence ?? null);
       const event = { accountId: op.accountId, calendarId, eventId: op.eventId };
       for (const other of yield* pendingOpRepo.listForEvent(event)) {
         if (
           other.id !== op.id &&
           other.kind === 'update' &&
           other.dropsFrom !== undefined &&
-          JSON.stringify(other.payload?.recurrence ?? null) === rule
+          slotsOf(other.payload) === slotsOf(op.payload)
         ) {
           yield* pendingOpRepo.setDropsFrom(other.id, undefined);
         }
@@ -1954,6 +1986,24 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       };
       if (Object.keys(carried).length === 0) {
         return;
+      }
+      // The exceptions a queued change of the series holds off the table
+      // took the text on Google too: put back later, they show it.
+      for (const other of yield* pendingOpRepo.listForEvent({
+        accountId: op.accountId,
+        calendarId,
+        eventId: op.eventId,
+      })) {
+        if (other.id !== op.id && other.beforeOverrides?.length) {
+          yield* pendingOpRepo.setBeforeOverrides(
+            other.id,
+            other.beforeOverrides.map((copy) =>
+              copy.status === 'cancelled'
+                ? copy
+                : withConsistentGeo(new EventRecord({ ...copy, ...carried })),
+            ),
+          );
+        }
       }
       const before = new Set((yield* pendingOpRepo.earlierInSeries(op)).map((entry) => entry.id));
       for (const entry of carriedText.overrides) {
@@ -2085,18 +2135,39 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           .pipe(
             Effect.flatMap((item) =>
               Effect.gen(function* () {
-                const theirs = mapGcalEvent(item, {
+                // Google has it cancelled: a delete is done. An earlier
+                // attempt landed with its answer lost (a cancelled
+                // occurrence's etag is another, hence the 412), or another
+                // device deleted it too. Parked, it asked the user about
+                // their own delete, and discarded then, it drew an
+                // occurrence again that no later pull reports gone.
+                if (item.status === 'cancelled' && op.kind === 'delete') {
+                  return yield* gone(op);
+                }
+                const context = {
                   accountId: op.accountId,
                   calendarId: op.calendarId,
-                  defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
                   syncedAt: yield* Clock.currentTimeMillis,
-                });
+                };
+                // A cancelled occurrence is its tombstone: what an update
+                // of it is compared against, and what giving it up shows.
+                const theirs =
+                  item.status === 'cancelled'
+                    ? cancelledOverrideTombstone(item, context)
+                    : mapGcalEvent(item, {
+                        ...context,
+                        defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
+                      });
                 if (theirs && op.beforePayload) {
                   yield* transaction(heldEvents.take(theirs));
                 }
-                // Discarded or replaced while Google was asked.
+                // Discarded or replaced while Google was asked: what Google
+                // answered still shows.
                 const current = yield* pendingOpRepo.getById(op.id);
                 if (!current) {
+                  if (theirs) {
+                    yield* learned(theirs);
+                  }
                   return 'done' as const;
                 }
                 // Google already holds exactly what this update would send:
@@ -2125,7 +2196,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                 return { conflict: theirs };
               }),
             ),
-            Effect.catchTag('NotFoundError', () => Effect.succeed({ conflict: null })),
+            // Gone on Google: a delete is done, an update asks.
+            Effect.catchTag(
+              'NotFoundError',
+              (): Effect.Effect<ApplyOutcome, GoogleRequestError | SqlError> =>
+                op.kind === 'delete' ? gone(op) : Effect.succeed({ conflict: null }),
+            ),
           )
       : drop(op, 'changed on Google');
 
@@ -2191,6 +2267,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                 syncedAt: yield* Clock.currentTimeMillis,
               })
             : null;
+        if (series) {
+          yield* learned(series);
+        }
         if ((yield* transaction(settleSplit(taken, op, series))) !== 'go') {
           return 'done' as const;
         }

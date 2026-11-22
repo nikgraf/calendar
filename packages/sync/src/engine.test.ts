@@ -1625,6 +1625,38 @@ describe('SyncEngine', () => {
           }).pipe(Effect.provide(engineLayer(client)));
         });
 
+        it.effect('a discard, and what Google then says of the series shows at once', () => {
+          // Renamed on another device meanwhile. The new series asks Google
+          // where the old one ends, and the answer was used for that alone:
+          // the old series kept its old name until the next pull.
+          let online = false;
+          const insertion = inserting(() => online);
+          const client: GoogleCalendarClientShape = {
+            ...stubClient([firstPage]),
+            deleteEvent: deleting(() => online).deleteEvent,
+            getEvent: () => (online ? Effect.succeed(renamed) : offline()),
+            insertEvent: insertion.insertEvent,
+            patchEvent: offline,
+          };
+          return Effect.gen(function* () {
+            yield* seedAccount;
+            yield* (yield* SyncEngine).syncAll();
+            yield* editJuly3On;
+            yield* (yield* EventMutations).discardPendingOp((yield* opOf('evt-r', 'update'))!.id);
+            online = true;
+            yield* drain;
+            expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+            expect(insertion.inserted).toEqual([]);
+            const master = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-r');
+            expect([master?.title, master?.etag, master?.syncStatus]).toEqual([
+              renamed.summary,
+              renamed.etag,
+              'synced',
+            ]);
+            expect(yield* strays).toEqual([]);
+          }).pipe(Effect.provide(engineLayer(client)));
+        });
+
         it.effect('keep-theirs on its parked update, which the new series waits for', () => {
           const removal = deleting(() => true);
           const insertion = inserting(() => true);
@@ -3360,6 +3392,56 @@ describe('SyncEngine', () => {
         }).pipe(Effect.provide(engineLayer(client)));
       });
 
+      it.effect('new times that replaced it in flight still hold what they drop', () => {
+        // Review (Opus, round 10): the retime made while the rule change
+        // was out sends the same rule, and was read as dropping nothing
+        // more once the rule change landed. But its new start draws none
+        // of the old slots: it stopped holding July 3 and July 4, and
+        // discarded, the series came back with July 3 at its plain slot
+        // and the cancelled July 4 drawn again.
+        const requested = Effect.runSync(Deferred.make<void>());
+        const release = Effect.runSync(Deferred.make<void>());
+        let ruleSent = false;
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage]),
+          deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          patchEvent: () => {
+            if (ruleSent) {
+              return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+            }
+            ruleSent = true;
+            return Deferred.succeed(requested, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as(extended),
+            );
+          },
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          yield* (yield* SyncEngine).syncAll();
+          const mutations = yield* EventMutations;
+          yield* changeRule;
+          const sending = yield* Effect.forkChild(mutations.processPendingOps());
+          yield* Deferred.await(requested);
+          yield* mutations.updateRecurring({
+            ...at,
+            changes: { endUtc: july2 + 2 * 3_600_000, startUtc: july2 + 3_600_000 },
+            originalStartUtc: july2,
+            scope: 'series',
+          });
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(sending);
+          const retime = yield* opOf('evt-r', 'update');
+          expect([
+            retime?.dropsFrom,
+            retime?.beforeOverrides?.map((copy) => copy.id).sort(),
+          ]).toEqual([0, [july3, 'evt-r_20260704T100000Z']]);
+          yield* mutations.discardPendingOp(retime!.id);
+          expect(yield* shown).toEqual(kept);
+          expect(yield* strays).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      });
+
       it.effect('an occurrence edit made meanwhile starts from Google’s exception', () => {
         // Discarded, the rule change leaves Google's July 3 as it was: the
         // edit's discard shows it again, not the slot.
@@ -3809,6 +3891,10 @@ describe('SyncEngine', () => {
         yield* Fiber.join(sending);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
         expect(google.calls).toEqual(['series "evt-r"', 'july3 "x-1"']);
+        // What Google answered is kept: thrown away with the change, the
+        // row showed the version from before until the next pull.
+        const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', july3);
+        expect([row?.etag, row?.syncStatus]).toEqual(['"x-2"', 'synced']);
       }).pipe(Effect.provide(engineLayer(client)));
     });
 

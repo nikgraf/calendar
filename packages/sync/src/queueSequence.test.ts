@@ -6234,6 +6234,96 @@ describe('pending-op queue: what goes with a change of a series', () => {
   });
 });
 
+describe('pending-op queue: a delete whose answer was lost', () => {
+  it.effect("an occurrence's delete that had landed is done, not asked about", () => {
+    // Sequence 3298 of a search without the excuse for answers the app
+    // keeps nothing of: a changed occurrence deleted, the DELETE landed
+    // with its answer lost, and the retry met a 412 (its etag is the
+    // cancelled one's now). Google's answer to the fetch, "cancelled", was
+    // read as another device's change: the delete waited for a choice, and
+    // discarded, it drew the occurrence again, for good, since no later
+    // pull says it is gone.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const at = { ...R1, originalStartUtc: R1_START + DAY };
+        const id = googleInstanceId('r1', R1_START + DAY, false);
+        yield* mutations.updateRecurring({
+          ...at,
+          changes: { location: 'Room 2' },
+          scope: 'instance',
+        });
+        yield* drainAll(mutations);
+        lostThenRefused(google, (call) => call.method === 'DELETE');
+        yield* mutations.deleteRecurring({ ...at, scope: 'instance' });
+        yield* mutations.processPendingOps();
+        google.fault = undefined;
+        yield* drainAll(mutations);
+        expect((yield* ops.listAll()).map(describeOp)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly status: string;
+          readonly sync_status: string;
+        }>`SELECT status, sync_status FROM events WHERE id = ${id}`;
+        expect(rows).toEqual([{ status: 'cancelled', sync_status: 'synced' }]);
+        expect(google.eventOf('cal-1', id)?.status).toBe('cancelled');
+      }),
+    );
+  });
+});
+
+describe('pending-op queue: keep-mine on an occurrence Google has cancelled', () => {
+  it.effect('keeps the edit as an event of its own and the occurrence hidden', () => {
+    // Sequence 4342 of that search: an occurrence edited here and deleted
+    // on another device. Keep-mine makes the edit an event of its own, as
+    // for any event Google deleted, and took the occurrence's row away with
+    // it: the series drew that day again, beside the copy, for good, since
+    // Google's cancellation had been pulled already.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const slot = R1_START + DAY;
+        const id = googleInstanceId('r1', slot, false);
+        const edit = (changes: { description?: string; location?: string }) =>
+          mutations.updateRecurring({ ...R1, changes, originalStartUtc: slot, scope: 'instance' });
+        // An exception Google has, so the next edit carries its etag.
+        yield* edit({ location: 'Studio 2' });
+        yield* drainAll(mutations);
+        network.down = true;
+        yield* edit({ description: 'Bring the mat' });
+        google.deleteEventServerSide('cal-1', id);
+        network.down = false;
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        yield* drainAll(mutations);
+        const parked = (yield* ops.listAll()).find((op) => op.eventId === id);
+        expect(parked?.conflictAt).toBeDefined();
+        yield* mutations.resolveConflict({ choice: 'mine', opId: parked!.id });
+        yield* drainAll(mutations);
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* ops.listAll()).map(describeOp)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly status: string;
+          readonly sync_status: string;
+        }>`SELECT status, sync_status FROM events WHERE id = ${id}`;
+        expect(rows).toEqual([{ status: 'cancelled', sync_status: 'synced' }]);
+        // The copy is on Google, an event of its own.
+        const copies = yield* (yield* SqlClient)<{ readonly id: string }>`
+          SELECT id FROM events WHERE description = 'Bring the mat' AND sync_status = 'synced'`;
+        expect(copies).toHaveLength(1);
+        expect(google.eventOf('cal-1', copies[0]!.id)?.recurringEventId).toBeUndefined();
+      }),
+    );
+  });
+});
+
 describe('pending-op queue: a move given up after it was sent', () => {
   it.effect("a to-do's change made meanwhile follows it to where the move had landed", () => {
     // The move's answer was lost, and Google cannot be asked when it is
