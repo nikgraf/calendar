@@ -12,6 +12,7 @@ import {
   ApiUnavailableError,
   ConflictError,
   type GcalEvent,
+  type GcalEventPatch,
   GoogleApiError,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
@@ -32,6 +33,8 @@ import { EventMutations } from './mutations.ts';
  * parks it (Google's copy is `server`), a 400 drops it.
  */
 interface Google {
+  /** Answers the next PATCH in place of `patch`, once (a write that lands). */
+  land?: (event: GcalEventPatch) => Effect.Effect<GcalEvent>;
   /** `reject-once`: the first PATCH is a 400, the ones after it are offline. */
   patch: 'conflict' | 'offline' | 'reject' | 'reject-once';
   /** What each PATCH named, answered or not: "<event id>: <fields>". */
@@ -54,6 +57,11 @@ const googleClient = (google: Google): GoogleCalendarClientShape => ({
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: ({ event, eventId }) => {
     google.sent?.push(`${eventId}: ${Object.keys(event).join(',')}`);
+    if (google.land) {
+      const land = google.land;
+      delete google.land;
+      return land(event);
+    }
     if (google.patch === 'reject-once') {
       google.patch = 'offline';
       return Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 }));
@@ -504,6 +512,58 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       ]);
     }).pipe(Effect.provide(layer({ patch: 'reject-once' }))),
   );
+
+  it.effect('a new rule made while the first rule is on its way is still sent', () => {
+    // Review (Opus, round 5): a rule for all, one occurrence's own place, a
+    // place for all (queued behind both), and, while the first rule's
+    // PATCH was out, another rule. That one was written into the update
+    // on its way and left out of the new one as nothing new; the PATCH
+    // landed with the first rule, and the last one was gone for good.
+    const second = 'RRULE:FREQ=DAILY;COUNT=6';
+    const google: Google = { patch: 'offline' };
+    return Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'master1' };
+      const forAll = (changes: { location?: string; recurrence?: Array<string> }) =>
+        mutations.updateRecurring({
+          ...at,
+          changes,
+          originalStartUtc: master.startUtc,
+          scope: 'series',
+        });
+      yield* forAll({ recurrence: ['RRULE:FREQ=DAILY;INTERVAL=2;COUNT=10'] });
+      yield* mutations.updateRecurring({
+        ...at,
+        changes: { location: 'Room 2' },
+        originalStartUtc: master.startUtc + 2 * DAY,
+        scope: 'instance',
+      });
+      yield* forAll({ location: 'Room 3' });
+      expect((yield* masterOp).length).toBe(2);
+      // The first rule lands; the second is made while it is out.
+      google.land = (event) =>
+        Effect.as(Effect.orDie(forAll({ recurrence: [second] })), {
+          end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
+          etag: '"m-2"',
+          id: 'master1',
+          recurrence: event.recurrence ?? [RULE],
+          start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
+          status: 'confirmed',
+          summary: 'Daily',
+        });
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      // Google has the first rule; what still waits holds the second over it.
+      const waiting = yield* masterOp;
+      expect(waiting.map((op) => op.basePayload?.recurrence)).toEqual([
+        ['RRULE:FREQ=DAILY;INTERVAL=2;COUNT=10'],
+      ]);
+      expect(waiting.map((op) => [op.payload?.recurrence, op.payload?.location])).toEqual([
+        [[second], 'Room 3'],
+      ]);
+      expect((yield* row('master1'))?.recurrence).toEqual([second]);
+    }).pipe(Effect.provide(layer(google)));
+  });
 
   it.effect('splitting the series keeps the carry undoable', () =>
     Effect.gen(function* () {

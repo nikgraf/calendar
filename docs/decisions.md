@@ -558,10 +558,9 @@ was cut (pruned 2026-11-17).
   exception: its series at the slot). Different things changed on two
   devices both hold; the same thing, a guest-list edit or a delete asks
   (Nik's picks, with: kept while held, databases reset, one PR). A series'
-  update stays ahead of occurrence changes made under it: a later edit
-  takes its place there, or queues behind where their order shows on
-  Google. Rejected: per-change snapshots; every update its own op (a
-  first rule then reaches Google). Open: the provider seam; todo.md.
+  update stays ahead of occurrence changes made under it; a later edit
+  takes its place or queues behind. Rejected: per-change snapshots; every
+  update its own op. Open: the provider seam; todo.md's Tier 0.
 - **UI action state** (2026-11-05, #296) — an async action of a
   component is one value (`useAction`: idle, running, failed with its
   line, done with the result) on the editors' one-write slot; a value

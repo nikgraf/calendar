@@ -3436,6 +3436,53 @@ describe('pending-op queue: what the sequences found', () => {
 });
 
 describe('pending-op queue: a held task and Google’s copy of it', () => {
+  it.effect('discarding the tick of a to-do Google has not got yet opens it again', () => {
+    // Review (Codex, round 4): made and ticked while offline, then the tick
+    // discarded. With no copy of Google's to rebuild the row from, nothing
+    // rebuilt it: it stayed completed until its create landed.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const sql = yield* SqlClient;
+        const state = (id: string) =>
+          Effect.map(
+            sql<{
+              readonly completed_at: number | null;
+              readonly status: string;
+              readonly sync_status: string;
+              readonly title: string;
+            }>`SELECT title, status, completed_at, sync_status FROM tasks WHERE id = ${id}`,
+            (rows) =>
+              rows.map(
+                (row) =>
+                  `${row.title} ${row.status} ${row.completed_at === null ? 'open' : 'ticked'} ${row.sync_status}`,
+              ),
+          );
+        network.down = true;
+        const created = yield* mutations.createTask({
+          accountId: ACCOUNT_ID,
+          taskListId: 'list-1',
+          title: 'Groceries',
+        });
+        yield* mutations.completeTask({
+          accountId: ACCOUNT_ID,
+          status: 'completed',
+          taskId: created.id,
+          taskListId: 'list-1',
+        });
+        expect(yield* state(created.id)).toEqual(['Groceries completed ticked pending']);
+        const tick = (yield* ops.listAll()).find((op) => op.kind === 'completeTask');
+        yield* mutations.discardPendingOp(tick!.id);
+        expect(yield* state(created.id)).toEqual(['Groceries needsAction open pending']);
+        expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['createTask']);
+      }),
+    );
+  });
+
   it.effect('a pull shows Google’s newer copy under a queued edit, and a discard leaves it', () => {
     // The gap the event rows still have (below), closed for tasks: the
     // pull used to skip a row a queued op held, its watermark moved past
@@ -5447,6 +5494,49 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
       );
     },
   );
+
+  it.effect('"does not repeat" is sent although an update with a rule stays queued ahead', () => {
+    // Review (Codex, round 4): a rule and a title for all, an occurrence's
+    // notes, notes for all (which queue behind), then "does not repeat".
+    // The cleared rule was written into the update ahead, which sends a
+    // cleared rule only when it cleared it itself; the last update found
+    // nothing of the rule left to change. Both landed, and the series went
+    // on repeating. A cleared rule stays the last update's own.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const series = { ...R1, originalStartUtc: R1_START, scope: 'series' as const };
+        network.down = true;
+        yield* mutations.updateRecurring({
+          ...series,
+          changes: { recurrence: EVERY_OTHER_DAY, title: 'Yoga (outside)' },
+        });
+        yield* TestClock.adjust('1 second');
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { description: 'Bring a mat' },
+          originalStartUtc: R1_START + 2 * DAY,
+          scope: 'instance',
+        });
+        yield* TestClock.adjust('1 second');
+        yield* mutations.updateRecurring({ ...series, changes: { description: 'Weekly' } });
+        yield* TestClock.adjust('1 second');
+        yield* mutations.updateRecurring({ ...series, changes: { recurrence: null } });
+        network.down = false;
+        yield* drainAll(mutations);
+        const theirs = google.eventOf('cal-1', 'r1');
+        expect([theirs?.summary, theirs?.description, theirs?.recurrence ?? []]).toEqual([
+          'Yoga (outside)',
+          'Weekly',
+          [],
+        ]);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
 });
 
 /** The row the client shows for an event of `cal-1`: its title, place and state. */

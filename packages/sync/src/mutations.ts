@@ -178,9 +178,18 @@ const inheritedPark = (
  * to the old title while the rename is out differs from nothing here, and
  * left out, it was never sent.
  */
-const inheritedChanged = (queued: ReadonlyArray<PendingOp>): ReadonlyArray<string> | undefined => {
+const inheritedChanged = (
+  queued: ReadonlyArray<PendingOp>,
+  setsRule = false,
+): ReadonlyArray<string> | undefined => {
   const names = [
-    ...new Set(queued.flatMap((op) => (op.kind === 'update' ? (op.changed ?? []) : []))),
+    ...new Set([
+      ...queued.flatMap((op) => (op.kind === 'update' ? (op.changed ?? []) : [])),
+      // A rule this edit sets is its own also where an update queued ahead
+      // was given the same rule (`ruleAhead`): that one may be on its way
+      // with the rule it had, and then this one still sends the last.
+      ...(setsRule ? ['recurrence'] : []),
+    ]),
   ];
   return names.length > 0 ? names : undefined;
 };
@@ -596,7 +605,10 @@ const make: Effect.Effect<
    * back). With the new rule in it, it sends that, and the update queued
    * for this edit finds nothing of the rule left to change. One that then
    * changes nothing at all — its rule was all it set, and the new one is
-   * Google's — leaves the queue.
+   * Google's — leaves the queue. "Does not repeat" is not put ahead: an
+   * update sends a cleared rule only when it cleared it itself
+   * (`recurrenceCleared`), and whatever the rule ahead drops first, the
+   * cleared one drops every exception.
    */
   const ruleAhead = (
     queued: ReadonlyArray<PendingOp>,
@@ -604,6 +616,9 @@ const make: Effect.Effect<
     recurrence: EventRecord['recurrence'],
   ) =>
     Effect.gen(function* () {
+      if (recurrence === undefined) {
+        return;
+      }
       for (const op of queued) {
         if (
           op.kind !== 'update' ||
@@ -623,6 +638,8 @@ const make: Effect.Effect<
           Object.keys(changedFields(now.basePayload, now.payload)).length === 0
         ) {
           yield* pendingOpRepo.remove(op.id);
+          // What stood back for it goes with the drain this edit kicks.
+          yield* pendingOpRepo.wakeWaiting(op);
         }
       }
     });
@@ -715,7 +732,7 @@ const make: Effect.Effect<
               beforePayload: inheritedBefore(queued, master),
               calendarId,
               carriedText,
-              changed: inheritedChanged(inherits),
+              changed: inheritedChanged(inherits, true),
               createdAt: notBefore(queued, now),
               dropsFrom: Math.min(cutAt, replaced?.dropsFrom ?? cutAt),
               eventId: master.id,
@@ -1575,7 +1592,7 @@ const make: Effect.Effect<
           beforePayload: inheritedBefore(queued, master),
           calendarId,
           carriedText,
-          changed: inheritedChanged(inherits),
+          changed: inheritedChanged(inherits, changes.recurrence != null),
           createdAt: notBefore(queued, now),
           // A new rule drops the exceptions it no longer draws; one
           // queued before it dropped some already.
@@ -2140,7 +2157,7 @@ const make: Effect.Effect<
             baseEtag: existing.etag ?? undefined,
             beforePayload: inheritedBefore(queued, existing),
             calendarId,
-            changed: inheritedChanged(inherits),
+            changed: inheritedChanged(inherits, changes.recurrence != null),
             createdAt: notBefore(queued, now),
             // A series cleared while offline drops its exceptions on Google;
             // an edit that replaces that queued op drops them in its place.

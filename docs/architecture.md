@@ -238,7 +238,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   here) — never a new rule, which sent after the queued one would let
   that one reach Google too and drop exceptions the new one draws: a new
   rule also goes into every update still queued ahead that carries one
-  (`ruleAhead`; one left with nothing to change leaves the queue). The
+  (`ruleAhead`; one left with nothing to change leaves the queue; "does
+  not repeat" stays the last update's own, which alone sends a cleared
+  rule), and stays the new update's own field all the same: the one ahead
+  may be on its way with the rule it had. The
   drain sends an event's updates in the order they were made, and a
   series' update after the updates of its occurrences made before it
   (`seriesOrderGate`). An op
@@ -634,7 +637,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   the row and out of what the other queued ops send, and the row stays
   `pending`. An op with no copy (`null`) removes the row it made. A task's
   row is rebuilt rather than patched: the copy with the queued edits and
-  toggles over it (`heldTasks.refresh`; with nothing left queued it is
+  toggles over it (`heldTasks.refresh`; a to-do Google has not got yet is
+  what its queued create carries with the changes behind it over that;
+  with nothing left queued it is
   the copy, in Google's list alone — a row a move of its parent took
   elsewhere goes), shown where its queued moves and reorders leave it (`placeOf`: a move of its own takes it out of its
   parent, a move of its parent takes it along; `revertTaskMove`,

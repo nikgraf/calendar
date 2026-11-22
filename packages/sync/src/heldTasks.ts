@@ -179,14 +179,32 @@ export const makeHeldTasks = (deps: HeldTaskDeps): HeldTasks => {
     Effect.gen(function* () {
       const copy = yield* copyOf(accountId, taskId);
       const ops = (yield* holdersOf(copy, accountId, taskId)).filter((op) => op.id !== except);
+      const now = yield* Clock.currentTimeMillis;
       if (!copy) {
-        const row = ops.length === 0 ? yield* taskRepo.findById(accountId, taskId) : undefined;
-        if (row) {
+        const row = yield* taskRepo.findById(accountId, taskId);
+        const create = ops.find((op) => op.kind === 'createTask' && op.eventId === taskId);
+        if (row && ops.length === 0) {
           yield* taskRepo.markSynced(accountId, row.listId, taskId);
+        } else if (row && create && !ops.some((op) => op.kind === 'deleteTask')) {
+          // Google has not got it yet: what it is to get is what its create
+          // carries, with the changes still queued behind that over it. A
+          // tick discarded left it ticked until the create landed.
+          const { completedAt: _ticked, dueDate: _due, notes: _notes, ...rest } = row;
+          const made = new TaskRecord({
+            ...rest,
+            ...(create.taskDue == null ? {} : { dueDate: create.taskDue }),
+            ...(create.taskNotes === undefined ? {} : { notes: create.taskNotes }),
+            status: 'needsAction',
+            title: create.taskTitle ?? row.title,
+          });
+          const content = ops
+            .filter((op) => op.eventId === taskId && op.kind !== 'createTask')
+            .reduce(withTaskChange, made);
+          yield* taskRepo.upsertTasks([content], now);
+          yield* taskRepo.markPending(accountId, row.listId, taskId);
         }
         return;
       }
-      const now = yield* Clock.currentTimeMillis;
       if (ops.length === 0) {
         // Nothing waits for it any more: the row is Google's again, in
         // the list Google has it in. A row a move of its parent took to
