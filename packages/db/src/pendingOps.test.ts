@@ -323,6 +323,33 @@ describe('PendingOpRepo', () => {
       }).pipe(Effect.provide(freshDbLayer())),
     );
 
+    it.effect(
+      'once Google has only a tombstone of the event, its version is the one it was queued with',
+      () =>
+        Effect.gen(function* () {
+          const repo = yield* PendingOpRepo;
+          const copy = new EventRecord({ ...eventRow('Standup'), location: 'Room 1' });
+          yield* repo.enqueue(
+            op('rename', {
+              beforePayload: copy,
+              eventId: 'evt-1',
+              payload: new EventRecord({ ...copy, syncStatus: 'pending', title: 'Standup (mine)' }),
+            }),
+          );
+          yield* repo.advanceBefore(
+            event,
+            new EventRecord({ ...eventRow('(deleted)'), status: 'cancelled' }),
+            { id: 'none' },
+          );
+          const mine = yield* shown('rename');
+          expect([mine?.title, mine?.location, mine?.status]).toEqual([
+            'Standup (mine)',
+            'Room 1',
+            'confirmed',
+          ]);
+        }).pipe(Effect.provide(freshDbLayer())),
+    );
+
     it.effect('a time is kept whole, and an emptied field stays empty', () =>
       Effect.gen(function* () {
         const repo = yield* PendingOpRepo;

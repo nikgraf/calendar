@@ -646,7 +646,14 @@ const payloadOf = (row: PendingOpRow): EventRecord | undefined => {
   const stored = parseJson(row.payload);
   const copy = parseJson(row.copy_payload ?? null);
   const changes = parseJson(row.changes);
-  if (CHANGING_KINDS.has(row.kind) && isRecord(copy) && isEventChanges(changes)) {
+  // A cancelled copy is a tombstone: Google has the event no more, and
+  // there is nothing left of it to lay the changes over.
+  if (
+    CHANGING_KINDS.has(row.kind) &&
+    isRecord(copy) &&
+    copy['status'] !== 'cancelled' &&
+    isEventChanges(changes)
+  ) {
     const shown = decodeOr(
       EventRecord,
       withEventChanges(copy, changes, isRecord(stored) ? stored : undefined),
