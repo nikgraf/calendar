@@ -282,6 +282,14 @@ export interface ApplyOp {
    */
   readonly acknowledge: (op: PendingOp, record: EventRecord) => Effect.Effect<boolean>;
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
+  /**
+   * After a change of a series was given up: takes along the queued
+   * changes of its occurrences at a slot the series does not draw without
+   * it (see the implementation).
+   */
+  readonly dropUndrawn: (op: PendingOp) => Effect.Effect<void, SqlError>;
+  /** Gives up the updates of the event queued behind `op`, the last first (see the implementation). */
+  readonly giveUpLater: (op: PendingOp) => Effect.Effect<void, SqlError>;
   /** An account about to go: what its queued copies were copied from stays. */
   readonly releaseAccountCopies: (accountId: string) => Effect.Effect<void, SqlError>;
   /** Puts back what an abandoned op changed locally and hands its row to sync (also used by discard). */
@@ -454,8 +462,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // A series edit gone: the master's rule is Google's again, and so are
       // the exceptions its occurrences' own deletes took (a cut's, a rule
       // change's), which go with the change that queued them, as does the
-      // series a this-and-following edit split off. One update of the series
-      // is queued at a time.
+      // series a this-and-following edit split off. Another update of the
+      // series may still be queued: the row above is drawn with it, so what
+      // comes back is what its rule draws.
       if (op.kind === 'update') {
         yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
         if (op.dropsFrom !== undefined) {
@@ -576,8 +585,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           yield* showReorder(reorder, listId);
         }
         yield* held.refresh(op.accountId, op.eventId, op.id);
-        const parentId = copy.parentId;
-        if (rest.length === 0 && parentId !== undefined && parentId !== current.parentId) {
+        // Where it is now, with the reorders still queued replayed: an
+        // earlier one may have put it back under a parent too.
+        const parentId = (yield* taskRepo.get(op.accountId, listId, op.eventId))?.parentId;
+        if (parentId !== undefined && parentId !== current.parentId) {
           yield* keepParent(op.accountId, listId, parentId);
         }
       }),
@@ -1580,6 +1591,59 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       return 'done' as const;
     });
 
+  /**
+   * The updates of the event queued behind `op`, an update itself, go
+   * before it does (a discard, keep-theirs, a rejection for good): they were made on top of it —
+   * new times for an event it had stopped repeating would move the whole
+   * series once it is gone. The last one first, each putting back what it
+   * changed.
+   */
+  const giveUpLater = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (op.kind !== 'update') {
+        return;
+      }
+      const queued = yield* pendingOpRepo.listForEvent(op);
+      const later = queued
+        .slice(queued.findIndex((other) => other.id === op.id) + 1)
+        .filter((other) => other.kind === 'update');
+      for (const other of later.toReversed()) {
+        yield* pendingOpRepo.remove(other.id);
+        yield* releaseRow(other);
+      }
+    });
+
+  /**
+   * After a change of a series was given up: the queued changes of its
+   * occurrences at a slot the series does not draw without it — new times,
+   * a new rule — go with it, row and all. They were made under it, Google
+   * has no such occurrence, and sent, each met a 404 and was dropped then.
+   * One of an occurrence Google has an exception for stays: that is there.
+   */
+  const dropUndrawn = (op: PendingOp) =>
+    Effect.gen(function* () {
+      const master =
+        op.kind === 'update'
+          ? yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId)
+          : null;
+      if (!master) {
+        return;
+      }
+      for (const queued of yield* pendingOpRepo.listAll()) {
+        if (
+          queued.accountId === op.accountId &&
+          queued.calendarId === op.calendarId &&
+          queued.eventId.startsWith(`${op.eventId}_`) &&
+          queued.beforePayload === null &&
+          queued.payload?.recurringEventId === op.eventId &&
+          !drawsSlot(master, queued.payload)
+        ) {
+          yield* pendingOpRepo.remove(queued.id);
+          yield* eventRepo.deleteEvent(queued.accountId, queued.calendarId, queued.eventId);
+        }
+      }
+    });
+
   /** A rejection retrying cannot fix: say so, tell the UI, drop the op. */
   const drop = (
     op: PendingOp,
@@ -1598,7 +1662,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (queued === undefined) {
         return 'done' as const;
       }
+      // Turned down for good, it takes along what was made on top of it,
+      // as when the user gives it up. One that landed (a 2xx that did not
+      // decode) keeps what follows it.
+      const givenUp = options.revert ?? true;
+      if (givenUp) {
+        yield* Effect.ignore(transaction(giveUpLater(op)));
+      }
       yield* releaseRow(op, options);
+      if (givenUp) {
+        yield* Effect.ignore(transaction(dropUndrawn(op)));
+      }
       yield* Effect.ignore(notifyDropped);
       return 'done' as const;
     });
@@ -3011,5 +3085,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       : Effect.succeed(false);
   };
 
-  return { acknowledge, apply, releaseAccountCopies, releaseRow, settleDiscardedMove };
+  return {
+    acknowledge,
+    apply,
+    dropUndrawn,
+    giveUpLater,
+    releaseAccountCopies,
+    releaseRow,
+    settleDiscardedMove,
+  };
 };

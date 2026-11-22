@@ -3760,6 +3760,42 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
     },
   );
 
+  it.effect('a subtask an earlier reorder puts back under its parent keeps the parent too', () => {
+    // Review (Codex, round 3): the subtask reordered under its parent, then
+    // taken out of it, the parent deleted without it, and the second
+    // reorder undone. The first one, replayed, put the subtask back under
+    // the parent, but only an undo with no reorder left looked at the
+    // parent's delete: it went on, and Google deleted the subtask with it.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const place = (to: { parentId?: string; previousId?: string }) =>
+          mutations.reorderTask({
+            accountId: ACCOUNT_ID,
+            taskId: 's1',
+            taskListId: 'list-1',
+            ...to,
+          });
+        network.down = true;
+        yield* place({ parentId: 'p', previousId: 's2' });
+        yield* place({});
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+        const outdent = (yield* (yield* PendingOpRepo).listAll()).findLast(
+          (op) => op.kind === 'reorderTask' && op.eventId === 's1',
+        );
+        yield* mutations.discardPendingOp(outdent!.id);
+        expect(yield* placed).toContain('list-1/s1/p');
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.taskOf('list-1', 'p')?.deleted).toBeUndefined();
+        expect(google.taskOf('list-1', 's1')?.deleted).toBeUndefined();
+      }),
+    );
+  });
+
   it.effect('a subtask back under a parent whose delete waits keeps the parent', () => {
     // Sequence 880: the subtask moved out, its parent was deleted without
     // it, and the move was undone. Google deletes a parent's subtasks with
@@ -4210,6 +4246,59 @@ describe('pending-op queue: what a pull tells of a queued create or move', () =>
         // Never sent, the move goes back at once.
         yield* discardAll(mutations);
         expect(yield* titles).toEqual(['cal-2 synced Review (moved room)']);
+      }),
+    );
+  });
+
+  it.effect('news of an occurrence nothing here changed reaches a moving series too', () => {
+    // Review (Opus, round 4): a series moved while offline, and another
+    // device renamed one occurrence and cancelled another. The page of the
+    // calendar it leaves brought both exceptions; with no row at their ids
+    // nothing was written, the token moved on, and once the move was given
+    // up the series was back without them for good.
+    const google = newFake();
+    const network = writesDown(google);
+    const third = googleInstanceId('r1', R1_START + 2 * DAY, false);
+    const fourth = googleInstanceId('r1', R1_START + 3 * DAY, false);
+    const exceptions = Effect.gen(function* () {
+      const rows = yield* (yield* SqlClient)<{
+        readonly calendar_id: string;
+        readonly id: string;
+        readonly status: string;
+        readonly sync_status: string;
+        readonly title: string;
+      }>`SELECT id, calendar_id, sync_status, status, title FROM events
+        WHERE id IN (${third}, ${fourth}) ORDER BY id`;
+      return rows.map(
+        (row) =>
+          `${row.id === third ? 'third' : 'fourth'} ${row.calendar_id} ${row.sync_status} ${row.status === 'cancelled' ? 'cancelled' : row.title}`,
+      );
+    });
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'r1',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        google.patchEventServerSide('cal-1', third, { summary: 'Yoga (outside)' });
+        google.deleteEventServerSide('cal-1', fourth);
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        // With the series' rows, where the move takes them.
+        expect(yield* exceptions).toEqual([
+          'third cal-2 pending Yoga (outside)',
+          'fourth cal-2 pending cancelled',
+        ]);
+        yield* discardAll(mutations);
+        expect(yield* exceptions).toEqual([
+          'third cal-1 synced Yoga (outside)',
+          'fourth cal-1 synced cancelled',
+        ]);
       }),
     );
   });
@@ -5309,6 +5398,55 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
       }),
     );
   });
+
+  it.effect(
+    'a new rule goes into the update that carries the first, also behind a later one',
+    () => {
+      // Review (Opus, round 4): every other day; an occurrence's own place; a
+      // place for all, which queues behind both; then daily again. The last
+      // rule replaced only the last update, and the first one, still ahead,
+      // sent "every other day": Google cancelled the occurrence another
+      // device had moved, and the daily rule drew its day again, plain.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const series = { ...R2, originalStartUtc: R2_START, scope: 'series' as const };
+          const before = drawnOnGoogle(google, 'cal-2', 'r2');
+          network.down = true;
+          yield* mutations.updateRecurring({ ...series, changes: { recurrence: EVERY_OTHER_DAY } });
+          yield* TestClock.adjust('1 second');
+          yield* mutations.updateRecurring({
+            ...R2,
+            changes: { location: 'Room 2' },
+            originalStartUtc: R2_START + 4 * DAY,
+            scope: 'instance',
+          });
+          yield* TestClock.adjust('1 second');
+          yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 3' } });
+          yield* TestClock.adjust('1 second');
+          yield* mutations.updateRecurring({
+            ...series,
+            changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=5'] },
+          });
+          network.down = false;
+          google.requests.length = 0;
+          yield* drainAll(mutations);
+          // No PATCH of the series names a rule: the one it has is the last.
+          expect(
+            google.requests
+              .filter((call) => call.method === 'PATCH' && call.url.endsWith('/events/r2'))
+              .map((call) => Object.keys(call.body ?? {}).join(',')),
+          ).toEqual(['location']);
+          expect(google.unverified).toEqual([]);
+          expect(drawnOnGoogle(google, 'cal-2', 'r2')).toEqual(before);
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        }),
+      );
+    },
+  );
 });
 
 /** The row the client shows for an event of `cal-1`: its title, place and state. */

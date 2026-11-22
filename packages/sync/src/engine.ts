@@ -370,8 +370,12 @@ const make: Effect.Effect<
    * their rows are in (`records` are re-keyed to it): one a queued change
    * holds there takes it into its copy (`heldEvents.receive`); a row only
    * the move holds takes it and stays as it was, pending — the move's
-   * landing or its release hands it back to sync. No row there is the
-   * user's delete, or an occurrence nothing changed: nothing is written.
+   * landing or its release hands it back to sync. An occurrence of the
+   * series with no row yet (nothing here changed it; another device made
+   * an exception of it, or cancelled it) gets one beside the series' rows,
+   * pending like them: left out, it was lost once the move was given up,
+   * the page's token being past it. No row for anything else is the
+   * user's delete: nothing is written.
    */
   const showMoving = (accountId: string, calendarId: string, records: ReadonlyArray<EventRecord>) =>
     Effect.gen(function* () {
@@ -379,6 +383,16 @@ const make: Effect.Effect<
         const row = yield* eventRepo.getById(accountId, calendarId, record.id);
         if (row) {
           yield* eventRepo.upsertMany([new EventRecord({ ...record, syncStatus: row.syncStatus })]);
+          continue;
+        }
+        const seriesId = record.recurringEventId;
+        if (
+          seriesId !== undefined &&
+          (yield* eventRepo.getById(accountId, calendarId, seriesId)) !== null &&
+          (yield* pendingOpRepo.listForEvent({ accountId, calendarId, eventId: record.id }))
+            .length === 0
+        ) {
+          yield* eventRepo.upsertMany([new EventRecord({ ...record, syncStatus: 'pending' })]);
         }
       }
     });

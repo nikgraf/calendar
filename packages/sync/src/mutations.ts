@@ -60,7 +60,7 @@ import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { type AppleCopySource, isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
-import { makeHeldEvents } from './heldEvents.ts';
+import { changedFields, makeHeldEvents } from './heldEvents.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
 import { countAppleChangedOccurrences, findAppleOccurrence } from './appleOccurrence.ts';
@@ -588,6 +588,45 @@ const make: Effect.Effect<
         : { behind, inPlace: true, replaced: last };
     });
 
+  /**
+   * A new rule goes into every update of the event that stays queued
+   * ahead and carries a rule of its own, too: sent as it was, that first
+   * rule reached Google ahead of the new one and dropped exceptions there
+   * that the new one draws (Google gives such a day a plain occurrence
+   * back). With the new rule in it, it sends that, and the update queued
+   * for this edit finds nothing of the rule left to change. One that then
+   * changes nothing at all — its rule was all it set, and the new one is
+   * Google's — leaves the queue.
+   */
+  const ruleAhead = (
+    queued: ReadonlyArray<PendingOp>,
+    replaced: PendingOp | undefined,
+    recurrence: EventRecord['recurrence'],
+  ) =>
+    Effect.gen(function* () {
+      for (const op of queued) {
+        if (
+          op.kind !== 'update' ||
+          op.id === replaced?.id ||
+          !op.payload ||
+          op.changed?.includes('recurrence') !== true
+        ) {
+          continue;
+        }
+        yield* pendingOpRepo.setPayload(op.id, new EventRecord({ ...op.payload, recurrence }));
+        const now = yield* pendingOpRepo.getById(op.id);
+        if (
+          now?.payload &&
+          now.basePayload &&
+          now.conflictAt === undefined &&
+          !(now.attendeesChanged ?? now.remindersChanged ?? now.geoCleared ?? false) &&
+          Object.keys(changedFields(now.basePayload, now.payload)).length === 0
+        ) {
+          yield* pendingOpRepo.remove(op.id);
+        }
+      }
+    });
+
   const taken = { eventRepo, pendingOpRepo };
   const heldEvents = makeHeldEvents(taken);
 
@@ -663,6 +702,7 @@ const make: Effect.Effect<
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, master.id);
       } else {
         yield* supersedeForUpdate(accountId, calendarId, master.id, inPlace ? undefined : replaced);
+        yield* ruleAhead(queued, replaced, truncated.recurrence);
       }
       yield* pendingOpRepo.enqueue(
         unsentCreate
@@ -882,6 +922,8 @@ const make: Effect.Effect<
   const {
     acknowledge,
     apply: applyOp,
+    dropUndrawn,
+    giveUpLater,
     releaseAccountCopies,
     releaseRow,
     settleDiscardedMove,
@@ -1055,59 +1097,6 @@ const make: Effect.Effect<
           }
         }),
       );
-    });
-
-  /**
-   * The updates of the event queued behind `op`, an update itself, go
-   * before it does (a discard, keep-theirs): they were made on top of it —
-   * new times for an event it had stopped repeating would move the whole
-   * series once it is gone. The last one first, each putting back what it
-   * changed.
-   */
-  const giveUpLater = (op: PendingOp) =>
-    Effect.gen(function* () {
-      if (op.kind !== 'update') {
-        return;
-      }
-      const queued = yield* opsForEvent(op.accountId, op.calendarId, op.eventId);
-      const later = queued
-        .slice(queued.findIndex((other) => other.id === op.id) + 1)
-        .filter((other) => other.kind === 'update');
-      for (const other of later.toReversed()) {
-        yield* pendingOpRepo.remove(other.id);
-        yield* releaseRow(other);
-      }
-    });
-
-  /**
-   * After a change of a series was given up: the queued changes of its
-   * occurrences at a slot the series does not draw without it — new times,
-   * a new rule — go with it, row and all. They were made under it, Google
-   * has no such occurrence, and sent, each met a 404 and was dropped then.
-   * One of an occurrence Google has an exception for stays: that is there.
-   */
-  const dropUndrawn = (op: PendingOp) =>
-    Effect.gen(function* () {
-      const master =
-        op.kind === 'update'
-          ? yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId)
-          : null;
-      if (!master) {
-        return;
-      }
-      for (const queued of yield* pendingOpRepo.listAll()) {
-        if (
-          queued.accountId === op.accountId &&
-          queued.calendarId === op.calendarId &&
-          queued.eventId.startsWith(`${op.eventId}_`) &&
-          queued.beforePayload === null &&
-          queued.payload?.recurringEventId === op.eventId &&
-          !drawsSlot(master, queued.payload)
-        ) {
-          yield* pendingOpRepo.remove(queued.id);
-          yield* eventRepo.deleteEvent(queued.accountId, queued.calendarId, queued.eventId);
-        }
-      }
     });
 
   /** Discards the op; a move that was sent is left queued and returned. */
@@ -1572,6 +1561,9 @@ const make: Effect.Effect<
       yield* eventRepo.upsertMany(rows);
       // A sent create stays ahead: this patch follows whatever it did.
       yield* supersedeForUpdate(accountId, calendarId, masterId, inPlace ? undefined : replaced);
+      if (changes.recurrence !== undefined) {
+        yield* ruleAhead(queued, replaced, merged.recurrence);
+      }
       yield* pendingOpRepo.enqueue(
         new PendingOp({
           accountId,
@@ -2005,7 +1997,10 @@ const make: Effect.Effect<
         // does.
         yield* restoreTakenExceptions(accountId, calendarId, eventId);
         const queued = yield* opsForEvent(accountId, calendarId, eventId);
-        const priorRsvp = queued.find((op) => op.kind === 'rsvp');
+        // What already holds the event knows what Google has of it: none
+        // for an occurrence an edit here materialized. Named as Google's
+        // copy, that edit's row made the edit differ from it in nothing.
+        const holder = queued.find((op) => op.kind === 'rsvp' || op.kind === 'update');
         for (const op of queued) {
           if (op.kind === 'rsvp' || op.kind === 'delete') {
             yield* pendingOpRepo.remove(op.id);
@@ -2021,7 +2016,7 @@ const make: Effect.Effect<
             // Google's copy at a waiting delete's id (isPulledCopy), else the
             // one the answer it replaces read.
             beforePayload:
-              priorRsvp && !isPulledCopy(queued, existing) ? priorRsvp.beforePayload : existing,
+              holder && !isPulledCopy(queued, existing) ? holder.beforePayload : existing,
             calendarId,
             // The user's own answer is this op's, also where it is the one
             // Google has: an answer of theirs may be out.
@@ -2133,6 +2128,9 @@ const make: Effect.Effect<
         );
         const inherits = takenOver(queued, replaced);
         yield* supersedeForUpdate(accountId, calendarId, eventId, inPlace ? undefined : replaced);
+        if (changes.recurrence !== undefined) {
+          yield* ruleAhead(queued, replaced, merged.recurrence);
+        }
         yield* pendingOpRepo.enqueue(
           new PendingOp({
             accountId,

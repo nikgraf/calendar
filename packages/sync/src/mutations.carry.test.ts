@@ -32,7 +32,8 @@ import { EventMutations } from './mutations.ts';
  * parks it (Google's copy is `server`), a 400 drops it.
  */
 interface Google {
-  patch: 'conflict' | 'offline' | 'reject';
+  /** `reject-once`: the first PATCH is a 400, the ones after it are offline. */
+  patch: 'conflict' | 'offline' | 'reject' | 'reject-once';
   /** What each PATCH named, answered or not: "<event id>: <fields>". */
   sent?: Array<string>;
   server?: GcalEvent;
@@ -53,6 +54,10 @@ const googleClient = (google: Google): GoogleCalendarClientShape => ({
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: ({ event, eventId }) => {
     google.sent?.push(`${eventId}: ${Object.keys(event).join(',')}`);
+    if (google.patch === 'reject-once') {
+      google.patch = 'offline';
+      return Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 }));
+    }
     return google.patch === 'conflict'
       ? Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }))
       : google.patch === 'reject'
@@ -466,6 +471,38 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       expect(op?.changed).toEqual(['description']);
       expect([op?.payload?.title, op?.payload?.location]).toEqual(['Standup', 'Room 1']);
     }).pipe(Effect.provide(layer({ patch: 'offline' }))),
+  );
+
+  it.effect('a change Google rejects takes the ones made on top of it along', () =>
+    // Review (Codex, round 3): "does not repeat", then new times for the
+    // single event that left. Google turned the first down for good, the
+    // second stayed queued, had the rule back under it and would have
+    // moved every occurrence.
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      const at = { accountId: 'acc-1', calendarId: 'cal-1' };
+      yield* mutations.updateRecurring({
+        ...at,
+        changes: { recurrence: null },
+        masterId: 'master1',
+        originalStartUtc: master.startUtc,
+        scope: 'series',
+      });
+      yield* mutations.updateEvent({
+        ...at,
+        changes: { endUtc: master.endUtc + HOUR, startUtc: master.startUtc + HOUR },
+        eventId: 'master1',
+      });
+      expect((yield* masterOp).length).toBe(2);
+      yield* mutations.processPendingOps();
+      expect(yield* masterOp).toEqual([]);
+      const back = yield* row('master1');
+      expect([back?.recurrence, back?.startUtc, back?.syncStatus]).toEqual([
+        [RULE],
+        master.startUtc,
+        'synced',
+      ]);
+    }).pipe(Effect.provide(layer({ patch: 'reject-once' }))),
   );
 
   it.effect('splitting the series keeps the carry undoable', () =>

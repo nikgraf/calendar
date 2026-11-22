@@ -725,3 +725,59 @@ describe('an answer given while an earlier one is out', () => {
     }).pipe(Effect.provide(layer));
   });
 });
+
+describe('an answer to an occurrence changed here first', () => {
+  it.effect(
+    "Google has no exception of it: the answer does not make the edit Google's copy",
+    () => {
+      // Review (Codex, round 3): an occurrence renamed offline, which Google
+      // has no exception for, then answered. The answer named the renamed
+      // row as what Google has, so the rename differed from "Google's copy"
+      // in nothing and its PATCH went out empty.
+      const sent: Array<string> = [];
+      const layer = makeLayer({
+        patchEvent: ({ event }) => {
+          sent.push(Object.keys(event).join(','));
+          return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+        },
+      });
+      return Effect.gen(function* () {
+        yield* seed;
+        const weekly = new EventRecord({
+          ...invited,
+          etag: '"series-1"',
+          id: 'evt-weekly',
+          recurrence: ['RRULE:FREQ=WEEKLY;COUNT=4'],
+        });
+        yield* (yield* EventRepo).upsertMany([weekly]);
+        const mutations = yield* EventMutations;
+        const second = weekly.startUtc + 7 * 24 * 60 * 60 * 1000;
+        yield* mutations.updateRecurring({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Planning (second)' },
+          masterId: 'evt-weekly',
+          originalStartUtc: second,
+          scope: 'instance',
+        });
+        const [rename] = yield* (yield* PendingOpRepo).listAll();
+        yield* mutations.respondToEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          eventId: rename!.eventId,
+          response: 'accepted',
+        });
+        const queued = yield* (yield* PendingOpRepo).listAll();
+        expect(
+          queued.map((op) => `${op.kind} ${op.beforePayload === null ? 'no copy' : 'copy'}`),
+        ).toEqual(['update no copy', 'rsvp no copy']);
+        expect(queued[0]?.changed).toEqual(['title']);
+        expect(queued[0]?.basePayload?.title).toBe('Planning');
+        sent.length = 0;
+        yield* (yield* PendingOpRepo).retryNow();
+        yield* mutations.processPendingOps();
+        expect(sent).toEqual(['summary', 'attendees']);
+      }).pipe(Effect.provide(layer));
+    },
+  );
+});

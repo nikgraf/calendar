@@ -67,6 +67,7 @@ import {
 import { SyncEngine } from './engine.ts';
 import { clearPendingVisibility } from './importedVisibility.ts';
 import { locationHandlers } from './locationHandlers.ts';
+import { ownVersion } from './heldEvents.ts';
 import { EventMutations } from './mutations.ts';
 import { PlatformSettings } from './platformSettings.ts';
 import { searchCalendar } from './search.ts';
@@ -436,7 +437,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
             : {
                 conflict: {
                   at: op.conflictAt,
-                  ...(op.payload === undefined ? {} : { mine: op.payload }),
+                  ...(op.payload === undefined ? {} : { mine: ownVersion(op) ?? op.payload }),
                   theirs: op.beforePayload ?? null,
                 },
               }),

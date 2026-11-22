@@ -147,6 +147,30 @@ export const clashes = (
   );
 };
 
+/**
+ * What a parked update would make of Google's version: that version with
+ * the update's own fields over it. Not also what an earlier change still
+ * queued for the event set (the op's `payload` holds that too): that one
+ * is not this one's to keep or to give up, and shown as "mine" it read as
+ * part of the choice — which then left it queued under "theirs".
+ */
+export const ownVersion = (op: PendingOp): EventRecord | undefined => {
+  const { basePayload, beforePayload, payload } = op;
+  if (!payload || !basePayload || !beforePayload || op.kind !== 'update') {
+    return payload;
+  }
+  const mine = payload as unknown as Record<string, unknown>;
+  const own = [...Object.keys(changedFields(basePayload, payload)), ...(op.changed ?? [])].filter(
+    (field) => field !== 'attendees' || op.attendeesChanged === true,
+  );
+  return new EventRecord({
+    ...beforePayload,
+    ...Object.fromEntries(own.map((field) => [field, mine[field]])),
+    syncStatus: 'pending',
+    updatedAt: payload.updatedAt,
+  });
+};
+
 export interface HeldEventDeps {
   readonly eventRepo: EventRepoShape;
   readonly pendingOpRepo: PendingOpRepoShape;

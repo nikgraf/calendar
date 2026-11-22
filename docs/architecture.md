@@ -236,7 +236,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   change of one made before them names the old) and a text an occurrence
   behind it set itself (Google copies the series' over it, as it shows
   here) — never a new rule, which sent after the queued one would let
-  that one reach Google too and drop exceptions the new one draws. The
+  that one reach Google too and drop exceptions the new one draws: a new
+  rule also goes into every update still queued ahead that carries one
+  (`ruleAhead`; one left with nothing to change leaves the queue). The
   drain sends an event's updates in the order they were made, and a
   series' update after the updates of its occurrences made before it
   (`seriesOrderGate`). An op
@@ -336,7 +338,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   exceptions along. Take-theirs is refused while a move of the series is
   queued ahead. What still waits for the event is then laid over that
   copy and asks in its turn where it clashes (`take`). A change of a
-  series given up — theirs, or a discard — takes along the updates of
+  series given up — theirs, a discard, or Google's rejection for good
+  (`drop`) — takes along the updates of
   the event queued behind it, made on top of it (`giveUpLater`: new times
   for an event it had stopped repeating would move the whole series), and
   the queued changes of occurrences at a slot the series does not draw
@@ -768,7 +771,10 @@ Rules a change to the queue keeps (each broke once):
   page's calendar is not written there — Google lists it there until the
   move lands, and it showed in both calendars — but to its rows where
   they are, in the calendar its last queued move takes it to, re-keyed
-  (`showMoving`): a row only the move holds takes it and stays pending.
+  (`showMoving`): a row only the move holds takes it and stays pending,
+  and an exception another device made of an occurrence nothing here
+  changed gets a row beside the series', pending like them (left out, it
+  was lost once the move was given up: the page's token is past it).
   And when a page settles a series' move, the page's records of that
   series' exceptions are applied again, since their rows were the move's
   when the page went in.
