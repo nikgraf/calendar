@@ -1,4 +1,4 @@
-import { Attendee, EventRecord, type PendingOp, withConsistentGeo } from '@calendar/core';
+import { Attendee, EventRecord, type PendingOp } from '@calendar/core';
 import type { EventRepoShape, PendingOpRepoShape } from '@calendar/db';
 import { toGcalAttendees } from '@calendar/google';
 import { Clock, Effect } from 'effect';
@@ -8,12 +8,14 @@ import type { SqlError } from 'effect/sql/SqlError';
  * Held events. While a change of an event waits in the queue, the event's
  * row shows the user's version and Google's copy lives beside it, once per
  * event (`event_copies`, which every queued op of the event reads as its
- * `beforePayload`). A pull, or the fetch after a refused write, brings
- * Google's newer version: it becomes the copy, and the queued changes are
- * laid over it again (`rebaseOnto`) — what the user changed stays, what
+ * `beforePayload`). Each queued change keeps only what it set, and the
+ * version it makes is Google's copy with the changes queued for the event
+ * over it, in their order. A pull, or the fetch after a refused write,
+ * brings Google's newer version: it becomes the copy, and so every queued
+ * change is laid over it from then on — what the user changed stays, what
  * another device changed elsewhere in the event shows too, and nobody is
  * asked. Only when both changed the same thing does the change wait for
- * the user's choice.
+ * the user's choice (`clashes`).
  */
 
 /** Row bookkeeping no edit changes: left out when looking for what a version changed. */
@@ -93,68 +95,56 @@ export const withAnswers = (
 };
 
 /**
- * A queued update laid over Google's newer copy of its event: `old` is
- * the copy it was made on, `theirs` the one Google has now. The fields
- * the update changed keep its values, every other field takes Google's:
- * that is its payload either way. Its own fields are the ones in which it
- * differs from what it was laid over (`basePayload`: `old` with the
- * changes queued ahead of it, which are those changes') and the ones it
- * names (`changed`), also where their value is `old`'s. `clash` when both
- * changed the same thing to different values: then the user is asked, and
- * what they compare is that payload against Google's version — their own
- * changes, nothing a third change made elsewhere in the event. So is an
- * update that edits the guest list, whenever Google's version moved and
- * does not already hold that edit: Google replaces the whole list, guest
- * fields this app does not keep (optional, comment) included. The guest
- * list of an update that did not edit it is Google's: answers belong to
- * RSVPs.
+ * Whether a queued update has to ask the user, now that what it is laid
+ * over changed: `was` is that before (Google's copy with the changes
+ * queued ahead of it), `now` the same with Google's newer copy, `news`
+ * the fields in which the two copies themselves differ — a field counts
+ * as changed on Google only when it is in both: what a series' queued
+ * edit carries onto an exception is laid under its change only while
+ * Google's copy is the one it was carried onto, and is no news when a
+ * newer copy ends that. Its own
+ * fields are the ones in which its version differs from `was` and the ones
+ * it names (`changed`), also where their value is the old one. It asks
+ * when both changed the same thing to different values: the user then
+ * compares their version against Google's — their own changes, nothing a
+ * third change made elsewhere in the event. What an earlier change of
+ * ours left on Google is in both `was` and `now`, and is no news. An
+ * update that edits the guest list asks whenever what it is laid over
+ * moved and does not already hold that edit: Google replaces the whole
+ * list, guest fields this app does not keep (optional, comment) included.
+ * The guest list of an update that did not edit it is Google's: answers
+ * belong to RSVPs.
  */
-export const rebaseOnto = (
+export const clashes = (
   op: PendingOp,
-  old: EventRecord,
-  theirs: EventRecord,
-): { readonly kind: 'clash' | 'rebased'; readonly payload: EventRecord } => {
+  was: EventRecord,
+  now: EventRecord,
+  news: ReadonlySet<string>,
+): boolean => {
   const payload = op.payload;
   if (!payload) {
-    return { kind: 'clash', payload: theirs };
+    return true;
   }
-  const { attendees: _guestsWere, ...differing } = changedFields(op.basePayload ?? old, payload);
-  const mine: Record<string, unknown> = { ...differing };
-  for (const field of op.changed ?? []) {
-    mine[field] ??= null;
-  }
-  const editsGuests = op.attendeesChanged === true;
-  const moved = Object.keys(changedFields(old, theirs));
-  const mineGroups = new Set(Object.keys(mine).map(groupOf));
+  const { attendees: _guestsWere, ...differing } = changedFields(was, payload);
+  const mine = new Set([...Object.keys(differing), ...(op.changed ?? [])]);
+  const mineGroups = new Set([...mine].map(groupOf));
   const ours = payload as unknown as Record<string, unknown>;
-  const now = theirs as unknown as Record<string, unknown>;
-  const guestsClash =
-    editsGuests &&
+  const theirs = now as unknown as Record<string, unknown>;
+  if (
+    op.attendeesChanged === true &&
     !(
-      same(toGcalAttendees(theirs), toGcalAttendees(payload)) &&
-      Object.keys(mine).every((field) => same(now[field], ours[field]))
-    );
-  const clash =
-    guestsClash ||
-    moved.some((field) => mineGroups.has(groupOf(field)) && !same(now[field], ours[field]));
-  // A thing the user changed stays the user's whole: a start set here with
-  // an end set there is a time nobody chose, and can end before it begins.
-  const whole = Object.keys(FIELD_GROUP).filter((field) => mineGroups.has(groupOf(field)));
-  const kept = Object.fromEntries(
-    [...new Set([...Object.keys(mine), ...whole])].map((field) => [field, ours[field]]),
+      same(toGcalAttendees(now), toGcalAttendees(payload)) &&
+      [...mine].every((field) => same(theirs[field], ours[field]))
+    )
+  ) {
+    return true;
+  }
+  // A thing the user changed is the user's whole: a start set here with an
+  // end set there is a time nobody chose.
+  return Object.keys(changedFields(was, now)).some(
+    (field) =>
+      news.has(field) && mineGroups.has(groupOf(field)) && !same(theirs[field], ours[field]),
   );
-  return {
-    kind: clash ? 'clash' : 'rebased',
-    payload: withConsistentGeo(
-      new EventRecord({
-        ...theirs,
-        ...kept,
-        ...(editsGuests ? { attendees: payload.attendees } : {}),
-        syncStatus: 'pending',
-        updatedAt: payload.updatedAt,
-      }),
-    ),
-  };
 };
 
 export interface HeldEventDeps {
@@ -247,7 +237,12 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
       }
       // The changes themselves stay as they are queued: each is its own
       // fields, and the version it makes is `theirs` with those over it
-      // from here on. What is left to decide is who has to be asked.
+      // from here on. What is left to decide is who has to be asked: each
+      // by what it was laid over then and is laid over now.
+      const laidOver = new Map(
+        (yield* pendingOpRepo.listForEvent(event, except)).map((op) => [op.id, op.basePayload]),
+      );
+      const news = new Set(Object.keys(changedFields(old, theirs)));
       for (const op of holding) {
         if (op.kind === 'delete') {
           // A delete of an event that changed since asks first, as the 412
@@ -280,7 +275,7 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
         if (theirs.etag !== null && (op.baseEtag ?? old.etag) === theirs.etag && op.payload) {
           continue;
         }
-        if (rebaseOnto(op, old, theirs).kind === 'clash') {
+        if (clashes(op, op.basePayload ?? old, laidOver.get(op.id) ?? theirs, news)) {
           yield* pendingOpRepo.markConflict(op.id, now);
         }
       }

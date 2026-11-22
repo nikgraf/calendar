@@ -223,9 +223,12 @@ export const pendingOpDiff = (
       return op.payload ? eventLines(null, op.payload, timeZone) : undefined;
     case 'rsvp':
     case 'update':
+      // Against what it is laid over (Google's copy with the changes queued
+      // ahead of it): the lines are this change's own, not also those of
+      // an earlier one still waiting for the event.
       return op.beforePayload === undefined || !op.payload
         ? undefined
-        : eventLines(op.beforePayload, op.payload, timeZone);
+        : eventLines(op.basePayload ?? op.beforePayload, op.payload, timeZone);
     case 'delete': {
       // A tombstone payload (an occurrence) still names what goes.
       const before = op.beforePayload ?? op.payload;

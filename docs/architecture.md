@@ -221,7 +221,21 @@ it whenever a kind is added. Rules that keep the queue correct:
   edits; a sent one, stamped `dispatched_at` before the insert, stays
   ahead and the edit follows it); `removeForEvent` deliberately spares
   `rsvp` and `move` ops; `calendarColor` ops coalesce **per account**
-  under the sentinel. A task edit folds into an undispatched `createTask`
+  under the sentinel. An event's update replaces the one queued before
+  it — but for a series whose queued update has a change of one of its
+  occurrences queued behind it, made under it (`replacedUpdate`): at the
+  back of the queue the update went behind that change (a delete of an
+  occurrence only its new rule draws met a 404, an occurrence's own place
+  went out first and Google copied the series' over it). There a new rule
+  takes the queued update's place where it stands (`enqueue` with
+  `replaces`: one PATCH, the final rule — sent after the first, it found
+  the exceptions the first had dropped on Google gone), and any other
+  edit queues behind as a change of its own, never before one already
+  queued for its event (`notBefore`); the drain then sends an event's
+  updates in the order they were made, and a series' update after the
+  updates of its occurrences made before it (`seriesOrderGate`). An op
+  that stood back for another is due as soon as that one leaves the queue
+  (`wakeWaiting`), not after its backoff. A task edit folds into an undispatched `createTask`
   and queues as `updateTask` behind a dispatched one; task updates merge
   field by field, one patch per task. Every coalesce-then-enqueue runs in
   one transaction with the drain kicked after commit (`transactional`).
@@ -256,16 +270,19 @@ it whenever a kind is added. Rules that keep the queue correct:
   version of an event a queued change holds arrives two ways: in a pull's
   page, or fetched (`events.get`; 404/410 = deleted there) after a write
   was refused with 412. Either way it becomes the event's copy (see
-  "Google's copy of a held item" below) and the queued changes are laid
-  over it again (`heldEvents.ts`): an update keeps the fields it changed
-  against the old copy and takes Google's in every other (`rebaseOnto`),
-  an RSVP lays its answers over Google's guests (and an edit queued after
-  it keeps them; what it sends is the copy's guest list with those
-  answers, never the row's, which may show a guest-list edit still
-  queued or parked), an edit made on the very version that arrives is left
-  as it is — a full list names every event, changed or not, and one the
-  user kept, sent without If-Match, counts as made on the copy — and the
-  row shows the result, still `pending`. A thing the user changed part of
+  "Google's copy of a held item" below), and since every queued change
+  keeps only what it set, each is laid over it from then on without being
+  rewritten (`heldEvents.ts`): an update's fields over Google's in every
+  other, an RSVP's answers over Google's guests (what it sends is the
+  copy's guest list with those answers, never the row's, which may show a
+  guest-list edit still queued or parked). What is left to decide is who
+  is asked (`clashes`), each change by what it was laid over before and is
+  laid over now — Google's copy with the changes queued ahead of it, so
+  what an earlier change of ours left on Google is no news to a later
+  one. An edit made on the very version that arrives is not asked — a
+  full list names every event, changed or not, and one the user kept,
+  sent without If-Match, counts as made on the copy — and the row is
+  drawn again, still `pending`. A thing the user changed part of
   stays the user's whole (a time's start with its end): mixed with
   Google's other half it is a time nobody chose. The reply to a write sent without
   If-Match (an answer resent after its 412, keep-mine) may hold another
@@ -297,7 +314,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   its exceptions too (`advanceCarried` folds it into their copies, and
   into the payload of an edit queued before the series edit, or of one
   queued after it in the fields it did not change itself, which would
-  put the old text back otherwise). `listDue` skips parked ops. The UI
+  put the old text back otherwise); until then an exception's queued
+  change is laid over its copy with that text carried onto it
+  (`carriedChangesOf`), so the carried text is never the exception's own
+  and goes with a discarded series edit. `listDue` skips parked ops. The UI
   reads the conflict from `listPendingOps` (`PendingOpSummary.conflict`:
   mine is the op's payload, theirs the event's copy, `null` when Google
   has the event no more) — a persistent banner on both apps plus the
@@ -308,10 +328,18 @@ it whenever a kind is added. Rules that keep the queue correct:
   ack mode, then drops the op — a series delete's exceptions come back
   with a live master, and a series gone on Google takes its synced
   exceptions along. Take-theirs is refused while a move of the series is
-  queued ahead. A new edit or delete of a parked event replaces the
+  queued ahead. What still waits for the event is then laid over that
+  copy and asks in its turn where it clashes (`take`). A change of a
+  series given up — theirs, or a discard — takes along the updates of
+  the event queued behind it, made on top of it (`giveUpLater`: new times
+  for an event it had stopped repeating would move the whole series), and
+  the queued changes of occurrences at a slot the series does not draw
+  without it (`dropUndrawn`: new times, a new rule; Google has no such
+  occurrence, and each met a 404). A new edit or delete of a parked event replaces the
   parked change and stays parked (`inheritedPark`): the row carries
   Google's etag by then, and sent on it the new change would overwrite,
-  unasked, what the two clashed over.
+  unasked, what the two clashed over; one that queues behind a parked
+  update waits for it instead.
 - **401**: the op stays queued, the account is flagged `reauth_required`;
   reconnecting (same account id, resolved by email) resets status and the
   queue drains at once.
@@ -546,17 +574,30 @@ it whenever a kind is added. Rules that keep the queue correct:
   to the destination with its ops, and back if Google never makes the
   move), and gone again once nothing queued holds the item
   (`dropIdleCopies`, `heldTasks.refresh`). A queued update or answer of
-  an event keeps only what it changed against that copy (`pending_ops.
-  changes`, `EventChanges`: the fields the user set or emptied, a time
-  and a place whole, the answers that differ, the guest list when it was
-  edited). Its version of the event, `PendingOp.payload`, is not stored:
-  it is the copy with those changes over it, computed at every read, so
-  when the copy moves on the rest of the event moves with it and no path
-  can leave an old value in a waiting change to be sent as the user's.
-  The PATCH names only what differs from the copy too (`changedBody`),
-  and a field the user did not change is never written from this device.
-  An occurrence Google has no exception for has no copy, and keeps the
-  version it was queued with. It is written when the first
+  an event keeps only what its own edit set (`pending_ops.changes`,
+  `EventChanges`: the fields the user set or emptied, a time and a place
+  whole, the guest list when it was edited; an answer the answers alone):
+  measured against the copy with the changes queued ahead of it over it,
+  not against the copy — measured so, an answer given on a row that
+  showed a queued rename kept that title and sent it on after a newer
+  rename had landed. A field stays a change's own at any value
+  (`PendingOp.changed`: the ones of the update it replaces, the guest an
+  answer answers for): a rename back to the title Google has, made while
+  the rename is out, differs from nothing and is the one that counts. An
+  op's version of the event, `PendingOp.payload`, is not stored: it is
+  the copy with the changes queued for the event over it in queue order,
+  up to its own, computed at every read (`basePayload` is the same
+  without its own), so when the copy moves on the rest of the event moves
+  with it, a change that leaves the queue takes only its own fields
+  along, and a later change is never rewritten for an earlier one. The
+  PATCH names only what differs from `basePayload` (`changedBody`), and a
+  field the user did not change is never written from this device. An
+  occurrence Google has no exception for has no copy: its changes are
+  laid over its series drawn at that slot (`projectInstance` of the
+  series' row), so its row follows a pull of the series, its PATCH names
+  only what was changed (Google fills the new exception from the series,
+  verified live), and an exception another device made of it meanwhile is
+  merged or asked about like any newer copy. The copy is written when the first
   change is queued (the synced row, `enqueue`, `TaskRepo.holdTasks`), by
   every pull and conflict fetch (Conflicts above; Sync engine), and by
   answers: when an op lands while others of the item wait, the copy
@@ -602,16 +643,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   body did not decode (the write landed) keeps the row's content. Known
   gap: a full re-list after an expired sync token confirms a deletion
   only by absence, which removes no copy. Open gaps of repeating events,
-  each a skipped test in `queueSequence.test.ts` and a seed in its
-  `KNOWN_FAILING`: an edit of all events replaces the series' queued
-  change and goes to the back of the queue, behind a change of one
-  occurrence made under it (several changes of one event queued in order
-  would close it; what a change stores allows that now, the queue does
-  not do it yet); an occurrence changed under a new rule that is then given up keeps
-  its change at a slot the series no longer draws; the deletes a rule
-  change queued outlive a delete that replaces it; and a change that had
-  landed with its answer lost, discarded before a pull says so, is put
-  back as if Google never got it.
+  each a skipped test in `queueSequence.test.ts` (the first a seed in its
+  `KNOWN_FAILING` too): the deletes a rule change queued outlive a delete
+  that replaces it; a move of an event whose rule was cleared leaves an
+  occurrence's tombstone behind; and a change that had landed with its
+  answer lost, discarded before a pull says so, is put back as if Google
+  never got it.
 
 Rules a change to the queue keeps (each broke once):
 

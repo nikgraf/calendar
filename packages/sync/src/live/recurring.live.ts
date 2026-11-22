@@ -117,6 +117,38 @@ describe('live Google: recurring series', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
+  it.live(
+    'an occurrence edit names what it changed: Google fills the exception from the series',
+    () =>
+      Effect.gen(function* () {
+        const { mutations, scratch: google } = yield* bootstrap(config);
+        const master = yield* createWeekly(mutations, 'occurrence-own');
+        yield* drain(mutations);
+        const second = master.startUtc + WEEK;
+        // Another device renames the series, unseen here; then the second
+        // occurrence, which Google has no exception for, gets a place.
+        yield* google.patchEvent(calendar(), master.id, { summary: `${master.title} (elsewhere)` });
+        yield* mutations.updateRecurring({
+          ...target(master.id, second),
+          changes: { location: 'Room 4' },
+          scope: 'instance',
+        });
+        yield* drain(mutations);
+        expect(yield* pendingOps).toEqual([]);
+        const exception = yield* google.getEvent(
+          calendar(),
+          googleInstanceId(master.id, second, false),
+        );
+        expect(exception.recurringEventId).toBe(master.id);
+        expect(exception.location).toBe('Room 4');
+        // The PATCH named the place alone: title and times are the series'
+        // as Google has it, not this device's older copy of them.
+        expect(exception.summary).toBe(`${master.title} (elsewhere)`);
+        expect(Date.parse(exception.start?.dateTime ?? '')).toBe(second);
+        expect(Date.parse(exception.end?.dateTime ?? '')).toBe(second + HOUR);
+      }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
   it.live('deleting one occurrence leaves a cancelled instance the pull keeps hidden', () =>
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);

@@ -66,6 +66,30 @@ const shown = (opId: string) =>
   });
 
 describe('PendingOpRepo', () => {
+  it.effect('an op queued in place of another stands where that one stood', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('first', { createdAt: 1, eventId: 'evt-1' }));
+      yield* repo.enqueue(op('behind', { createdAt: 1, eventId: 'evt-1_20260701T100000Z' }));
+      yield* repo.enqueue(op('later', { createdAt: 5, eventId: 'evt-2' }));
+      // Queued now, it would sort last; it takes the first one's place.
+      yield* repo.enqueue(op('second', { createdAt: 9, eventId: 'evt-1' }), 'first');
+      expect((yield* repo.listAll()).map((one) => `${one.id} ${one.createdAt}`)).toEqual([
+        'second 1',
+        'behind 1',
+        'later 5',
+      ]);
+      // Naming an op that left meanwhile: queued at the end, as ever.
+      yield* repo.enqueue(op('third', { createdAt: 9, eventId: 'evt-1' }), 'first');
+      expect((yield* repo.listAll()).map((one) => one.id)).toEqual([
+        'second',
+        'behind',
+        'later',
+        'third',
+      ]);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('counts the ops waiting for a set of calendars and task lists', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

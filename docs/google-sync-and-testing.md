@@ -55,10 +55,18 @@ suite). When touching sync code, treat these as invariants.
   occurrence edit put the old text back. One queued after it takes the
   carried text in the fields it did not change itself (a landing or a
   pull may have put Google's copy over the row's carry before it was
-  made). Known gap: a queued instance
-  op's payload is not rewritten for a series edit that never lands, so it
-  can still push carried text of an abandoned series edit; the next pull
-  converges.
+  made). While the series edit waits, the carried text is not the
+  exception's own: a change of the exception queued under it is laid over
+  Google's copy with that text carried onto it (`carriedChangesOf`), names
+  only what the user set, and no longer sends the text of a series edit
+  that was given up.
+- **A PATCH of an occurrence without an exception names what changed**
+  (verified live 2026-11-22, `recurring.live.ts`): `events.patch` on an
+  instance id Google has no exception for creates the exception from the
+  series as Google has it then, with the named fields over it. The app
+  sends only those (`changedBody` against the series drawn at the slot),
+  so a rename of the series on another device that this device has not
+  pulled is not written over by an older title.
 - **A new rule keeps the exceptions it still draws** (verified live
   2026-11-03, `recurring.live.ts`): a PATCH of a master's `recurrence`
   leaves an exception whose original slot the new rule still draws as it
@@ -615,7 +623,10 @@ separate: it also covers tasks, moves, discards and other-device writes.
   above): a series with exceptions is not retimed, no rule draws a slot
   again that an earlier one dropped, nobody edits an occurrence Google
   holds cancelled, and nothing sends an exception's etag from before its
-  series moved; a sequence that leaves that ground anyway fails as such
+  series moved (a series is not moved while a queued change of one of
+  its occurrences has not seen Google's exception of it, and another
+  device leaves such an occurrence alone while the move waits:
+  `unseenOccurrenceNews`); a sequence that leaves that ground anyway fails as such
   (the fake's `unverified`), and what a client shows of the exceptions of
   a series a list reported gone is not judged (`goneWithExceptions`).
   After every step, with no drain running: every pending row is owned by
@@ -641,7 +652,8 @@ separate: it also covers tasks, moves, discards and other-device writes.
   on a delete after a PATCH of its series is the recorded decision, not a
   failure (`World.retagged`). Seeds that still fail are listed in
   `KNOWN_FAILING` with the gap each meets, skipped
-  (`QUEUE_SEQUENCE_KNOWN=1` runs them); a change to the steps, or to the
+  (`QUEUE_SEQUENCE_KNOWN=1` runs them; none in the first thousand since
+  #374, four in 3,000); a change to the steps, or to the
   requests the app sends, reshuffles every sequence, so search again
   after one. A bug a sequence finds gets
   a scripted test of its own beside them (`writesDown` holds every write

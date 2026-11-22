@@ -685,6 +685,49 @@ export const eventChangesFrom = (json: string | null): EventChanges | undefined 
   return isEventChanges(changes) ? changes : undefined;
 };
 
+const CARRIED_FIELDS = ['description', 'location', 'title'] as const;
+
+/**
+ * What a queued series edit carried onto one of its exceptions, as changes
+ * laid under that exception's own: Google copies a changed title,
+ * description or location of a series onto every exception when the edit
+ * lands, and the exception's row shows it already. Only while Google's
+ * copy of the exception (`copy`, encoded) is the version the edit carried
+ * onto — a newer one is Google's word, and shows its own text until the
+ * edit lands. A carried location takes the coordinates along, as on the row.
+ */
+export const carriedChangesOf = (
+  series: { readonly carried_text: string | null; readonly changes: string | null },
+  copy: Readonly<Record<string, unknown>>,
+): EventChanges | undefined => {
+  const carried = parseJson(series.carried_text);
+  const changes = eventChangesFrom(series.changes);
+  const overrides: ReadonlyArray<unknown> =
+    isRecord(carried) && Array.isArray(carried['overrides']) ? carried['overrides'] : [];
+  const entry = overrides.find(
+    (one): one is Record<string, unknown> => isRecord(one) && one['eventId'] === copy['id'],
+  );
+  if (!changes || !entry || (entry['etag'] ?? null) !== (copy['etag'] ?? null)) {
+    return undefined;
+  }
+  const set: Record<string, unknown> = {};
+  const cleared: Array<string> = [];
+  for (const field of CARRIED_FIELDS) {
+    if (!(field in entry)) {
+      continue;
+    }
+    if (field in changes.set) {
+      set[field] = changes.set[field];
+    } else if (changes.cleared.includes(field)) {
+      cleared.push(field);
+    }
+  }
+  if ('location' in set || cleared.includes('location')) {
+    cleared.push('geo');
+  }
+  return Object.keys(set).length + cleared.length > 0 ? { answers: {}, cleared, set } : undefined;
+};
+
 /** The fields a change names as its own (the guest list and answers aside). */
 export const namesOf = (changes: EventChanges | undefined): ReadonlyArray<string> =>
   changes

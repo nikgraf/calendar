@@ -2233,6 +2233,21 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       ) {
         return retry('waiting for the change of its series ahead of it');
       }
+      // Several changes of one event go in the order they were made: each
+      // sends only what it set, over what the ones before it left on
+      // Google. And a change of a series waits for the changes of its
+      // occurrences made before it: its text is copied onto them, over
+      // their own, as the user saw it here.
+      if (
+        op.kind === 'update' &&
+        earlier.some(
+          (entry) =>
+            entry.kind === 'update' &&
+            (entry.eventId === op.eventId || entry.eventId.startsWith(`${op.eventId}_`)),
+        )
+      ) {
+        return retry('waiting for the change ahead of it');
+      }
       return undefined;
     });
 

@@ -6,6 +6,7 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import {
   answerChangesOf,
+  carriedChangesOf,
   CHANGING_KINDS,
   eventChangesFrom,
   eventChangesOf,
@@ -91,7 +92,13 @@ export interface PendingOpRepoShape {
     >,
     SqlError
   >;
-  readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
+  /**
+   * Queues the op, at the end. `replaces` names a queued op it takes the
+   * place of instead: that one leaves, and this one stands where it stood
+   * in the queue order (its `createdAt` too), ahead of what was queued
+   * behind it.
+   */
+  readonly enqueue: (op: PendingOp, replaces?: string) => Effect.Effect<void, SqlError>;
   /**
    * A pull confirmed these events deleted upstream: Google's copies of
    * them go, and those of the exceptions a queued delete of one holds, so
@@ -336,29 +343,55 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       sql<{
         readonly account_id: string;
         readonly calendar_id: string;
+        readonly carried_text: string | null;
         readonly changes: string | null;
         readonly event_id: string;
         readonly id: string;
-      }>`SELECT id, account_id, calendar_id, event_id, changes FROM pending_ops
+      }>`SELECT id, account_id, calendar_id, event_id, changes, carried_text FROM pending_ops
         WHERE kind IN ('rsvp', 'update') ORDER BY created_at, rowid`,
       (rows) => {
-        const byEvent = new Map<string, Array<{ changes: string | null; id: string }>>();
-        for (const row of rows) {
+        const byEvent = new Map<string, Array<(typeof rows)[number] & { readonly at: number }>>();
+        for (const [at, row] of rows.entries()) {
           const key = JSON.stringify([row.account_id, row.calendar_id, row.event_id]);
-          byEvent.set(key, [...(byEvent.get(key) ?? []), row]);
+          byEvent.set(key, [...(byEvent.get(key) ?? []), { ...row, at }]);
         }
         return byEvent;
       },
     );
     type Chains = Effect.Success<typeof chains>;
-    /** The changes queued for the row's event ahead of it; `without` is an op on its way out. */
+    /**
+     * The changes queued ahead of the row that its own are laid over, in
+     * queue order: the ones of its event, and for an exception the text
+     * the queued edits of its series carried onto it (`carriedChangesOf`).
+     * `without` is an op on its way out.
+     */
     const earlierOf = (all: Chains, row: PendingOpRow, without?: string) => {
-      const chain = all.get(JSON.stringify([row.account_id, row.calendar_id, row.event_id])) ?? [];
-      const own = chain.findIndex((entry) => entry.id === row.id);
-      return chain.slice(0, Math.max(own, 0)).flatMap((entry) => {
-        const changes = entry.id === without ? undefined : eventChangesFrom(entry.changes);
-        return changes ? [changes] : [];
-      });
+      const chainOf = (eventId: unknown) =>
+        typeof eventId === 'string'
+          ? (all.get(JSON.stringify([row.account_id, row.calendar_id, eventId])) ?? [])
+          : [];
+      const own = chainOf(row.event_id).find((entry) => entry.id === row.id);
+      if (!own) {
+        return [];
+      }
+      const copy = parseJson(row.copy_payload ?? null);
+      const exception =
+        typeof copy === 'object' && copy !== null ? (copy as Record<string, unknown>) : undefined;
+      return [
+        ...chainOf(row.event_id).map((entry) => ({
+          at: entry.at,
+          changes: eventChangesFrom(entry.changes),
+          id: entry.id,
+        })),
+        ...chainOf(exception?.['recurringEventId']).map((entry) => ({
+          at: entry.at,
+          changes: exception ? carriedChangesOf(entry, exception) : undefined,
+          id: entry.id,
+        })),
+      ]
+        .filter((entry) => entry.at < own.at && entry.id !== without)
+        .toSorted((left, right) => left.at - right.at)
+        .flatMap((entry) => (entry.changes ? [entry.changes] : []));
     };
     const noChains: Chains = new Map();
     /** Rows of an unknown op kind are skipped: nothing could apply them. */
@@ -379,6 +412,41 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
     const dropCopy = (accountId: string, calendarId: string, eventId: string) =>
       sql`DELETE FROM event_copies WHERE account_id = ${accountId}
         AND calendar_id = ${calendarId} AND id = ${eventId}`;
+    /**
+     * The copies a newly queued op holds. What it replaces is Google's copy
+     * of its event, held once: an op queued while another already holds the
+     * event reads the copy that one took, whatever the row shows since. The
+     * exceptions a series delete took are Google's copies too.
+     */
+    const holdCopies = (op: PendingOp) =>
+      Effect.gen(function* () {
+        if (op.beforePayload && HOLDING_KINDS.has(op.kind)) {
+          yield* sql`INSERT OR IGNORE INTO event_copies (account_id, calendar_id, id, payload)
+            VALUES (${op.accountId}, ${op.calendarId}, ${op.eventId},
+                    ${JSON.stringify(eventPayloadJson(op.beforePayload))})`;
+        }
+        for (const taken of op.kind === 'delete' ? (op.beforeOverrides ?? []) : []) {
+          yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
+        }
+      });
+    /**
+     * The place in the queue of the op another takes over (`enqueue`): its
+     * order and its `created_at`. That op leaves; none when it left already.
+     */
+    const takePlace = (replaces: string | undefined) =>
+      Effect.gen(function* () {
+        if (replaces === undefined) {
+          return undefined;
+        }
+        const [place] = yield* sql<{
+          readonly created_at: number;
+          readonly place: number;
+        }>`SELECT rowid AS place, created_at FROM pending_ops WHERE id = ${replaces}`;
+        if (place) {
+          yield* sql`DELETE FROM pending_ops WHERE id = ${replaces}`;
+        }
+        return place;
+      });
     /**
      * A copy is kept only while something holds its event: an op that
      * names it, or the queued delete of its series, which took its
@@ -510,11 +578,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               ...(row.task_parent === null ? {} : { taskParent: row.task_parent }),
             })),
         ),
-      enqueue: (op) =>
+      enqueue: (op, replaces) =>
         invalidating(
           Effect.gen(function* () {
+            const place = yield* takePlace(replaces);
             yield* sql`
-          INSERT INTO pending_ops (id, account_id, calendar_id, kind, event_id,
+          INSERT INTO pending_ops (rowid, id, account_id, calendar_id, kind, event_id,
                                    payload, base_etag, attempts, next_attempt_at,
                                    last_error, created_at, color_hex,
                                    task_list_id, task_status,
@@ -526,11 +595,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    target_task_list_id, task_parent, task_due_cleared,
                                    task_previous, drops_from, split_of, split_in,
                                    split_at, split_check, copy_source, source_gone)
-          VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
+          VALUES (${place?.place ?? null}, ${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
                   ${op.baseEtag ?? null}, ${op.attempts}, ${op.nextAttemptAt},
-                  ${op.lastError ?? null}, ${op.createdAt}, ${op.colorHex ?? null},
+                  ${op.lastError ?? null}, ${place?.created_at ?? op.createdAt},
+                  ${op.colorHex ?? null},
                   ${op.taskListId ?? null}, ${op.taskStatus ?? null},
                   ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null},
                   ${op.dispatchedAt ?? null}, ${op.attendeesChanged ? 1 : 0},
@@ -546,18 +616,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.copySource ? JSON.stringify(copySourceJson(op.copySource)) : null},
                   ${op.sourceGone ? 1 : 0})
         `;
-            // What the op replaces is Google's copy of its event, held once:
-            // an op queued while another already holds the event reads the
-            // copy that one took, whatever the row shows since.
-            if (op.beforePayload && HOLDING_KINDS.has(op.kind)) {
-              yield* sql`INSERT OR IGNORE INTO event_copies (account_id, calendar_id, id, payload)
-                VALUES (${op.accountId}, ${op.calendarId}, ${op.eventId},
-                        ${JSON.stringify(eventPayloadJson(op.beforePayload))})`;
-            }
-            // The exceptions a series delete took are Google's copies too.
-            for (const taken of op.kind === 'delete' ? (op.beforeOverrides ?? []) : []) {
-              yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
-            }
+            yield* holdCopies(op);
             yield* writeChanges(op.id, op.changed ?? []);
           }),
         ),

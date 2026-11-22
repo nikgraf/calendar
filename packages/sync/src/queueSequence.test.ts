@@ -765,7 +765,10 @@ const showCall = (call: FakeCall): string => {
   ]
     .filter((name) => url.searchParams.has(name))
     .map((name) => `${name}=${url.searchParams.get(name)}`);
-  return `${call.method} ${url.pathname}${params.length > 0 ? `?${params.join('&')}` : ''}`;
+  // What a PATCH names: a change sends only the fields it set.
+  const named =
+    call.method === 'PATCH' && call.body ? ` {${Object.keys(call.body).join(',')}}` : '';
+  return `${call.method} ${url.pathname}${params.length > 0 ? `?${params.join('&')}` : ''}${named}`;
 };
 
 const isListRead = (call: FakeCall): boolean => call.method === 'GET' && itemOf(call) === undefined;
@@ -1699,6 +1702,23 @@ const retiming = (world: World, snapshot: Snapshot, masterId: string): boolean =
     ),
   );
 
+/**
+ * Whether a queued change of one of the series' occurrences waits on a
+ * version of that occurrence the client has not seen: Google holds an
+ * exception with another etag than the change knows. A pull while the
+ * series moves hands the change that etag, the source calendar's, and
+ * whether it holds once the move landed is not recorded (the fake gives
+ * the exceptions new ones, and the change is refused once, then laid over
+ * Google's version). Such a series is not moved until a pull brought it.
+ */
+const unseenOccurrenceNews = (world: World, snapshot: Snapshot, masterId: string): boolean =>
+  snapshot.ops.some((op) => {
+    const theirs = isOccurrenceOf(op.eventId, masterId)
+      ? world.google.eventOf(op.calendarId, op.eventId)?.etag
+      : undefined;
+    return theirs !== undefined && theirs !== (op.beforePayload?.etag ?? undefined);
+  });
+
 /** The one of two calendars (or lists) that is not `current`. */
 const otherOf = <A extends string>(all: ReadonlyArray<A>, current: string): A =>
   all.find((entry) => entry !== current)!;
@@ -1713,7 +1733,12 @@ const userActions = (
   // delete of one, and a move takes the whole series.
   const singles = snapshot.events.filter(isSingle);
   const allSeries = clientSeries(snapshot.events);
-  const movable = [...singles, ...allSeries.map((entry) => entry.master)];
+  const movable = [
+    ...singles,
+    ...allSeries
+      .map((entry) => entry.master)
+      .filter((master) => !unseenOccurrenceNews(world, snapshot, master.id)),
+  ];
   // What a step does to a series or an occurrence may send an exception's
   // etag (see movedSincePulled).
   const series = allSeries.filter((entry) => !movedSincePulled(world, entry));
@@ -2302,9 +2327,17 @@ const worldActions = (
       random,
       liveSeries().filter(({ event }) => !retiming(world, snapshot, event.id)),
     );
+    // One a queued change holds while its series moves: see
+    // unseenOccurrenceNews.
+    const moving = snapshot.ops.some((op) => op.kind === 'move' && op.eventId === series?.event.id);
     const instance =
       series &&
-      pick(random, google.instancesOf(series.calendarId, series.event.id, WINDOW_FROM, WINDOW_TO));
+      pick(
+        random,
+        google
+          .instancesOf(series.calendarId, series.event.id, WINDOW_FROM, WINDOW_TO)
+          .filter((one) => !(moving && snapshot.ops.some((op) => op.eventId === one.id))),
+      );
     return series && instance ? { calendarId: series.calendarId, instance } : undefined;
   };
   const liveTasks = () =>
@@ -2666,31 +2699,16 @@ const runSequence = (seed: number) => {
 };
 
 /**
- * The open gaps the series steps found in the first thousand seeds, as
- * KNOWN_FAILING names them; the skipped tests at the end show each on its
- * own (and three more that only later seeds met).
- */
-const GAP = {
-  ahead: 'a series change that went back behind an occurrence change made under it',
-  dropped: 'the deletes a rule change queued, sent after a delete replaced it',
-  givenUp: 'an occurrence changed under a new rule that was given up',
-  ownText: "an occurrence's own text under a later edit of its series",
-} as const;
-
-/**
  * Seeds that still fail, with the open gap each one meets (the skipped
- * tests at the end show each gap on its own). Found with
- * QUEUE_SEQUENCE_RUNS=1000; a change to the steps, their odds or the
- * requests the app sends reshuffles every sequence, so search again rather
- * than trust these after one.
+ * tests at the end show each gap on its own): none in the first thousand.
+ * Past it, 1347 and 2936 (the deletes a cut queued, sent after a delete of
+ * the series replaced it) and 1876 and 2506 (a change discarded after it
+ * had landed with its answer lost). Found with QUEUE_SEQUENCE_RUNS=3000;
+ * a change to the steps, their odds or the requests the app sends
+ * reshuffles every sequence, so search again rather than trust these
+ * after one.
  */
-const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
-  [77, GAP.ahead],
-  [215, GAP.givenUp],
-  [524, GAP.ownText],
-  [565, GAP.ahead],
-  [576, GAP.dropped],
-]);
+const KNOWN_FAILING: ReadonlyMap<number, string> = new Map<number, string>();
 
 describe('pending-op queue: seeded random sequences', () => {
   for (const seed of new Set([...SEEDS, ...KNOWN_FAILING.keys()])) {
@@ -4924,6 +4942,364 @@ describe('pending-op queue: an occurrence changed under a queued change of its s
       }),
     );
   });
+
+  it.effect(
+    'an occurrence deleted under a new rule stays deleted when the series is edited again',
+    () => {
+      // Sequences 77 and 565: every other day draws September 1; that
+      // occurrence was deleted, then all events got a location. The edit
+      // replaced the queued rule change and went to the back of the queue,
+      // behind the occurrence's delete, which waits only for a rule change
+      // ahead of it: it went first, found no such slot on Google (404) and
+      // counted as done. Then the new rule landed, and Google drew the day
+      // the user deleted. The rule change stays where it is now, and the
+      // location queues behind the delete as a change of its own.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          network.down = true;
+          yield* mutations.updateRecurring({
+            ...R1,
+            changes: { recurrence: EVERY_OTHER_DAY },
+            originalStartUtc: R1_START,
+            scope: 'series',
+          });
+          yield* mutations.deleteRecurring({
+            ...R1,
+            originalStartUtc: R1_START + 6 * DAY,
+            scope: 'instance',
+          });
+          yield* mutations.updateRecurring({
+            ...R1,
+            changes: { location: 'Studio 2' },
+            originalStartUtc: R1_START,
+            scope: 'series',
+          });
+          network.down = false;
+          yield* drainAll(mutations);
+          expect(drawnOnGoogle(google, 'cal-1', 'r1')).toEqual([
+            R1_START,
+            R1_START + 2 * DAY,
+            R1_START + 4 * DAY,
+          ]);
+        }),
+      );
+    },
+  );
+
+  it.effect('an occurrence keeps its own text through a later edit of its series', () => {
+    // Sequences 485 and 524, and 1080, 2513 and 2801 past the first
+    // thousand, each its own way to the same end: all events
+    // got a location, then one occurrence its own, then all events a title,
+    // all while offline. The second edit of the series replaced the first
+    // one's op and sent both fields in one PATCH, after the occurrence's;
+    // the location differed from Google's, so Google copied it onto every
+    // exception (verified live), over the occurrence's own, which the user
+    // set after it. Each goes in its turn now, with what it set: the
+    // location, the occurrence's own, then the title alone.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const series = { ...R2, originalStartUtc: R2_START, scope: 'series' as const };
+        const moved = R2_START + DAY;
+        network.down = true;
+        yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 1' } });
+        yield* mutations.updateRecurring({
+          ...R2,
+          changes: { location: 'Room 2' },
+          originalStartUtc: moved,
+          scope: 'instance',
+        });
+        yield* mutations.updateRecurring({ ...series, changes: { title: 'Sprint review' } });
+        network.down = false;
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        expect(
+          google.requests
+            .filter((call) => call.method === 'PATCH')
+            .map(
+              (call) =>
+                `${new URL(call.url).pathname.split('/').at(-1)}: ${Object.keys(call.body ?? {}).join(',')}`,
+            ),
+        ).toEqual([
+          'r2: location',
+          // Refused once: the series' location, copied onto it, moved its
+          // etag. Laid over that version, it goes again.
+          `${googleInstanceId('r2', moved, false)}: location`,
+          `${googleInstanceId('r2', moved, false)}: location`,
+          'r2: summary',
+        ]);
+        expect(google.eventOf('cal-2', googleInstanceId('r2', moved, false))).toMatchObject({
+          location: 'Room 2',
+          summary: 'Sprint review',
+        });
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('a change of the series given up takes the ones made after it along', () => {
+    // Sequence 829 of the search with the changes kept in order: "does
+    // not repeat", then new times for what was a single event by then;
+    // the first met a conflict and was given up for Google's version, and
+    // the second moved the whole series. Made on top of it, it goes too.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const series = { ...R2, originalStartUtc: R2_START, scope: 'series' as const };
+        network.down = true;
+        yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 1' } });
+        yield* mutations.updateRecurring({
+          ...R2,
+          changes: { location: 'Room 2' },
+          originalStartUtc: R2_START + DAY,
+          scope: 'instance',
+        });
+        yield* mutations.updateRecurring({ ...series, changes: { title: 'Sprint review' } });
+        const queued = (yield* ops.listAll()).map((op) => op.eventId);
+        expect(queued).toEqual(['r2', googleInstanceId('r2', R2_START + DAY, false), 'r2']);
+        yield* mutations.discardPendingOp((yield* ops.listAll())[0]!.id);
+        // The occurrence's own change is its own, and stays.
+        expect((yield* ops.listAll()).map((op) => op.eventId)).toEqual([
+          googleInstanceId('r2', R2_START + DAY, false),
+        ]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly location: string | null;
+          readonly sync_status: string;
+          readonly title: string;
+        }>`SELECT title, location, sync_status FROM events WHERE id = 'r2'`;
+        expect(rows).toEqual([{ location: null, sync_status: 'synced', title: 'Sprint' }]);
+        network.down = false;
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        expect(writes(google)).toEqual([
+          `PATCH calendars/cal-2/events/${googleInstanceId('r2', R2_START + DAY, false)}`,
+        ]);
+        expect(google.eventOf('cal-2', 'r2')).toMatchObject({ summary: 'Sprint' });
+      }),
+    );
+  });
+
+  it.effect('an edit made right after a move goes behind the change it was made on', () => {
+    // Sequence 934 of that search: "does not repeat", the event moved,
+    // then new times, all while offline. A move re-queues what waits for
+    // its event a millisecond after itself; queued in the move's own
+    // millisecond, the new times sorted ahead of the rule's change and
+    // went first: new times for a series that still had its exceptions.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.updateRecurring({
+          ...R2,
+          changes: { recurrence: null },
+          originalStartUtc: R2_START,
+          scope: 'series',
+        });
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-2',
+          eventId: 'r2',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-1' },
+        });
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { endUtc: R2_START + 3 * HOUR, startUtc: R2_START + 2 * HOUR },
+          eventId: 'r2',
+        });
+        network.down = false;
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        expect(
+          google.requests
+            .filter((call) => call.method === 'PATCH')
+            .map((call) => Object.keys(call.body ?? {}).join(',')),
+        ).toEqual(['recurrence', 'end,start']);
+        expect(google.unverified).toEqual([]);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('a later change of a series is not asked about what the one before it set', () => {
+    // Sequence 2368 of that search: a rule and a title for all, the event
+    // moved, an occurrence deleted, a place for all, then a cut — two
+    // changes of the series queued in order. The first went without
+    // If-Match (the move had moved the etag), so its answer was laid under
+    // the second as Google's newer version, and the rule it had set itself
+    // counted as changed on Google: the cut was parked for the user to
+    // choose between their own two edits.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const series = { ...R1, originalStartUtc: R1_START, scope: 'series' as const };
+        network.down = true;
+        yield* TestClock.adjust('1 second');
+        yield* mutations.updateRecurring({ ...series, changes: { title: 'title 8' } });
+        yield* TestClock.adjust('1 second');
+        yield* mutations.updateRecurring({
+          ...series,
+          changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=8'] },
+        });
+        yield* TestClock.adjust('1 second');
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { location: 'location 21' },
+          originalStartUtc: R1_START + DAY,
+          scope: 'instance',
+        });
+        yield* TestClock.adjust('1 second');
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'r1',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        const moved = { ...R1, calendarId: 'cal-2' };
+        yield* TestClock.adjust('1 second');
+        yield* mutations.deleteRecurring({
+          ...moved,
+          originalStartUtc: R1_START + DAY,
+          scope: 'instance',
+        });
+        yield* TestClock.adjust('1 second');
+        yield* mutations.updateRecurring({
+          ...moved,
+          changes: { location: 'location 37' },
+          originalStartUtc: R1_START,
+          scope: 'series',
+        });
+        yield* TestClock.adjust('1 second');
+        yield* mutations.updateRecurring({
+          ...moved,
+          changes: { title: 'following 40' },
+          originalStartUtc: R1_START + 4 * DAY,
+          scope: 'following',
+        });
+        network.down = false;
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        expect(writes(google).filter((write) => write.includes('events/r1'))).toEqual([
+          'POST calendars/cal-1/events/r1/move → cal-2',
+          'PATCH calendars/cal-2/events/r1',
+          `DELETE calendars/cal-2/events/${googleInstanceId('r1', R1_START + DAY, false)}`,
+          'PATCH calendars/cal-2/events/r1',
+        ]);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        expect(google.eventOf('cal-2', 'r1')).toMatchObject({
+          location: 'location 37',
+          summary: 'title 8',
+        });
+      }),
+    );
+  });
+
+  it.effect(
+    'a new rule replaces the queued one where it stands, and only it reaches Google',
+    () => {
+      // Sequence 1702 of that search: every other day, an occurrence
+      // deleted, then daily, eight times. Queued behind as a change of its
+      // own, the second rule went after the first, which had dropped on
+      // Google the exceptions the second draws again. It takes the first
+      // one's place in the queue, ahead of the delete made under it.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const series = { ...R1, originalStartUtc: R1_START, scope: 'series' as const };
+          const deleted = R1_START + 6 * DAY;
+          network.down = true;
+          yield* mutations.updateRecurring({ ...series, changes: { recurrence: EVERY_OTHER_DAY } });
+          yield* TestClock.adjust('1 second');
+          yield* mutations.deleteRecurring({ ...R1, originalStartUtc: deleted, scope: 'instance' });
+          yield* TestClock.adjust('1 second');
+          yield* mutations.updateRecurring({
+            ...series,
+            changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=8'] },
+          });
+          expect(
+            (yield* (yield* PendingOpRepo).listAll()).map((op) => `${op.kind} ${op.eventId}`),
+          ).toEqual(['update r1', `delete ${googleInstanceId('r1', deleted, false)}`]);
+          network.down = false;
+          google.requests.length = 0;
+          yield* drainAll(mutations);
+          expect(writes(google)).toEqual([
+            'PATCH calendars/cal-1/events/r1',
+            `DELETE calendars/cal-1/events/${googleInstanceId('r1', deleted, false)}`,
+          ]);
+          expect(google.eventOf('cal-1', 'r1')?.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=8']);
+          expect(drawnOnGoogle(google, 'cal-1', 'r1')).toEqual(
+            [0, 1, 2, 3, 4, 5, 7].map((day) => R1_START + day * DAY),
+          );
+          expect(google.unverified).toEqual([]);
+        }),
+      );
+    },
+  );
+
+  it.effect("a pull of an exception under its series' queued text does not ask", () => {
+    // Sequence 1782 of the search with the carried text laid under an
+    // exception's change: a place for all landed, which Google copies onto
+    // the exception with a new etag; then, offline, another place for all
+    // and the exception's own. The pull brought the exception's new etag,
+    // the series' carried place no longer lay under the change, and that
+    // read as a change of Google's to the place: parked, nobody's doing.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const series = { ...R1, originalStartUtc: R1_START, scope: 'series' as const };
+        const second = R1_START + DAY;
+        const occurrence = { ...R1, originalStartUtc: second, scope: 'instance' as const };
+        yield* mutations.updateRecurring({
+          ...occurrence,
+          changes: { endUtc: second + 3 * HOUR, startUtc: second + 2 * HOUR },
+        });
+        yield* drainAll(mutations);
+        yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 1' } });
+        yield* drainAll(mutations);
+        network.down = true;
+        yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 2' } });
+        yield* mutations.updateRecurring({ ...occurrence, changes: { location: 'Room 3' } });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(
+          (yield* (yield* PendingOpRepo).listAll()).map(
+            (op) =>
+              `${op.eventId === 'r1' ? 'series' : 'occurrence'} ${op.payload?.location} ${op.conflictAt === undefined ? 'waits' : 'asks'}`,
+          ),
+        ).toEqual(['series Room 2 waits', 'occurrence Room 3 waits']);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.eventOf('cal-1', 'r1')?.location).toBe('Room 2');
+        expect(google.eventOf('cal-1', googleInstanceId('r1', second, false))?.location).toBe(
+          'Room 3',
+        );
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
 });
 
 /** The row the client shows for an event of `cal-1`: its title, place and state. */
@@ -5149,107 +5525,58 @@ describe('pending-op queue: a delete of an occurrence that a pull confirmed', ()
  * Google does is as recorded (docs/google-sync-and-testing.md, Events &
  * recurrence) and as the fake mirrors it.
  */
-describe('pending-op queue: open gaps the sequences found in series', () => {
-  it.effect.skip(
-    'discarding a new rule takes along the change of an occurrence only it draws',
-    () => {
-      // Sequences 215 and 656: every other day draws September 1, which the
-      // six days of the series do not. The occurrence there was renamed,
-      // then the new rule discarded (656: given up for Google's copy after a
-      // conflict). The rename stayed queued, with its row at a slot the
-      // series no longer draws, and met a 404 once it was sent.
-      const google = newFake();
-      const network = writesDown(google);
-      return scripted(
-        google,
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          const ops = yield* PendingOpRepo;
-          network.down = true;
-          yield* mutations.updateRecurring({
-            ...R1,
-            changes: { recurrence: EVERY_OTHER_DAY },
-            originalStartUtc: R1_START,
-            scope: 'series',
-          });
-          const added = R1_START + 6 * DAY;
-          yield* mutations.updateRecurring({
-            ...R1,
-            changes: { title: 'Yoga (last)' },
-            originalStartUtc: added,
-            scope: 'instance',
-          });
-          const rule = (yield* ops.listAll()).find((op) => op.eventId === 'r1')!;
-          yield* mutations.discardPendingOp(rule.id);
-          network.down = false;
-          google.requests.length = 0;
-          yield* drainAll(mutations);
-          expect(writes(google)).toEqual([]);
-          const rows = yield* (yield* SqlClient)<{
-            readonly id: string;
-          }>`SELECT id FROM events WHERE id = ${googleInstanceId('r1', added, false)}`;
-          expect(rows).toEqual([]);
-        }),
-      );
-    },
-  );
+describe('pending-op queue: what goes with a change of a series', () => {
+  it.effect('discarding a new rule takes along the change of an occurrence only it draws', () => {
+    // Sequences 215 and 656 (and 1262 and 2650 with new times in place of
+    // the rule): every other day draws September 1, which the six days of
+    // the series do not. The occurrence there was renamed, then the new
+    // rule discarded (656: given up for Google's copy after a conflict).
+    // The rename stayed queued, with its row at a slot the series no
+    // longer draws, and met a 404 once it was sent. It goes with the rule.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { recurrence: EVERY_OTHER_DAY },
+          originalStartUtc: R1_START,
+          scope: 'series',
+        });
+        const added = R1_START + 6 * DAY;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { title: 'Yoga (last)' },
+          originalStartUtc: added,
+          scope: 'instance',
+        });
+        const rule = (yield* ops.listAll()).find((op) => op.eventId === 'r1')!;
+        yield* mutations.discardPendingOp(rule.id);
+        network.down = false;
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        expect(writes(google)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly id: string;
+        }>`SELECT id FROM events WHERE id = ${googleInstanceId('r1', added, false)}`;
+        expect(rows).toEqual([]);
+      }),
+    );
+  });
 
-  it.effect.skip(
-    'an occurrence deleted under a new rule stays deleted when the series is edited again',
-    () => {
-      // Sequence 77: every other day draws September 1; that occurrence was
-      // deleted, then all events got a location. The edit replaced the queued
-      // rule change and went to the back of the queue, behind the
-      // occurrence's delete, which waits only for a rule change ahead of it:
-      // it went first, found no such slot on Google (404) and counted as
-      // done. Then the new rule landed, and Google draws the day the user
-      // deleted.
-      const google = newFake();
-      const network = writesDown(google);
-      return scripted(
-        google,
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          network.down = true;
-          yield* mutations.updateRecurring({
-            ...R1,
-            changes: { recurrence: EVERY_OTHER_DAY },
-            originalStartUtc: R1_START,
-            scope: 'series',
-          });
-          yield* mutations.deleteRecurring({
-            ...R1,
-            originalStartUtc: R1_START + 6 * DAY,
-            scope: 'instance',
-          });
-          yield* mutations.updateRecurring({
-            ...R1,
-            changes: { location: 'Studio 2' },
-            originalStartUtc: R1_START,
-            scope: 'series',
-          });
-          network.down = false;
-          yield* drainAll(mutations);
-          expect(drawnOnGoogle(google, 'cal-1', 'r1')).toEqual([
-            R1_START,
-            R1_START + 2 * DAY,
-            R1_START + 4 * DAY,
-          ]);
-        }),
-      );
-    },
-  );
-
-  it.effect.skip('the deletes a rule change queued go with it when a delete replaces it', () => {
-    // Sequence 576 (1347 and 2936 with a this-and-following cut and a
-    // delete of the series): "does not repeat" queues, behind its PATCH, a
-    // delete of each exception; the PATCH's landing takes them off the
-    // queue, since Google cancels them with it. Deleting the event, single
-    // by then, replaced the PATCH — and its deletes went out on their own:
+  it.effect('the deletes a rule change queued go with it when a delete replaces it', () => {
+    // Sequence 576: "does not repeat" queues, behind its PATCH, a delete
+    // of each exception; the PATCH's landing takes them off the queue,
+    // since Google cancels them with it. Deleting the event, single by
+    // then, replaced the PATCH — and its deletes went out on their own:
     // the one of an occurrence Google held cancelled all along met a 410,
     // the one of the moved occurrence cancelled it. With the event's
-    // delete discarded, Google has the series as it was, less that
-    // occurrence.
+    // delete discarded, Google had the series as it was, less that
+    // occurrence. They are the event's delete's now, and go with it.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -5278,6 +5605,47 @@ describe('pending-op queue: open gaps the sequences found in series', () => {
       }),
     );
   });
+});
+
+describe('pending-op queue: open gaps the sequences found in series', () => {
+  it.effect.skip(
+    'the deletes a cut queued go with it when a delete of the series replaces it',
+    () => {
+      // Sequences 1347 and 2936 (past the first thousand): a
+      // this-and-following cut queues, behind its PATCH, a delete of each
+      // exception past it; deleting the series replaced the cut, and those
+      // deletes went out on their own. With the series' delete discarded,
+      // Google has the series as it was, less those occurrences. The series
+      // delete keeps them queued on purpose today (engine.test.ts, "a series
+      // whose delete waits › after a cut").
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const ops = yield* PendingOpRepo;
+          network.down = true;
+          yield* mutations.deleteRecurring({
+            ...R2,
+            originalStartUtc: R2_START + DAY,
+            scope: 'following',
+          });
+          yield* mutations.deleteRecurring({ ...R2, originalStartUtc: R2_START, scope: 'series' });
+          // Back online, the series' own delete still fails.
+          google.fault = (call) =>
+            call.method === 'DELETE' && call.url.endsWith('/events/r2') ? 'refused' : undefined;
+          yield* drainAll(mutations);
+          const remove = (yield* ops.listAll()).find((op) => op.eventId === 'r2')!;
+          yield* mutations.discardPendingOp(remove.id);
+          expect(
+            google.eventOf('cal-2', googleInstanceId('r2', R2_START + DAY, false))?.status,
+          ).toBe('confirmed');
+          expect(drawnOnGoogle(google, 'cal-2', 'r2')).toHaveLength(4);
+        }),
+      );
+    },
+  );
 
   it.effect.skip(
     "a move of an event whose rule was cleared takes its occurrences' rows along",
@@ -5360,42 +5728,6 @@ describe('pending-op queue: open gaps the sequences found in series', () => {
         yield* TestClock.adjust('1 minute');
         yield* (yield* SyncEngine).syncAll();
         expect(google.eventOf('cal-2', 'e1')?.summary).toBe('Standup (new room)');
-      }),
-    );
-  });
-
-  it.effect.skip('an occurrence keeps its own text through a later edit of its series', () => {
-    // Sequences 485 and 524, and 1080, 2513 and 2801 past the first
-    // thousand, each its own way to the same end: all events
-    // got a location, then one occurrence its own, then all events a title,
-    // all while offline. The second edit of the series replaced the first
-    // one's op and sends both fields in one PATCH; the location differs
-    // from Google's, so Google copies it onto every exception (verified
-    // live), over the occurrence's own, which the user set after it. The
-    // app writes the same over the occurrence's row as the title is saved.
-    const google = newFake();
-    const network = writesDown(google);
-    return scripted(
-      google,
-      Effect.gen(function* () {
-        const mutations = yield* EventMutations;
-        const series = { ...R2, originalStartUtc: R2_START, scope: 'series' as const };
-        const moved = R2_START + DAY;
-        network.down = true;
-        yield* mutations.updateRecurring({ ...series, changes: { location: 'Room 1' } });
-        yield* mutations.updateRecurring({
-          ...R2,
-          changes: { location: 'Room 2' },
-          originalStartUtc: moved,
-          scope: 'instance',
-        });
-        yield* mutations.updateRecurring({ ...series, changes: { title: 'Sprint review' } });
-        network.down = false;
-        yield* drainAll(mutations);
-        expect(google.eventOf('cal-2', googleInstanceId('r2', moved, false))).toMatchObject({
-          location: 'Room 2',
-          summary: 'Sprint review',
-        });
       }),
     );
   });

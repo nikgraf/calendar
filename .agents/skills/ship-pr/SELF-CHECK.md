@@ -119,6 +119,20 @@ The class found in the most PRs (54), almost all by Opus.
   user's own, sent back over another device's? Test it with a value
   already on Google: a stale field that is absent is not sent by a PATCH,
   and hides the bug (#374, six findings of this one shape).
+- What does each queued change store as its own? Only what its edit set:
+  measured as "the row minus Google's copy" it also holds what an earlier
+  change of the event set, or a series' carried text, and sends that on
+  after its owner was replaced or discarded; and it loses a value set
+  back to the one Google has while the first write is out (#374, Opus
+  round 3).
+- A check for "Google changed this": does it leave out what an earlier
+  change of ours put there (its landing, sent without If-Match) and what
+  only stopped being laid under the change (a series' carried text)?
+  Both parked conflicts nobody caused (#374, seeds 2368 and 1782).
+- Two changes of one event sent one after the other: does the first one's
+  value reach Google where only the last should (a rule that drops
+  exceptions the next one draws)? And is a change made on top of one that
+  is given up given up with it?
 - Does anything read the queue or a copy and then write a row in two
   steps outside a transaction? The desktop's store answers within the
   fiber's turn; the iPhone's does not, and a discard gets in between.

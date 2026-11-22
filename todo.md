@@ -8,28 +8,18 @@ was written; re-verify before starting one.
 
 ## Tier 0 — bugs
 
-- [ ] A delete that replaces a cut or a rule change lets its exception
-      deletes out ahead of itself (open since #284 and #285). Offline:
-      "does not repeat" (or "this and following"), then delete the event.
-      Online, the deletes the first change queued for the exceptions go
-      out on their own; discarding the event's delete then leaves Google
-      with the series back and those occurrences cancelled. Skipped test:
-      `queueSequence.test.ts`, "the deletes a rule change queued go with
-      it when a delete replaces it".
-- [ ] An edit of all events replaces the series' queued change and goes
-      to the back of the queue — behind a change of one occurrence made
-      under it. The
-      occurrence's own text is then overwritten by the series' older one
-      (Google copies a changed text onto every exception), or an
-      occurrence deleted under a new rule comes back. Needs several
-      changes of one event queued in order. Skipped
-      tests: "an occurrence keeps its own text through a later edit of
-      its series", "an occurrence deleted under a new rule stays deleted
-      when the series is edited again".
-- [ ] An occurrence changed under a new rule that is then given up
-      (discarded, or keep-theirs) keeps its change queued at a slot the
-      series no longer draws, and meets a 404. Skipped test: "discarding
-      a new rule takes along the change of an occurrence only it draws".
+- [ ] A delete of a series that replaces a cut or a rule change lets
+      that change's exception deletes out ahead of itself (open since
+      #284 and #285). Offline: "this and following" (or another rule),
+      then delete the series. Online, the deletes the first change queued
+      for the exceptions go out on their own; discarding the series'
+      delete then leaves Google with the series back and those
+      occurrences cancelled. (#374 closed it for an event that no longer
+      repeats here: "does not repeat", then delete.) The series delete
+      keeps those deletes queued on purpose today (`engine.test.ts`, "a
+      series whose delete waits › after a cut"): handing them to it
+      changes nine of those tests. Seeds 1347 and 2936 of
+      `queueSequence.test.ts`.
 - [ ] A change that had landed with its answer lost, then discarded, is
       put back as if Google never got it until the next pull says
       otherwise: a discarded move goes back to its source when Google
