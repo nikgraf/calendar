@@ -1640,6 +1640,39 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }),
     );
 
+  /**
+   * The event moved on while this move waited: its rows are in the
+   * calendar its last queued move takes it to, and Google's answer about
+   * it (`synced`, in this move's destination) is for them. What is queued
+   * for it there is laid over it; a row only the move holds takes it and
+   * stays pending. Dropped, another device's change showed only after
+   * that next move had landed, or not at all once it was given up.
+   */
+  const tellMovedOn = (op: PendingOp, destination: string, synced: EventRecord) =>
+    Effect.gen(function* () {
+      const onward = (yield* pendingOpRepo.listAll()).findLast(
+        (queued) =>
+          queued.id !== op.id &&
+          queued.kind === 'move' &&
+          queued.accountId === op.accountId &&
+          queued.eventId === op.eventId,
+      )?.targetCalendarId;
+      if (onward === undefined || onward === destination) {
+        return;
+      }
+      const there = new EventRecord({ ...synced, calendarId: onward });
+      const event = { accountId: op.accountId, calendarId: onward, eventId: op.eventId };
+      if (
+        (yield* pendingOpRepo.listForEvent(event)).some((queued) => queued.beforePayload != null)
+      ) {
+        return yield* heldEvents.take(there);
+      }
+      const row = yield* eventRepo.getById(op.accountId, onward, op.eventId);
+      if (row) {
+        yield* eventRepo.upsertMany([new EventRecord({ ...there, syncStatus: row.syncStatus })]);
+      }
+    });
+
   const landMove = (
     op: PendingOp,
     destination: string,
@@ -1685,6 +1718,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           // Deleted here while the move waited: no row to settle, but what
           // that delete replaces is Google's copy in the destination now.
           yield* pendingOpRepo.advanceBefore(event, synced, op);
+        } else if (synced) {
+          yield* tellMovedOn(op, destination, synced);
         }
       }
       const produced = response?.etag ?? undefined;

@@ -233,11 +233,13 @@ export interface PendingOpRepoShape {
   /**
    * Google's copy of the event moved to `etag` and the queued ops were
    * laid over it again (heldEvents.ts): the ones not parked send it as
-   * their If-Match now.
+   * their If-Match now. `null`: they send none (the version came from the
+   * calendar a queued move takes the event out of, and the move gives it
+   * another etag).
    */
   readonly setBaseEtag: (
     event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
-    etag: string,
+    etag: string | null,
   ) => Effect.Effect<void, SqlError>;
   /**
    * Replaces Google's copy of the op's event, which every queued op of

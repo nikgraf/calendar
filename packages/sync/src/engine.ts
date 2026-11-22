@@ -387,7 +387,15 @@ const make: Effect.Effect<
       // as a row, it showed past the user's own cut, or was lost to a
       // waiting delete's older copy.
       const kept = yield* holdPulledExceptions(taken, accountId, calendarId, records);
-      for (const record of yield* heldEvents.receive(accountId, calendarId, kept)) {
+      const free = yield* heldEvents.receive(accountId, calendarId, kept);
+      // The versions are the source calendar's, and the move gives the
+      // event another etag: what waits behind it sends no If-Match, as
+      // when the move was queued. Armed with the source's, a delete met a
+      // 412 nobody caused once the move had landed, and asked the user.
+      for (const record of kept) {
+        yield* pendingOpRepo.setBaseEtag({ accountId, calendarId, eventId: record.id }, null);
+      }
+      for (const record of free) {
         const row = yield* eventRepo.getById(accountId, calendarId, record.id);
         if (row) {
           yield* eventRepo.upsertMany([new EventRecord({ ...record, syncStatus: row.syncStatus })]);

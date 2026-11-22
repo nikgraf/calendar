@@ -2527,11 +2527,13 @@ const runSequence = (seed: number) => {
           }),
         ),
       );
-      if (world.violations.length > 0) {
-        return yield* Effect.die(report(seed, world, snapshot));
-      }
+      // Off recorded ground first: what else this step shows may only
+      // follow from the fake's guess.
       if (world.offGround !== undefined) {
         return yield* Effect.fail('off ground' as const);
+      }
+      if (world.violations.length > 0) {
+        return yield* Effect.die(report(seed, world, snapshot));
       }
       return snapshot;
     });
@@ -6644,6 +6646,87 @@ describe('pending-op queue: deleting an event that repeats no more here', () => 
         google.requests.length = 0;
         yield* drainAll(mutations);
         expect(writes(google)).toEqual(['DELETE calendars/cal-1/events/r1']);
+      }),
+    );
+  });
+});
+
+describe('pending-op queue: a move that landed after the event moved on', () => {
+  it.effect('keeps what Google says of the event for the rows the next move holds', () => {
+    // Sequence 1502 at 80 steps: a move landed with its answer lost, the
+    // event was moved back before that was known, and another device
+    // renamed it where it had landed. The retry's 404 asks the destination
+    // and learns the new name, but the rows were in the next move's
+    // calendar by then, and nothing kept it: given up, that move put the
+    // event back with the old name.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        lostThenRefused(google, (call) => call.url.includes('/move'));
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* mutations.processPendingOps();
+        yield* moveE1(mutations, 'cal-2', 'cal-1');
+        google.patchEventServerSide('cal-2', 'e1', { summary: 'Renamed elsewhere' });
+        // The first move's retry finds the event in its destination.
+        yield* drainAll(mutations);
+        google.fault = undefined;
+        // The move back never reached Google: given up, the event is in
+        // cal-2 again, as Google has it.
+        yield* discardAll(mutations);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly calendar_id: string;
+          readonly sync_status: string;
+          readonly title: string;
+        }>`SELECT calendar_id, sync_status, title FROM events WHERE id = 'e1'`;
+        expect(rows).toEqual([
+          { calendar_id: 'cal-2', sync_status: 'synced', title: 'Renamed elsewhere' },
+        ]);
+      }),
+    );
+  });
+});
+
+describe('pending-op queue: a pull of the calendar a moving series leaves', () => {
+  it.effect("does not arm an occurrence's waiting delete with that calendar's etag", () => {
+    // Sequence 1088 at 80 steps: a changed occurrence deleted, its series
+    // moved, then a full list of the old calendar, all before anything
+    // went out. The list handed the delete the exception's etag there;
+    // the move gives the event another, and the delete met a 412 nobody
+    // caused and asked the user to choose.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const slot = R1_START + DAY;
+        const id = googleInstanceId('r1', slot, false);
+        google.patchEventServerSide('cal-1', id, { location: 'Studio 2' });
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        network.down = true;
+        yield* mutations.deleteRecurring({ ...R1, originalStartUtc: slot, scope: 'instance' });
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'r1',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        google.expireSyncTokens('cal-1');
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* ops.listAll()).map((op) => [op.kind, op.baseEtag])).toEqual([
+          ['move', undefined],
+          ['delete', undefined],
+        ]);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect((yield* ops.listAll()).map(describeOp)).toEqual([]);
+        expect(google.eventOf('cal-2', id)?.status).toBe('cancelled');
       }),
     );
   });
