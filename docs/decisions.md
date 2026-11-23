@@ -1047,8 +1047,8 @@ was cut (pruned 2026-11-17).
   searched after the recogniser's likeliest own; the phrase sent stays
   the first language's. A hit spelled a letter or two off such a reading
   counts. Place bench, Nik's forty English sentences: offered 2 → 20.
-  Rejected: an own speech model for now, a setting for the language, the
-  second reading for the model. Open: names neither language has as a
+  Rejected: an own speech model for now, the second reading for the
+  model. Open: names neither language has as a
   word, street addresses, the lookup's time budget, an iPhone check.
 - **Places on a map** (2026-11-16, #334) — "which place?" shows its
   places on one map, numbered like the rows; a pin takes its place. The map
@@ -1377,12 +1377,20 @@ was cut (pruned 2026-11-17).
   answering again (C), the card answering (D), naming the field ("already
   at 13:00": the answer says only the day). Open: readings for an
   unreadable phrase.
+- **Dictation's two languages can be picked** (2026-11-23, #376) —
+  Settings › Dictation on both apps: Language (Automatic, the device's,
+  as before, or one of the recogniser's) and Second Language (Automatic,
+  #375's rule, as before; Off; or one), so a phone kept in English can
+  dictate in German. Kept on the device, like the noise switch. Rejected:
+  in the settings file (a device's languages are its own), the second
+  language among the first's variants. Open: releasing a language no
+  longer picked (an app holds five at a time).
 - **Dictation reduces background noise by default, on a page of its own**
   (2026-11-15, #325) — Settings › Dictation: Reduce Background Noise, on
   unless turned off (AVAudioEngine's voice processing; on the Mac
   Chromium's, its default all along), the iPhone's Mic Mode (shown; chosen
   in Control Center while dictating, the only time iOS offers it) and the
-  device's language. Kept on the device. Evidence: one phone in real
+  languages (#376). Kept on the device. Evidence: one phone in real
   rooms. Rejected: off by default (only the iPhone lacked it); a switch in
   Advanced; a Mic Mode picker in Settings (may offer nothing with the
   microphone off). Open: todo.md, "Dictation follow-ups".
