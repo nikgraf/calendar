@@ -189,7 +189,10 @@ or an older step is put on show. The microphone held down for 350 ms
 (`micDown` / `micUp`) is hold to talk: no pause ends the phrase (one on
 its way joins it), and letting go reads and sends everything since the
 last phrase landed (`finish`); a tap still starts hands-free, listening
-from the moment the finger went down.
+from the moment the finger went down. A release acts as a tap only once
+its click comes (`micClick`; on iOS a tap under 130 ms clicks before it
+lifts): a touch that never becomes one, such as a swipe of the sheet that
+began on the microphone, undoes the listening it started (`tapNeverCame`).
 
 **Native bridges** (`packages/reminders`, `packages/apple-calendar`,
 `packages/contacts`, `packages/geo`): each is one JSON protocol spoken by

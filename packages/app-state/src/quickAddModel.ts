@@ -12,6 +12,7 @@ import {
   grewSince,
   HOLD_MS,
   maySay,
+  CLICK_AFTER_UP_MS,
   micClick,
   micDown,
   micPress,
@@ -20,6 +21,7 @@ import {
   phraseWords,
   sendPress,
   shouldListen,
+  tapNeverCame,
   type WordCounts,
   wordCount,
 } from './voiceLoop.ts';
@@ -274,6 +276,8 @@ export const useQuickAddModel = ({
   };
 
   const failed = (message: string) => {
+    // A press under way when it failed: lifting it starts nothing.
+    stopHolding();
     closeEar();
     orphanFlight();
     open.current = false;
@@ -619,6 +623,8 @@ export const useQuickAddModel = ({
       setVoice(orphanFlight() ? 'transcribing' : 'idle');
     }
   };
+  const endRef = useRef(endVoice);
+  endRef.current = endVoice;
 
   /**
    * "That's all": what was said is sent, and nothing more is listened
@@ -673,7 +679,14 @@ export const useQuickAddModel = ({
 
   /** The finger (or mouse button) on the microphone: when it went down, and whether that started listening. */
   const down = useRef<{
+    /** Its click came while it was down: a tap. */
+    clicked: boolean;
     readonly listened: boolean;
+    readonly timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  /** A release waiting for its click (`micUp` → `wait`): what the tap does, and when it gives up. */
+  const awaitingClick = useRef<{
+    readonly tap: () => void;
     readonly timer: ReturnType<typeof setTimeout>;
   } | null>(null);
   /** When the microphone was last let go of: the click that follows a press is not another. */
@@ -720,7 +733,11 @@ export const useQuickAddModel = ({
       setError(null);
       switchHandsFree(true);
     }
-    down.current = { listened, timer: setTimeout(() => holdRefFn.current(), HOLD_MS) };
+    down.current = {
+      clicked: false,
+      listened,
+      timer: setTimeout(() => holdRefFn.current(), HOLD_MS),
+    };
   };
 
   /** The microphone let go of (`micUp`): a hold sends, a tap is a press. */
@@ -735,7 +752,29 @@ export const useQuickAddModel = ({
     down.current = null;
     const held = holdingRef.current;
     stopHolding();
-    switch (micUp({ handsFree, held, listened: was.listened, voice })) {
+    const release = (clicked: boolean) =>
+      micUp({ clicked, handsFree, held, listened: was.listened, voice });
+    const action = release(was.clicked);
+    if (action === 'wait') {
+      awaitingClick.current = {
+        tap: () => {
+          act(release(true));
+        },
+        timer: setTimeout(() => {
+          awaitingClick.current = null;
+          if (tapNeverCame({ listened: was.listened }) === 'end') {
+            endRef.current();
+          }
+        }, CLICK_AFTER_UP_MS),
+      };
+      return;
+    }
+    act(action);
+  };
+
+  /** What a release does (`micUp`), once it is known to be a tap or a hold. */
+  const act = (action: 'end' | 'keep' | 'listen' | 'send' | 'wait') => {
+    switch (action) {
       case 'send': {
         send();
         return;
@@ -750,16 +789,35 @@ export const useQuickAddModel = ({
         return;
       }
       case 'keep':
+      case 'wait':
     }
   };
 
   /** The microphone's click: after a press it handled, nothing more; from the keyboard, a press. */
   const toggleVoice = () => {
-    if (
-      micClick({ pressing: down.current !== null, sinceUpMs: Date.now() - lastUp.current }) ===
-      'press'
+    const waiting = awaitingClick.current;
+    switch (
+      micClick({
+        pressing: down.current !== null,
+        sinceUpMs: Date.now() - lastUp.current,
+        waiting: waiting !== null,
+      })
     ) {
-      press();
+      case 'mark': {
+        down.current!.clicked = true;
+        return;
+      }
+      case 'confirm': {
+        clearTimeout(waiting!.timer);
+        awaitingClick.current = null;
+        waiting!.tap();
+        return;
+      }
+      case 'press': {
+        press();
+        return;
+      }
+      case 'ignore':
     }
   };
 
@@ -834,6 +892,16 @@ export const useQuickAddModel = ({
       ear.current?.stop();
       if (down.current) {
         clearTimeout(down.current.timer);
+      }
+      if (awaitingClick.current) {
+        clearTimeout(awaitingClick.current.timer);
+      }
+      // A phrase still on its way belongs to an editor that is gone: its
+      // answer lands nowhere, and nothing it would cut or open is its own.
+      open.current = false;
+      if (flight.current) {
+        flight.current.dropped = true;
+        flight.current = null;
       }
       void speech.cancel();
     },

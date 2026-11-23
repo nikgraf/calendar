@@ -34,26 +34,43 @@ export const micDown = ({ handsFree, voice }: VoiceLoopState): 'listen' | 'none'
 
 /**
  * What lifting it does. `held`: it was down for `HOLD_MS` or more (hold to
- * talk); `listened`: putting it down started the listening (`micDown`).
+ * talk); `listened`: putting it down started the listening (`micDown`);
+ * `clicked`: the press was a tap (its click came). A touch that never
+ * became a tap (a swipe of the sheet that began on it, a finger slid off)
+ * lifts without one.
  * - `send` — held, and listening: the phrase is sent, through any pause in it.
  * - `end` — held, before the microphone opened: nothing was recorded.
+ * - `wait` — not held, no click yet: the click may still follow the
+ *   release (`micClick`); without one, nothing was pressed (`tapNeverCame`).
  * - `keep` — a tap that started hands-free: it listens on.
  * - otherwise a tap, as `micPress`.
  */
 export const micUp = ({
+  clicked,
   handsFree,
   held,
   listened,
   voice,
 }: VoiceLoopState & {
+  readonly clicked: boolean;
   readonly held: boolean;
   readonly listened: boolean;
-}): 'end' | 'keep' | 'listen' | 'send' => {
+}): 'end' | 'keep' | 'listen' | 'send' | 'wait' => {
   if (held) {
     return voice === 'recording' ? 'send' : 'end';
   }
+  if (!clicked) {
+    return 'wait';
+  }
   return listened ? 'keep' : micPress({ handsFree, voice });
 };
+
+/**
+ * A release whose click never came was no press: the listening it
+ * started as the finger went down ends; otherwise nothing happens.
+ */
+export const tapNeverCame = ({ listened }: { readonly listened: boolean }): 'end' | 'none' =>
+  listened ? 'end' : 'none';
 
 /**
  * What "that's all" (a tap while listening, a hold let go of) does with
@@ -79,18 +96,30 @@ export const sendPress = ({
 export const CLICK_AFTER_UP_MS = 600;
 
 /**
- * Whether the microphone's click is a press of its own (`micPress`): not
- * while a press is down — on iOS a short tap sends the click before the
- * release — nor right after one was let go of (`micUp` handled it). From
- * the keyboard or VoiceOver it comes alone, and is.
+ * What the microphone's click is:
+ * - `mark` — a press is down: it is a tap (on iOS a tap shorter than
+ *   130 ms clicks before it lifts); the release acts on it.
+ * - `confirm` — a release waits for it (`micUp` → `wait`): it acts now.
+ * - `ignore` — the press it belongs to was handled already.
+ * - `press` — from the keyboard or VoiceOver, alone: a press of its own.
  */
 export const micClick = ({
   pressing,
   sinceUpMs,
+  waiting,
 }: {
   readonly pressing: boolean;
   readonly sinceUpMs: number;
-}): 'ignore' | 'press' => (pressing || sinceUpMs < CLICK_AFTER_UP_MS ? 'ignore' : 'press');
+  readonly waiting: boolean;
+}): 'confirm' | 'ignore' | 'mark' | 'press' => {
+  if (pressing) {
+    return 'mark';
+  }
+  if (waiting) {
+    return 'confirm';
+  }
+  return sinceUpMs < CLICK_AFTER_UP_MS ? 'ignore' : 'press';
+};
 
 /** Words per recogniser: what each has written, counted as `phraseWords` counts. */
 export type WordCounts = Readonly<Record<WordsSource, number>>;

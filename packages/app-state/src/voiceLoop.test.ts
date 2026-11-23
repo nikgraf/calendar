@@ -11,6 +11,7 @@ import {
   phraseWords,
   sendPress,
   shouldListen,
+  tapNeverCame,
   wordCount,
 } from './voiceLoop.ts';
 
@@ -96,33 +97,53 @@ describe('micDown', () => {
 
 describe('micUp', () => {
   it('a hold sends what was said, however long it paused', () => {
-    expect(micUp({ handsFree: true, held: true, listened: true, voice: 'recording' })).toBe('send');
+    expect(
+      micUp({ clicked: false, handsFree: true, held: true, listened: true, voice: 'recording' }),
+    ).toBe('send');
     // Held while hands-free was already on: the hold sends too.
-    expect(micUp({ handsFree: true, held: true, listened: false, voice: 'recording' })).toBe(
-      'send',
-    );
+    expect(
+      micUp({ clicked: false, handsFree: true, held: true, listened: false, voice: 'recording' }),
+    ).toBe('send');
   });
 
   it('a hold let go of before the microphone opened ends it: nothing was recorded', () => {
-    expect(micUp({ handsFree: true, held: true, listened: true, voice: 'preparing' })).toBe('end');
+    expect(
+      micUp({ clicked: false, handsFree: true, held: true, listened: true, voice: 'preparing' }),
+    ).toBe('end');
   });
 
   it('a tap that started listening keeps listening: hands-free', () => {
-    expect(micUp({ handsFree: true, held: false, listened: true, voice: 'preparing' })).toBe(
-      'keep',
-    );
-    expect(micUp({ handsFree: true, held: false, listened: true, voice: 'recording' })).toBe(
-      'keep',
-    );
+    expect(
+      micUp({ clicked: true, handsFree: true, held: false, listened: true, voice: 'preparing' }),
+    ).toBe('keep');
+    expect(
+      micUp({ clicked: true, handsFree: true, held: false, listened: true, voice: 'recording' }),
+    ).toBe('keep');
   });
 
   it('any other tap is a press', () => {
-    expect(micUp({ handsFree: true, held: false, listened: false, voice: 'recording' })).toBe(
-      'send',
-    );
-    expect(micUp({ handsFree: true, held: false, listened: false, voice: 'preparing' })).toBe(
-      'end',
-    );
+    expect(
+      micUp({ clicked: true, handsFree: true, held: false, listened: false, voice: 'recording' }),
+    ).toBe('send');
+    expect(
+      micUp({ clicked: true, handsFree: true, held: false, listened: false, voice: 'preparing' }),
+    ).toBe('end');
+  });
+
+  it('a release without its click waits for it: a swipe that began on the microphone is no tap', () => {
+    expect(
+      micUp({ clicked: false, handsFree: true, held: false, listened: true, voice: 'recording' }),
+    ).toBe('wait');
+    expect(
+      micUp({ clicked: false, handsFree: true, held: false, listened: false, voice: 'recording' }),
+    ).toBe('wait');
+  });
+});
+
+describe('tapNeverCame', () => {
+  it('undoes the listening the touch started, and nothing else', () => {
+    expect(tapNeverCame({ listened: true })).toBe('end');
+    expect(tapNeverCame({ listened: false })).toBe('none');
   });
 });
 
@@ -184,16 +205,24 @@ describe('sendPress', () => {
 });
 
 describe('micClick', () => {
+  const never = Number.POSITIVE_INFINITY;
+
   it('is a press from the keyboard or VoiceOver: no press down, none let go of lately', () => {
-    expect(micClick({ pressing: false, sinceUpMs: Number.POSITIVE_INFINITY })).toBe('press');
-    expect(micClick({ pressing: false, sinceUpMs: CLICK_AFTER_UP_MS })).toBe('press');
+    expect(micClick({ pressing: false, sinceUpMs: never, waiting: false })).toBe('press');
+    expect(micClick({ pressing: false, sinceUpMs: CLICK_AFTER_UP_MS, waiting: false })).toBe(
+      'press',
+    );
   });
 
-  it('belongs to the press while it is down: an iOS tap under 130 ms clicks before it lifts', () => {
-    expect(micClick({ pressing: true, sinceUpMs: Number.POSITIVE_INFINITY })).toBe('ignore');
+  it('marks the press as a tap while it is down: an iOS tap under 130 ms clicks before it lifts', () => {
+    expect(micClick({ pressing: true, sinceUpMs: never, waiting: false })).toBe('mark');
   });
 
-  it('belongs to the press just let go of: the release handled it', () => {
-    expect(micClick({ pressing: false, sinceUpMs: 5 })).toBe('ignore');
+  it('confirms a release waiting for it', () => {
+    expect(micClick({ pressing: false, sinceUpMs: 5, waiting: true })).toBe('confirm');
+  });
+
+  it('belongs to a press already handled', () => {
+    expect(micClick({ pressing: false, sinceUpMs: 5, waiting: false })).toBe('ignore');
   });
 });
