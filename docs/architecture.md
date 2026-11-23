@@ -154,7 +154,7 @@ alternatives kept, either with the microphone left open (`read`, which
 answers a `mark` where its audio ended; `cut` with that mark lets go of
 the phrase once it landed, and the next reading begins after it) or as
 it closes (`finish`, everything since the last cut). Before a phrase's
-first words the session keeps only 3 s of the room, so a long wait is
+first words the session keeps only 8 s of the room, so a long wait is
 not read again; past 90 s the oldest audio goes. Each reading: each segment of the reading comes
 with the readings the recogniser weighed for it (the first is the
 segment itself), and the dictated phrase goes to the thread with them

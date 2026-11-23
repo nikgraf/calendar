@@ -142,10 +142,27 @@ export const phraseWords = (text: string, landed: number): string =>
  * its pause ended): a new word of the quick recogniser, or the accurate
  * one going past what either had heard by then. The accurate recogniser
  * writes in bursts a second behind the quick one: a word of the phrase
- * itself that it writes after the pause is not a new one.
+ * itself that it writes after the pause is not a new one. Each count is
+ * the phrase's own, after the words of the phrases that `landed` before:
+ * the two recognisers may have written those as different numbers of
+ * words, and only within one phrase are their counts comparable.
  */
-export const grewSince = (atPause: WordCounts, now: WordCounts): boolean =>
-  now.quick > atPause.quick || now.accurate > Math.max(atPause.accurate, atPause.quick);
+export const grewSince = ({
+  atPause,
+  landed,
+  now,
+}: {
+  readonly atPause: WordCounts;
+  readonly landed: WordCounts;
+  readonly now: WordCounts;
+}): boolean => {
+  const before = {
+    accurate: atPause.accurate - landed.accurate,
+    quick: atPause.quick - landed.quick,
+  };
+  const after = { accurate: now.accurate - landed.accurate, quick: now.quick - landed.quick };
+  return after.quick > before.quick || after.accurate > Math.max(before.accurate, before.quick);
+};
 
 /**
  * Hands-free opens the microphone once nothing else is under way: on the

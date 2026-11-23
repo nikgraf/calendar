@@ -478,7 +478,7 @@ export const useQuickAddModel = ({
     texts.current[source] = text;
     const was = flight.current;
     if (!ear.current && was !== null) {
-      if (grewSince(was.atPause, counts())) {
+      if (grewSince({ atPause: was.atPause, landed: landed.current, now: counts() })) {
         // Said before the phrase landed: it is part of it.
         dropFlight();
         openEar({ primed: true });

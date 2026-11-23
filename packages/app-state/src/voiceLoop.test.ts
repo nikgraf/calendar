@@ -165,27 +165,41 @@ describe('phraseWords', () => {
 });
 
 describe('grewSince', () => {
+  const none = { accurate: 0, quick: 0 };
   const atPause = { accurate: 3, quick: 4 };
 
   it('a new word of the quick recogniser is the phrase going on', () => {
-    expect(grewSince(atPause, { accurate: 3, quick: 5 })).toBe(true);
+    expect(grewSince({ atPause, landed: none, now: { accurate: 3, quick: 5 } })).toBe(true);
   });
 
   it('the accurate one catching up with the quick one after the pause is not', () => {
-    expect(grewSince(atPause, { accurate: 4, quick: 4 })).toBe(false);
+    expect(grewSince({ atPause, landed: none, now: { accurate: 4, quick: 4 } })).toBe(false);
   });
 
   it('the accurate one going past both is', () => {
-    expect(grewSince(atPause, { accurate: 5, quick: 4 })).toBe(true);
+    expect(grewSince({ atPause, landed: none, now: { accurate: 5, quick: 4 } })).toBe(true);
   });
 
   it('without the quick one, any word of the accurate one is', () => {
-    expect(grewSince({ accurate: 3, quick: 0 }, { accurate: 4, quick: 0 })).toBe(true);
-    expect(grewSince({ accurate: 3, quick: 0 }, { accurate: 3, quick: 0 })).toBe(false);
+    const alone = { accurate: 3, quick: 0 };
+    expect(grewSince({ atPause: alone, landed: none, now: { accurate: 4, quick: 0 } })).toBe(true);
+    expect(grewSince({ atPause: alone, landed: none, now: alone })).toBe(false);
   });
 
   it('a punctuation pass or a revision that drops a word is not', () => {
-    expect(grewSince(atPause, { accurate: 2, quick: 4 })).toBe(false);
+    expect(grewSince({ atPause, landed: none, now: { accurate: 2, quick: 4 } })).toBe(false);
+  });
+
+  it('counts the phrase’s own words: the recognisers wrote the earlier phrases differently', () => {
+    // Earlier phrases landed as 8 quick words and 6 accurate ones; this one
+    // is two words in both, and the accurate recogniser hears a third.
+    const landed = { accurate: 6, quick: 8 };
+    expect(
+      grewSince({ atPause: { accurate: 8, quick: 10 }, landed, now: { accurate: 9, quick: 10 } }),
+    ).toBe(true);
+    expect(
+      grewSince({ atPause: { accurate: 8, quick: 10 }, landed, now: { accurate: 8, quick: 10 } }),
+    ).toBe(false);
   });
 });
 

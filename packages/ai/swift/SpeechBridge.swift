@@ -166,9 +166,12 @@ final class SpeechListening: @unchecked Sendable {
   private static let maxSeconds = 90.0
   /// Before a phrase's first word, only this much of the room is kept: a
   /// hands-free listening that waited half a minute for a word must not
-  /// read the half minute again. Words reach the recognisers' results up
-  /// to a second or two after they are said.
-  private static let leadSeconds = 3.0
+  /// read the half minute again. The first words are seen when a
+  /// recogniser writes them, a second or so after they were said and
+  /// later on a busy device: the lead is generous, since a phrase's start
+  /// cut off is a phrase lost, and reading a few seconds of room costs a
+  /// tenth of a second.
+  private static let leadSeconds = 8.0
 
   /// The recognisers listening: "accurate", and "quick" when its assets are here.
   let sources: [String]
@@ -307,15 +310,13 @@ final class SpeechListening: @unchecked Sendable {
     }
   }
 
-  /// Reads the phrase so far once more, whole, and in the other language
-  /// beside it, while listening goes on; `mark` is where its audio ended.
-  /// No segments when nothing was said.
-  func read() async throws -> (reading: SpeechReading, mark: AVAudioFramePosition) {
-    let (audio, mark) = lock.withLock { () -> ([AVAudioPCMBuffer], AVAudioFramePosition) in
+  /// The phrase so far, to read while listening goes on (`readAll`):
+  /// its audio, and `mark`, where it ended. Its audio stays until `cut`.
+  func snapshot() -> (audio: KeptAudio, mark: AVAudioFramePosition) {
+    lock.withLock {
       reading = true
-      return (kept.map(\.buffer), total)
+      return (KeptAudio(buffers: kept.map(\.buffer)), total)
     }
-    return (try await readAll(audio), mark)
   }
 
   /// The phrase read up to `mark` landed: its audio goes, and the next
@@ -341,7 +342,9 @@ final class SpeechListening: @unchecked Sendable {
     return try await readAll(audio)
   }
 
-  private func readAll(_ audio: [AVAudioPCMBuffer]) async throws -> SpeechReading {
+  /// Reads audio once more, whole, and in the other language beside it.
+  /// No segments when nothing was said.
+  func readAll(_ audio: [AVAudioPCMBuffer]) async throws -> SpeechReading {
     guard !audio.isEmpty else { return SpeechReading(other: nil, segments: []) }
     // Both passes only read the audio, at the same time.
     let kept = KeptAudio(buffers: audio)
@@ -459,7 +462,7 @@ private final class WordsSeen: @unchecked Sendable {
 }
 
 /// A finished phrase's audio, no longer written to: safe to read from two tasks.
-private struct KeptAudio: @unchecked Sendable {
+struct KeptAudio: @unchecked Sendable {
   let buffers: [AVAudioPCMBuffer]
 }
 
@@ -529,13 +532,24 @@ final class SpeechSessions: @unchecked Sendable {
     listening?.append(buffer)
   }
 
-  /// Queues a reading of the phrase so far, the microphone left open; nil
-  /// when `id` is not the listening (dropped, or replaced).
+  /// A reading of the phrase so far, the microphone left open; nil when
+  /// `id` is not the listening (dropped, or replaced). Only taking its
+  /// audio is queued with the other steps: the reading runs beside them,
+  /// so a cancel or a finish (and the microphone closing with it) never
+  /// waits for it.
   func read(id: Int) -> Task<(reading: SpeechReading, mark: AVAudioFramePosition)?, Error> {
-    serial {
-      guard let listening = self.lock.withLock({ self.current?.id == id ? self.current?.listening : nil })
+    let taken = serial { () -> (SpeechListening, KeptAudio, AVAudioFramePosition)? in
+      guard
+        let listening = self.lock.withLock({
+          self.current?.id == id ? self.current?.listening : nil
+        })
       else { return nil }
-      return try await listening.read()
+      let (audio, mark) = listening.snapshot()
+      return (listening, audio, mark)
+    }
+    return Task {
+      guard let (listening, audio, mark) = try await taken.value else { return nil }
+      return (try await listening.readAll(audio.buffers), mark)
     }
   }
 
