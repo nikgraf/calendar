@@ -632,9 +632,16 @@ export const useQuickAddModel = ({
   /** The press was handled by down and up: the click that follows them is not another. */
   const pressHandled = useRef(false);
 
+  /**
+   * The hold, or the press under way, is over before the microphone is
+   * let go of (sent, or dictation ended): letting go of it, and its click,
+   * then do nothing more.
+   */
   function stopHolding() {
     if (down.current) {
       clearTimeout(down.current.timer);
+      down.current = null;
+      pressHandled.current = true;
     }
     holdingRef.current = false;
     setHolding(false);
@@ -681,8 +688,7 @@ export const useQuickAddModel = ({
     down.current = null;
     pressHandled.current = true;
     const held = holdingRef.current;
-    holdingRef.current = false;
-    setHolding(false);
+    stopHolding();
     switch (micUp({ handsFree, held, listened: was.listened, voice })) {
       case 'send': {
         send();

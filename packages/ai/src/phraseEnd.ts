@@ -165,7 +165,7 @@ export const PHRASE_CHECK_MS = 50;
 export interface PhraseListener {
   readonly heard: () => boolean;
   readonly listensWith: (sources: ReadonlyArray<WordsSource>) => void;
-  /** No more asking: the recording was sent, dropped or ended by hand. */
+  /** No more asking: the phrase was sent, dropped or ended by hand, or the microphone is held. */
   readonly stop: () => void;
   readonly text: () => string;
   /** A recogniser's words so far, as they arrive. 'start' at the first word. */

@@ -764,7 +764,8 @@ function AssistantInput({
             onClick={toggleVoice}
             onPointerCancel={micUp}
             onPointerDown={(pointer) => {
-              if (pointer.button !== 0) {
+              // A disabled button still hears the pointer go down.
+              if (pointer.button !== 0 || pointer.currentTarget.disabled) {
                 return;
               }
               // Let go of anywhere, the button hears it.
