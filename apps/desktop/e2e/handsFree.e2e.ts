@@ -189,14 +189,14 @@ describe('Hands-free dictation', () => {
     await settings.evaluate(($, select: string) => $.setValue(select, 'en-GB'), language);
     // Listening in English, Automatic's second is German, and English leaves its list.
     await settings.waitUntil(
-      ($, select: string) => $.text(`${select} option`) === 'Automatic (German (Austria))',
+      ($, select: string) => $.text(`${select} option`) === 'Automatic — German (Austria)',
       second,
     );
     expect(await secondChoices()).toEqual(['auto', 'off', 'fr-FR', 'de-AT', 'de-DE']);
     await settings.evaluate(($, select: string) => $.setValue(select, 'de-DE'), language);
     // Listening in German, the other way round.
     await settings.waitUntil(
-      ($, select: string) => $.text(`${select} option`) === 'Automatic (English (United States))',
+      ($, select: string) => $.text(`${select} option`) === 'Automatic — English (United States)',
       second,
     );
     expect(await secondChoices()).toEqual(['auto', 'off', 'en-GB', 'en-US', 'fr-FR']);

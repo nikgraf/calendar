@@ -91,7 +91,7 @@ export function DictationSection() {
             onChange={(change) => dictationLanguage.set(change.target.value)}
             value={chosen}
           >
-            <option value={AUTOMATIC}>Automatic ({languageName(device)})</option>
+            <option value={AUTOMATIC}>Automatic — {languageName(device)}</option>
             {languageOptions(available, chosen, languageName).map((option) => (
               <option key={option.id} value={option.id}>
                 {option.name}
@@ -108,7 +108,7 @@ export function DictationSection() {
             value={chosenSecond}
           >
             <option value={AUTOMATIC}>
-              Automatic ({automatic === undefined ? 'none on this Mac' : languageName(automatic)})
+              Automatic — {automatic === undefined ? 'none on this Mac' : languageName(automatic)}
             </option>
             <option value={OFF}>Off</option>
             {languageOptions(available, chosenSecond, languageName, listened).map((option) => (
