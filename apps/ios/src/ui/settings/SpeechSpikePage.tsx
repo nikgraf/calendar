@@ -125,6 +125,7 @@ const makeStore = (): SpeechSpikeStore => {
       made.interrupt();
     }
   });
+  AppState.addEventListener('memoryWarning', () => made.memoryWarning());
   return made;
 };
 
@@ -155,7 +156,9 @@ function GroupScores({ scores }: { scores: SpeechSpikeReport['scores'] }) {
           <View key={group} style={styles.row}>
             <Text style={styles.heard}>{title}</Text>
             <Text selectable style={styles.detail}>
-              {`${percent(score.wordErrorRate)} words wrong · places ${ratio(score.places)} · full names ${ratio(score.people)}`}
+              {score.wordErrorRate === undefined
+                ? 'Not run'
+                : `${percent(score.wordErrorRate)} words wrong · places ${ratio(score.places)} · full names ${ratio(score.people)}`}
             </Text>
           </View>
         );
@@ -274,10 +277,20 @@ export function SpeechSpikePage() {
           testID="speech-spike-result"
         >
           <GroupScores scores={report.scores} />
+          {report.memoryWarnings > 0 ? (
+            <Row
+              title="Memory Warnings"
+              value={`${String(report.memoryWarnings)} (the Assistant’s model may have gone)`}
+            />
+          ) : null}
           <Row
             testID="speech-spike-timing"
             title="Per Recording"
-            value={`${String(Math.round(report.timing.medianMs))} ms median · ${String(Math.round(report.timing.p90Ms))} ms p90`}
+            value={
+              report.rows.length === 0
+                ? '–'
+                : `${String(Math.round(report.timing.medianMs))} ms median · ${String(Math.round(report.timing.p90Ms))} ms p90`
+            }
           />
           <Row title="Time to Load" value={`${(report.loadMs / 1000).toFixed(1)} s`} />
           <Row

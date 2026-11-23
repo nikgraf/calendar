@@ -144,6 +144,44 @@ describe('createSpeechSpikeStore', () => {
     const { report } = store.getState();
     expect(report?.cut).toBe('The app left the screen.');
     expect(report?.rows.map((row) => row.id)).toEqual(['place-en-07']);
+    // The turns never ran: no score, not a perfect one.
+    expect(report?.scores.turns).toEqual({
+      clips: 0,
+      people: { named: 0, right: 0 },
+      places: { named: 0, right: 0 },
+      wordErrorRate: undefined,
+    });
+  });
+
+  it('says the app left the screen where that aborted a clip’s download', async () => {
+    const { store } = setup({
+      files: {
+        fetch: async (_clip, signal) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new Error('The operation was aborted.')));
+            store.interrupt();
+          }),
+        share: async () => {},
+      },
+    });
+    await store.run();
+    expect(store.getState().notice).toBe('The app left the screen.');
+    expect(store.getState().step).toEqual({ kind: 'idle' });
+  });
+
+  it('counts the memory warnings iOS sent while it ran', async () => {
+    const { store } = setup();
+    const warned = { done: false };
+    const unsubscribe = store.subscribe(() => {
+      if (store.getState().step.kind === 'running' && !warned.done) {
+        warned.done = true;
+        store.memoryWarning();
+      }
+    });
+    store.memoryWarning();
+    await store.run();
+    unsubscribe();
+    expect(store.getState().report?.memoryWarnings).toBe(1);
   });
 
   it('says why where the Assistant’s model cannot load, and lets Parakeet go anyway', async () => {

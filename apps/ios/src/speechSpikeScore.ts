@@ -114,9 +114,13 @@ export const writtenRight = (text: string, phrase: string): boolean => {
   const wanted = wordsOf(phrase).map(fold);
   // "St. Pölten" may be written "Sankt Pölten".
   const also = wanted[0] === 'st' ? [['sankt', ...wanted.slice(1)]] : [];
-  return [wanted, ...also].some((target) =>
-    words.some((_, at) => target.every((word, k) => words[at + k] === word)),
-  );
+  // A name's last word may carry a possessive s ("Emily Carter's", written "Carters").
+  const matches = (target: ReadonlyArray<string>, at: number) =>
+    target.every((word, k) => {
+      const heard = words[at + k];
+      return heard === word || (k === target.length - 1 && heard === `${word}s`);
+    });
+  return [wanted, ...also].some((target) => words.some((_, at) => matches(target, at)));
 };
 
 /** One clip's score. */
@@ -145,7 +149,8 @@ export interface GroupScore {
   readonly clips: number;
   readonly people: { readonly named: number; readonly right: number };
   readonly places: { readonly named: number; readonly right: number };
-  readonly wordErrorRate: number;
+  /** Undefined where no clip of the group ran (a run cut short). */
+  readonly wordErrorRate: number | undefined;
 }
 
 export const scoreGroup = (scores: ReadonlyArray<ClipScore>): GroupScore => {
@@ -157,6 +162,6 @@ export const scoreGroup = (scores: ReadonlyArray<ClipScore>): GroupScore => {
     clips: scores.length,
     people: { named: people.length, right: people.filter(Boolean).length },
     places: { named: places.length, right: places.filter(Boolean).length },
-    wordErrorRate: words === 0 ? 0 : edits / words,
+    wordErrorRate: words === 0 ? undefined : edits / words,
   };
 };

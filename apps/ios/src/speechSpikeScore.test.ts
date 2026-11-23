@@ -52,6 +52,23 @@ describe('writtenRight', () => {
     expect(writtenRight('the Naschmarktstand', 'Naschmarkt')).toBe(false);
   });
 
+  it('takes a name said with a possessive s', () => {
+    expect(writtenRight("Dinner at Emily Carter's, Währinger Straße 46", 'Emily Carter')).toBe(
+      true,
+    );
+    expect(writtenRight('Dinner with Emily Carters Werner Straße', 'Emily Carter')).toBe(true);
+    expect(writtenRight('Dinner with Emily Cartersen', 'Emily Carter')).toBe(false);
+  });
+
+  it('scores every clip as said as right', () => {
+    for (const each of SPIKE_CLIPS) {
+      const score = scoreClip(each, each.said);
+      expect(score.edits, each.id).toBe(0);
+      expect(score.people.every(Boolean), each.id).toBe(true);
+      expect(score.place ?? true, each.id).toBe(true);
+    }
+  });
+
   it('takes Sankt for St. and a number said as a word', () => {
     expect(writtenRight('Besprechung in Sankt Pölten', 'St. Pölten')).toBe(true);
     expect(writtenRight('Arzt in der Wollzeile fünf', 'Wollzeile 5')).toBe(true);

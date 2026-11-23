@@ -83,6 +83,12 @@ export interface SpeechSpikeReport {
   readonly cut?: string;
   readonly loadMs: number;
   readonly memory: RunMemory;
+  /**
+   * The times iOS warned of memory during the run. The Assistant's model
+   * lets its context go on a warning when no question is under way, so a
+   * run with any measured "beside" only up to the first.
+   */
+  readonly memoryWarnings: number;
   readonly options: SpeechSpikeOptions;
   readonly platform: string;
   readonly rows: ReadonlyArray<SpeechSpikeRow>;
@@ -159,6 +165,7 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
   const listeners = new Set<() => void>();
   let cut: string | undefined;
   let fetching: AbortController | undefined;
+  let warnings = 0;
 
   let state: SpeechSpikeState = {
     memory: undefined,
@@ -181,8 +188,15 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
     const uris: Array<string> = [];
     for (const clip of deps.clips) {
       set({ step: { done: uris.length, kind: 'fetching', total: deps.clips.length } });
-      // One at a time: a phone may be on mobile data, and the count shows it.
-      uris.push(await files.fetch(clip, fetching.signal));
+      try {
+        // One at a time: a phone may be on mobile data, and the count shows it.
+        uris.push(await files.fetch(clip, fetching.signal));
+      } catch (error) {
+        // Cut while it fetched: the abort is the cut's, and the cut says why.
+        if (cut === undefined) {
+          throw error;
+        }
+      }
       if (cut !== undefined) {
         return undefined;
       }
@@ -227,6 +241,7 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
     }
     const { options } = state;
     cut = undefined;
+    warnings = 0;
     set({ notice: undefined, report: undefined });
     deps.keepAwake(true);
     const watch = memoryWatch(deps.memory);
@@ -268,6 +283,7 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
             peak,
             physical: deps.memory()?.physical,
           },
+          memoryWarnings: warnings,
           options,
           platform: deps.platform,
           rows,
@@ -295,6 +311,12 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
       if (state.step.kind !== 'idle') {
         cut = 'The app left the screen.';
         fetching?.abort();
+      }
+    },
+    /** iOS warned of memory: counted while a run is under way. */
+    memoryWarning: (): void => {
+      if (state.step.kind !== 'idle') {
+        warnings += 1;
       }
     },
     readMemory: (): void => set({ memory: deps.memory() }),
