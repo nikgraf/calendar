@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   CLICK_AFTER_UP_MS,
   grewSince,
+  landedWords,
   micClick,
   maySay,
   micDown,
@@ -238,5 +239,18 @@ describe('micClick', () => {
 
   it('belongs to a press already handled', () => {
     expect(micClick({ pressing: false, sinceUpMs: 5, waiting: false })).toBe('ignore');
+  });
+});
+
+describe('landedWords', () => {
+  const atPause = { accurate: 40, quick: 42 };
+  const now = { accurate: 45, quick: 47 };
+
+  it('a phrase that ended on its pause takes every word written by the time it landed', () => {
+    expect(landedWords({ atPause, forced: false, now })).toEqual(now);
+  });
+
+  it('a phrase the cap cut keeps only its own: the words after it begin the next phrase', () => {
+    expect(landedWords({ atPause, forced: true, now })).toEqual(atPause);
   });
 });

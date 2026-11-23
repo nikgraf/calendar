@@ -121,6 +121,23 @@ export const micClick = ({
   return sinceUpMs < CLICK_AFTER_UP_MS ? 'ignore' : 'press';
 };
 
+/**
+ * Where the next phrase's words begin once a phrase landed: after all
+ * words written by then, words a recogniser wrote late included, or, for
+ * a phrase the 60 s cap cut (`forced`), after the words it was cut at —
+ * words said past the cap never join it (it would never end), and they
+ * are the next phrase.
+ */
+export const landedWords = ({
+  atPause,
+  forced,
+  now,
+}: {
+  readonly atPause: WordCounts;
+  readonly forced: boolean;
+  readonly now: WordCounts;
+}): WordCounts => (forced ? atPause : now);
+
 /** Words per recogniser: what each has written, counted as `phraseWords` counts. */
 export type WordCounts = Readonly<Record<WordsSource, number>>;
 

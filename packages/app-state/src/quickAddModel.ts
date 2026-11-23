@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   grewSince,
   HOLD_MS,
+  landedWords,
   maySay,
   CLICK_AFTER_UP_MS,
   micClick,
@@ -39,6 +40,8 @@ interface Flight {
   readonly atPause: WordCounts;
   /** Let go of: words joined it, or a press read it again; the reading that replaced it owns everything. */
   dropped: boolean;
+  /** Cut by the 60 s cap: words after it are the next phrase, never part of it (`landedWords`). */
+  readonly forced: boolean;
   /** Where its audio ended, once read: cut there once it landed. */
   mark?: number | undefined;
   /** Its listening ended before it landed: it lands, and nothing is listened for after it. */
@@ -335,9 +338,10 @@ export const useQuickAddModel = ({
     if (own.mark !== undefined) {
       speech.cut(own.mark);
     }
-    landed.current = counts();
+    landed.current = landedWords({ atPause: own.atPause, forced: own.forced, now: counts() });
     if (open.current && !stopping.current) {
-      openEar();
+      // After a cut phrase, what was said since is the next one's start.
+      openEar({ primed: own.forced });
     }
   };
 
@@ -375,14 +379,14 @@ export const useQuickAddModel = ({
    * microphone left open. What is said before it lands joins it; what
    * comes after is the next phrase.
    */
-  const onPause = async () => {
+  const onPause = async (forced = false) => {
     if (holdingRef.current || stopping.current) {
       return;
     }
     ear.current?.stop();
     ear.current = null;
     setHeard(false);
-    const own: Flight = { atPause: counts(), dropped: false, orphan: false, sent: false };
+    const own: Flight = { atPause: counts(), dropped: false, forced, orphan: false, sent: false };
     flight.current = own;
     try {
       const read = await speech.read();
@@ -478,7 +482,10 @@ export const useQuickAddModel = ({
     texts.current[source] = text;
     const was = flight.current;
     if (!ear.current && was !== null) {
-      if (grewSince({ atPause: was.atPause, landed: landed.current, now: counts() })) {
+      if (
+        !was.forced &&
+        grewSince({ atPause: was.atPause, landed: landed.current, now: counts() })
+      ) {
         // Said before the phrase landed: it is part of it.
         dropFlight();
         openEar({ primed: true });
@@ -864,7 +871,8 @@ export const useQuickAddModel = ({
         stopHolding();
         void stopRef.current();
       } else {
-        void pauseRef.current();
+        // Cut here for good: what follows is the next phrase.
+        void pauseRef.current(true);
       }
     }, MAX_RECORDING_MS);
     return () => {
