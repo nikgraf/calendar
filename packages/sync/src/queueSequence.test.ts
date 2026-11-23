@@ -181,10 +181,15 @@ const due = (day: number): string =>
 
 /** The fake the sequences run against; `cal-3` only for a scripted test that needs three. */
 const newFake = (
-  options: { readonly pageSize?: number; readonly thirdCalendar?: boolean } = {},
+  options: {
+    readonly pageSize?: number;
+    readonly taskPageSize?: number;
+    readonly thirdCalendar?: boolean;
+  } = {},
 ): FakeGoogle => {
   const google = new FakeGoogle({
     ...(options.pageSize === undefined ? {} : { pageSize: options.pageSize }),
+    ...(options.taskPageSize === undefined ? {} : { taskPageSize: options.taskPageSize }),
     calendars: [
       { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
       { accessRole: 'owner', id: 'cal-2', summary: 'Work' },
@@ -3561,6 +3566,46 @@ describe('pending-op queue: a held task and Google’s copy of it', () => {
         expect(yield* (yield* SqlClient)`SELECT id FROM tasks WHERE title = 'Milk'`).toEqual([
           { id: theirs[0]?.id },
         ]);
+      }),
+    );
+  });
+
+  it.effect('a pull decides nothing between two tasks alike on different pages', () => {
+    // Review (Codex): the create landed with its answer lost and the user
+    // deleted the to-do; another device made one just like it. Taken
+    // from the page it came in alone, that other one was the create's,
+    // and the delete behind the create removed it on Google.
+    const google = newFake({ taskPageSize: 1 });
+    lostThenRefused(google, (call) => call.method !== 'GET');
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const created = yield* mutations.createTask({
+          accountId: ACCOUNT_ID,
+          taskListId: 'list-1',
+          title: 'Milk',
+        });
+        yield* mutations.processPendingOps();
+        yield* mutations.deleteTask({
+          accountId: ACCOUNT_ID,
+          taskId: created.id,
+          taskListId: 'list-1',
+        });
+        google.insertTaskServerSide('list-1', {
+          id: 'their-milk',
+          status: 'needsAction',
+          title: 'Milk',
+          updated: new Date(google.now).toISOString(),
+        });
+        yield* (yield* SyncEngine).syncAll();
+        google.fault = undefined;
+        yield* drainAll(mutations);
+        // Neither is taken for the create's, so the delete removes neither:
+        // which of the two the create made is not for the app to guess.
+        expect(google.taskOf('list-1', 'their-milk')?.deleted).toBeUndefined();
+        expect(google.tasksIn('list-1').filter((task) => task.title === 'Milk')).toHaveLength(2);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
       }),
     );
   });

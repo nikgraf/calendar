@@ -355,6 +355,16 @@ const sameAsSent = (op: PendingOp, candidate: GcalTask): boolean =>
   (candidate.notes ?? undefined) === op.taskNotes &&
   (candidate.parent ?? undefined) === op.taskParent;
 
+/** Open as an insert makes it, and changed within two minutes of the create's stamp. */
+const madeInWindow = (dispatchedAt: number, match: GcalTask): boolean => {
+  const updated = match.updated === undefined ? Number.NaN : Date.parse(match.updated);
+  return (
+    match.status === 'needsAction' &&
+    updated >= dispatchedAt - 60_000 &&
+    updated <= dispatchedAt + 120_000
+  );
+};
+
 export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const {
     accountRepo,
@@ -2714,11 +2724,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    */
   const madeBy = (op: PendingOp, dispatchedAt: number, taskListId: string, match: GcalTask) =>
     Effect.gen(function* () {
-      const updated = match.updated === undefined ? Number.NaN : Date.parse(match.updated);
-      if (
-        match.status !== 'needsAction' ||
-        !(updated >= dispatchedAt - 60_000 && updated <= dispatchedAt + 120_000)
-      ) {
+      if (!madeInWindow(dispatchedAt, match)) {
         return false;
       }
       return (yield* taskRepo.get(op.accountId, taskListId, match.id)) === undefined;
@@ -2733,6 +2739,27 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       pendingOpRepo.listForEvent({ accountId, calendarId: taskListId, eventId: taskId }),
       (queued) => queued.filter((other) => other.kind === 'deleteTask'),
     );
+
+  /**
+   * The tasks a sent create may have made, of every page of its list
+   * (`findLanded`): none this device knows already (`knownHere`), and
+   * with a delete queued behind the create only one the create itself
+   * made (`madeBy`). One of them is the create's; two decide nothing.
+   */
+  const landedFor = (op: PendingOp, taskListId: string, dispatchedAt: number) =>
+    Effect.gen(function* () {
+      const deleted = (yield* deletesBehind(op.accountId, taskListId, op.eventId)).length > 0;
+      const matches: Array<GcalTask> = [];
+      for (const match of yield* findLanded(op, taskListId, dispatchedAt)) {
+        if (
+          !(yield* knownHere(op.accountId, match.id)) &&
+          (!deleted || (yield* madeBy(op, dispatchedAt, taskListId, match)))
+        ) {
+          matches.push(match);
+        }
+      }
+      return matches;
+    });
 
   /**
    * The create has Google's id now (`taskId`). Deleted while it was out,
@@ -2832,16 +2859,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // the same window elsewhere (and is benign); a miss is merely
       // the old behavior.
       if (op.dispatchedAt !== undefined) {
-        const deleted = (yield* deletesBehind(op.accountId, taskListId, op.eventId)).length > 0;
-        const matches: Array<GcalTask> = [];
-        for (const match of yield* findLanded(op, taskListId, op.dispatchedAt)) {
-          if (
-            !(yield* knownHere(op.accountId, match.id)) &&
-            (!deleted || (yield* madeBy(op, op.dispatchedAt, taskListId, match)))
-          ) {
-            matches.push(match);
-          }
-        }
+        const matches = yield* landedFor(op, taskListId, op.dispatchedAt);
         const adopted = matches.length === 1 ? matches[0] : undefined;
         if (adopted) {
           const now = yield* Clock.currentTimeMillis;
@@ -3341,61 +3359,78 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * one keyed to a list the other had left met a 404. Only a task this
    * device has no row of, no copy of and no change waiting for
    * (`knownHere`), changed since the create was sent, and the only such
-   * match in the page; with a delete queued behind the create,
-   * only one the create itself made (`madeBy`).
+   * match in the list (`acknowledgeTask`).
    */
   const acknowledgeTasks = (
     accountId: string,
     taskListId: string,
     items: ReadonlyArray<GcalTask>,
   ): Effect.Effect<ReadonlyArray<PendingOp>> =>
-    Effect.orElseSucceed(
-      Effect.gen(function* () {
-        const settled: Array<PendingOp> = [];
-        const taken = new Set<string>();
-        const creates = (yield* pendingOpRepo.listAll()).filter(
-          (op) =>
-            op.kind === 'createTask' &&
-            op.accountId === accountId &&
-            op.taskListId === taskListId &&
-            op.dispatchedAt !== undefined,
-        );
-        for (const queued of creates) {
-          // Re-read: an earlier one's id went into the ones behind it.
-          const op = yield* pendingOpRepo.getById(queued.id);
-          const stamp = op?.dispatchedAt;
-          if (!op || stamp === undefined) {
-            continue;
-          }
-          const deleted = (yield* deletesBehind(accountId, taskListId, op.eventId)).length > 0;
-          const matches: Array<GcalTask> = [];
-          for (const item of items) {
-            const updated = item.updated === undefined ? Number.NaN : Date.parse(item.updated);
-            if (
-              !taken.has(item.id) &&
-              sameAsSent(op, item) &&
-              updated >= stamp - 60_000 &&
-              (yield* taskRepo.get(accountId, taskListId, item.id)) === undefined &&
-              !(yield* knownHere(accountId, item.id)) &&
-              (!deleted || (yield* madeBy(op, stamp, taskListId, item)))
-            ) {
-              matches.push(item);
-            }
-          }
-          const [adopted] = matches;
-          if (adopted && matches.length === 1) {
-            taken.add(adopted.id);
-            const now = yield* Clock.currentTimeMillis;
-            yield* swapInTask(op, taskListId, adopted, (record) =>
-              taskRepo.upsertTasks([record], now),
-            );
+    Effect.gen(function* () {
+      const settled: Array<PendingOp> = [];
+      const creates = yield* Effect.orElseSucceed(pendingOpRepo.listAll(), () => []);
+      for (const queued of creates) {
+        if (
+          queued.kind === 'createTask' &&
+          queued.accountId === accountId &&
+          queued.taskListId === taskListId &&
+          queued.dispatchedAt !== undefined
+        ) {
+          // Each on its own: one that fails leaves the ones before it settled.
+          const op = yield* Effect.orElseSucceed(
+            acknowledgeTask(queued.id, taskListId, items),
+            () => undefined,
+          );
+          if (op) {
             settled.push(op);
           }
         }
-        return settled;
-      }),
-      (): ReadonlyArray<PendingOp> => [],
-    );
+      }
+      return settled;
+    });
+
+  /**
+   * One sent create against a page: settled when the page holds a task
+   * with what it sent and that task is the only one the create may have
+   * made in the whole list (`landedFor` reads every page, as the retry
+   * does: two alike on different pages decide nothing, and taken from
+   * the page alone, a delete queued behind the create removed the other
+   * device's twin).
+   */
+  const acknowledgeTask = (opId: string, taskListId: string, items: ReadonlyArray<GcalTask>) =>
+    Effect.gen(function* () {
+      // Re-read: an earlier one's id went into the ones behind it.
+      const op = yield* pendingOpRepo.getById(opId);
+      const stamp = op?.dispatchedAt;
+      if (!op || stamp === undefined || !items.some((item) => sameAsSent(op, item))) {
+        return undefined;
+      }
+      // Whether a row is here does not count: an earlier page of this
+      // same pull wrote one of two alike, and the other then looked like
+      // the only one.
+      const deleted = (yield* deletesBehind(op.accountId, taskListId, op.eventId)).length > 0;
+      const matches: Array<GcalTask> = [];
+      for (const match of yield* findLanded(op, taskListId, stamp)) {
+        if (
+          !(yield* knownHere(op.accountId, match.id)) &&
+          (!deleted || madeInWindow(stamp, match))
+        ) {
+          matches.push(match);
+        }
+      }
+      const [adopted] = matches;
+      if (
+        !adopted ||
+        matches.length !== 1 ||
+        !items.some((item) => item.id === adopted.id) ||
+        (yield* taskRepo.get(op.accountId, taskListId, adopted.id)) !== undefined
+      ) {
+        return undefined;
+      }
+      const now = yield* Clock.currentTimeMillis;
+      yield* swapInTask(op, taskListId, adopted, (record) => taskRepo.upsertTasks([record], now));
+      return op;
+    });
 
   const acknowledge = (op: PendingOp, record: EventRecord): Effect.Effect<boolean> => {
     if (op.kind === 'create') {

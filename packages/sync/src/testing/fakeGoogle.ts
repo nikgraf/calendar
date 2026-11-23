@@ -260,6 +260,8 @@ export interface FakeGoogleOptions {
   /** Saved contacts (people.connections); otherContacts is always empty. */
   readonly people?: ReadonlyArray<GcalPerson>;
   readonly taskLists?: ReadonlyArray<GcalTaskList>;
+  /** Tasks per list page (Google's cap is 100); absent, a list is one page. */
+  readonly taskPageSize?: number;
 }
 
 export class FakeGoogle {
@@ -269,6 +271,7 @@ export class FakeGoogle {
   private calendarSeq = 0;
   private readonly removedCalendars: Array<string> = [];
   private readonly pageSize: number;
+  private readonly taskPageSize: number;
   private readonly people: Array<GcalPerson>;
   private readonly taskLists: Array<GcalTaskList>;
   private readonly events = new Map<string, Map<string, StoredEvent>>();
@@ -336,6 +339,7 @@ export class FakeGoogle {
         : { email: options.organizerEmail, self: true };
     this.live = options.live ?? false;
     this.pageSize = options.pageSize ?? 2500;
+    this.taskPageSize = options.taskPageSize ?? Number.POSITIVE_INFINITY;
     this.people = [...(options.people ?? [])];
     this.taskLists = [...(options.taskLists ?? [])];
     this.createdAt = this.stamp();
@@ -1195,7 +1199,12 @@ export class FakeGoogle {
       const items = [...store.values()]
         .filter((entry) => (since === null ? !entry.task.deleted : entry.updatedAt >= since))
         .map(wire);
-      return reply(200, { items });
+      const offset = Number(url.searchParams.get('pageToken') ?? 0);
+      const next = offset + this.taskPageSize;
+      return reply(200, {
+        items: items.slice(offset, next),
+        ...(next < items.length ? { nextPageToken: String(next) } : {}),
+      });
     }
     if (request.method === 'POST' && taskId === undefined) {
       this.taskSeq += 1;
