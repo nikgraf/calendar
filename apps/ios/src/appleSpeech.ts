@@ -25,6 +25,45 @@ export const dictationLocale = (): string =>
 const unsupported = () =>
   new SpeechUnsupportedError({ message: 'Speech recognition is not built into this app.' });
 
+type Native = NonNullable<ReturnType<typeof loadSpeechModule>>;
+
+/**
+ * The languages to listen in, as Settings › Dictation has them now. A
+ * binary built before the module took the second language (a stale local
+ * dev client) is asked as before: its functions take one argument fewer.
+ */
+const languagesFor = (native: Native) =>
+  native.languages === undefined
+    ? { locale: deviceLocale(), second: undefined }
+    : { locale: dictationLocale(), second: secondLanguage.get() };
+
+/**
+ * The languages last prepared: a phrase in others (picked in Settings
+ * while an editor stayed open) prepares them first, since only preparing
+ * installs a language's assets.
+ */
+let preparedFor: string | undefined;
+
+const prepareIn = async (native: Native) => {
+  const { locale, second } = languagesFor(native);
+  try {
+    // Installs the locale's models; a no-op once present.
+    await (second === undefined
+      ? (native.prepare as (locale: string) => Promise<void>)(locale)
+      : native.prepare(locale, second));
+    preparedFor = `${locale} ${second ?? ''}`;
+  } catch (error) {
+    // Distinguish "this device or locale never will" from "that attempt
+    // failed" — installing models needs the network, and a download
+    // failure must stay retryable rather than hiding dictation for good.
+    const message = String(error);
+    if (/not supported|unsupported|unavailable/i.test(message)) {
+      throw new SpeechUnsupportedError({ message });
+    }
+    throw error;
+  }
+};
+
 /** The phrase listened to, by the id this adapter gave it, and its words' subscription. */
 let current: { readonly remove: () => void; readonly session: number } | undefined;
 let sessions = 0;
@@ -67,19 +106,7 @@ export const appleSpeech: SpeechToText = {
     if (!native) {
       throw unsupported();
     }
-    try {
-      // Installs the locale's models; a no-op once present.
-      await native.prepare(dictationLocale(), secondLanguage.get());
-    } catch (error) {
-      // Distinguish "this device or locale never will" from "that attempt
-      // failed" — installing models needs the network, and a download
-      // failure must stay retryable rather than hiding dictation for good.
-      const message = String(error);
-      if (/not supported|unsupported|unavailable/i.test(message)) {
-        throw new SpeechUnsupportedError({ message });
-      }
-      throw error;
-    }
+    await prepareIn(native);
   },
   start: async ({ onWords, signal }) => {
     const native = loadSpeechModule();
@@ -88,6 +115,10 @@ export const appleSpeech: SpeechToText = {
     }
     if (!(await native.requestMicrophone())) {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
+    }
+    const { locale, second } = languagesFor(native);
+    if (preparedFor !== `${locale} ${second ?? ''}`) {
+      await prepareIn(native);
     }
     if (signal?.aborted) {
       return undefined;
@@ -105,12 +136,15 @@ export const appleSpeech: SpeechToText = {
     };
     let sources: ReadonlyArray<'accurate' | 'quick'>;
     try {
-      ({ sources } = await native.start(
-        session,
-        dictationLocale(),
-        voiceProcessing.get(),
-        secondLanguage.get(),
-      ));
+      ({ sources } = await (second === undefined
+        ? (
+            native.start as (
+              session: number,
+              locale: string,
+              voiceProcessing: boolean,
+            ) => ReturnType<Native['start']>
+          )(session, locale, voiceProcessing.get())
+        : native.start(session, locale, voiceProcessing.get(), second)));
     } catch (error) {
       remove();
       throw error;

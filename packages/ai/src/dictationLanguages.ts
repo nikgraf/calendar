@@ -37,9 +37,10 @@ export interface LanguageOption {
 /**
  * The languages the recogniser has, as a list to pick from, by name. The
  * one picked stays on it when the recogniser no longer lists it (an
- * update dropped it), so the choice can be seen and changed. `besides`:
- * for the second language, the one listened in, whose language a second
- * reading would only repeat, is left out.
+ * update dropped it, or it is now the language listened in), so the
+ * choice can be seen and changed. `besides`: for the second language, the
+ * one listened in, whose language a second reading would only repeat, is
+ * left out.
  */
 export const languageOptions = (
   available: ReadonlyArray<string>,
@@ -47,12 +48,11 @@ export const languageOptions = (
   nameOf: (locale: string) => string,
   besides?: string,
 ): ReadonlyArray<LanguageOption> => {
-  const ids = new Set(available);
-  if (chosen !== AUTOMATIC && chosen !== OFF) {
-    ids.add(chosen);
-  }
-  return [...ids]
-    .filter((id) => besides === undefined || languageOf(id) !== languageOf(besides))
+  const picked = chosen !== AUTOMATIC && chosen !== OFF;
+  return [...new Set(picked ? [...available, chosen] : available)]
+    .filter(
+      (id) => id === chosen || besides === undefined || languageOf(id) !== languageOf(besides),
+    )
     .map((id) => ({ id, name: nameOf(id) }))
     .sort((a, b) => a.name.localeCompare(b.name, 'en'));
 };
@@ -75,3 +75,16 @@ export const secondLanguageNow = (
   }
   return languageOf(chosen) === languageOf(listened) ? undefined : chosen;
 };
+
+/**
+ * The second language once the language listened in becomes `language`:
+ * a second picked in that same language would only repeat it, so it goes
+ * back to Automatic; any other stays.
+ */
+export const secondAfter = (second: string, language: string): string =>
+  second !== AUTOMATIC &&
+  second !== OFF &&
+  language !== AUTOMATIC &&
+  languageOf(second) === languageOf(language)
+    ? AUTOMATIC
+    : second;

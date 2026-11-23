@@ -21,10 +21,10 @@ const native = vi.hoisted(() => {
         }
       | null
       | undefined,
-    /** The iPhone's own language, as the adapter reads it: calls name another locale only. */
-    device: '',
     installed: true,
+    /** A binary that lists its languages, and so takes the second language. */
     listeners: new Set<(event: Words) => void>(),
+    listsLanguages: true,
     microphone: true,
     prepareError: undefined as Error | undefined,
     /** Set: the next start waits until the test lets it through. */
@@ -50,16 +50,19 @@ vi.mock('expo', () => ({
         native.calls.push(`finish ${session}`);
         return native.finishes;
       },
-      prepare: async (locale: string, other: string) => {
-        native.calls.push(`prepare ${locale} ${other}`);
+      ...(native.listsLanguages
+        ? { languages: async () => ({ automatic: 'de-AT', available: ['de-AT', 'en-US'] }) }
+        : {}),
+      prepare: async (locale: string, other?: string) => {
+        native.calls.push(`prepare ${locale}${other === undefined ? '' : ` ${other}`}`);
         if (native.prepareError) {
           throw native.prepareError;
         }
       },
       requestMicrophone: async () => native.microphone,
-      start: async (session: number, locale: string, voiceProcessing: boolean, other: string) => {
+      start: async (session: number, locale: string, voiceProcessing: boolean, other?: string) => {
         native.calls.push(
-          `start ${session} ${voiceProcessing ? 'processed' : 'plain'}${locale === native.device ? '' : ` ${locale}`}${other === 'auto' ? '' : ` second ${other}`}`,
+          `start ${session} ${voiceProcessing ? 'processed' : 'plain'}${locale === 'en-US' ? '' : ` ${locale}`}${other === 'auto' ? '' : ` second ${other ?? 'none'}`}`,
         );
         await native.held;
         return { sources: ['accurate'] };
@@ -102,6 +105,12 @@ const loadSpeech = async () => {
 
 const noWords = () => undefined;
 
+/**
+ * The calls apart from the prepare a first start makes itself: these tests
+ * start without the editor's own prepare.
+ */
+const startCalls = () => native.calls.filter((call) => !call.startsWith('prepare '));
+
 // Each test loads the adapter afresh, and @calendar/ai with it: errors are
 // told by their tag.
 const unsupported = { _tag: 'SpeechUnsupportedError' };
@@ -109,7 +118,12 @@ const denied = { _tag: 'MicrophoneDeniedError' };
 
 beforeEach(() => {
   native.calls.length = 0;
-  native.device = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
+  native.listsLanguages = true;
+  // The iPhone's language, whatever the machine's: calls name another locale only.
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    ...new Intl.DateTimeFormat('en-US').resolvedOptions(),
+    locale: 'en-US',
+  });
   native.finishes = { segments: [{ alternatives: ['Lunch with Sara'], text: 'Lunch with Sarah' }] };
   native.held = undefined;
   native.installed = true;
@@ -146,7 +160,7 @@ describe('appleSpeech', () => {
     await expect(
       speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) }),
     ).resolves.toEqual({ sources: ['accurate'] });
-    expect(native.calls).toEqual(['start 1 processed']);
+    expect(startCalls()).toEqual(['start 1 processed']);
     say({ session: 1, source: 'quick', text: 'Lunch' });
     say({ session: 9, source: 'quick', text: 'someone else' });
     say({ session: 1, source: 'accurate', text: 'Lunch with' });
@@ -157,7 +171,7 @@ describe('appleSpeech', () => {
     });
     say({ session: 1, source: 'quick', text: 'Lunch with Sarah' });
     expect(heard).toEqual(['quick: Lunch', 'accurate: Lunch with']);
-    expect(native.calls).toEqual(['start 1 processed', 'finish 1']);
+    expect(startCalls()).toEqual(['start 1 processed', 'finish 1']);
     expect(native.listeners.size).toBe(0);
   });
 
@@ -191,6 +205,8 @@ describe('appleSpeech', () => {
 
   it('drops only its own phrase when given up while the microphone opens', async () => {
     const speech = await loadSpeech();
+    // Prepared, as the editor does first: the start goes straight to the module.
+    await speech.prepare();
     let release: (() => void) | undefined;
     native.held = new Promise<void>((resolve) => {
       release = resolve;
@@ -201,7 +217,7 @@ describe('appleSpeech', () => {
     closed.abort();
     release?.();
     await expect(start).resolves.toBeUndefined();
-    expect(native.calls).toEqual(['start 1 processed', 'cancel 1']);
+    expect(startCalls()).toEqual(['start 1 processed', 'cancel 1']);
     expect(native.listeners.size).toBe(0);
     // Not the current phrase: nothing to finish.
     await expect(speech.finish()).resolves.toBeUndefined();
@@ -217,7 +233,7 @@ describe('appleSpeech', () => {
     say({ session: 2, source: 'quick', text: 'Dinner' });
     expect(heard).toEqual(['Dinner']);
     await speech.cancel();
-    expect(native.calls).toEqual(['start 1 processed', 'start 2 processed', 'cancel 2']);
+    expect(startCalls()).toEqual(['start 1 processed', 'start 2 processed', 'cancel 2']);
   });
 
   it('records through voice processing unless this iPhone switched it off', async () => {
@@ -230,7 +246,7 @@ describe('appleSpeech', () => {
     notes.set(VOICE, JSON.stringify({ on: true }));
     const processed = await loadSpeech();
     await processed.start({ onWords: noWords });
-    expect(native.calls).toEqual(['start 1 plain', 'start 1 processed', 'start 1 processed']);
+    expect(startCalls()).toEqual(['start 1 plain', 'start 1 processed', 'start 1 processed']);
   });
 
   it('listens in the language and second language Settings › Dictation picked', async () => {
@@ -238,9 +254,6 @@ describe('appleSpeech', () => {
     const picked = await loadSpeech();
     await picked.prepare();
     await picked.start({ onWords: noWords });
-    notes.set(LANGUAGES, JSON.stringify({ language: 'auto', second: 'fr-FR' }));
-    const second = await loadSpeech();
-    await second.start({ onWords: noWords });
     notes.set(LANGUAGES, '{"language": "not a language"}');
     const unreadable = await loadSpeech();
     await unreadable.prepare();
@@ -248,10 +261,35 @@ describe('appleSpeech', () => {
     expect(native.calls).toEqual([
       'prepare de-AT off',
       'start 1 processed de-AT second off',
-      'start 1 processed second fr-FR',
-      `prepare ${native.device} auto`,
+      'prepare en-US auto',
       'start 1 processed',
     ]);
+  });
+
+  it('prepares languages picked while an editor stayed open before their first phrase', async () => {
+    const speech = await loadSpeech();
+    await speech.prepare();
+    await speech.start({ onWords: noWords });
+    // Settings › Dictation, the editor still open: no prepare from it.
+    (await import('./dictationLanguages.ts')).secondLanguage.set('fr-FR');
+    await speech.start({ onWords: noWords });
+    await speech.start({ onWords: noWords });
+    expect(native.calls).toEqual([
+      'prepare en-US auto',
+      'start 1 processed',
+      'prepare en-US fr-FR',
+      'start 2 processed second fr-FR',
+      'start 3 processed second fr-FR',
+    ]);
+  });
+
+  it('asks a binary that cannot list languages as before: no second language', async () => {
+    native.listsLanguages = false;
+    notes.set(LANGUAGES, JSON.stringify({ language: 'de-AT', second: 'fr-FR' }));
+    const speech = await loadSpeech();
+    await speech.prepare();
+    await speech.start({ onWords: noWords });
+    expect(native.calls).toEqual(['prepare en-US', 'start 1 processed second none']);
   });
 
   it('tells a locale that never will from a download that failed', async () => {

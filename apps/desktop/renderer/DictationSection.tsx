@@ -1,4 +1,4 @@
-import { AUTOMATIC, languageOptions, listenedLocale, OFF } from '@calendar/ai';
+import { AUTOMATIC, languageOptions, listenedLocale, OFF, secondAfter } from '@calendar/ai';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   deviceLocale,
@@ -88,7 +88,12 @@ export function DictationSection() {
           <select
             className={`${FIELD_CLASS} mt-1`}
             data-testid="dictation-language-select"
-            onChange={(change) => dictationLanguage.set(change.target.value)}
+            onChange={(change) => {
+              const picked = change.target.value;
+              dictationLanguage.set(picked);
+              // A second picked in that language would only repeat it.
+              secondLanguage.set(secondAfter(chosenSecond, listenedLocale(picked, device)));
+            }}
             value={chosen}
           >
             <option value={AUTOMATIC}>Automatic — {languageName(device)}</option>
@@ -108,7 +113,9 @@ export function DictationSection() {
             value={chosenSecond}
           >
             <option value={AUTOMATIC}>
-              Automatic — {automatic === undefined ? 'none on this Mac' : languageName(automatic)}
+              {languages === undefined
+                ? 'Automatic'
+                : `Automatic — ${automatic === undefined ? 'none on this Mac' : languageName(automatic)}`}
             </option>
             <option value={OFF}>Off</option>
             {languageOptions(available, chosenSecond, languageName, listened).map((option) => (

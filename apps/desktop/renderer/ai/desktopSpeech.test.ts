@@ -206,16 +206,17 @@ describe('desktopSpeech languages', () => {
     };
     await speech.prepare();
     await listen();
+    // Picked in Settings while the editor stayed open: the phrase prepares them first.
     stored.set('dictation.language', 'de-AT');
     stored.set('dictation.secondLanguage', 'off');
-    await speech.prepare();
+    await listen();
     await listen();
     // An unreadable choice is automatic.
     stored.set('dictation.language', 'de; rm');
     stored.set('dictation.secondLanguage', 'en-GB');
     await listen();
-    expect(main.prepared).toEqual(['en-US auto', 'de-AT off']);
-    expect(main.startedWith).toEqual(['en-US auto', 'de-AT off', 'en-US en-GB']);
+    expect(main.prepared).toEqual(['en-US auto', 'de-AT off', 'en-US en-GB']);
+    expect(main.startedWith).toEqual(['en-US auto', 'de-AT off', 'de-AT off', 'en-US en-GB']);
   });
 });
 

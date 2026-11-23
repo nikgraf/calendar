@@ -1107,7 +1107,8 @@ said, two phrases land when their words stop, the form
 brought forward does not end the dictation, a typed title does, the
 next phrase keeps that title, an older step put on show ends it too;
 Settings › Dictation reduces background noise until it is switched off,
-a choice both windows read);
+a choice both windows read, and picks the language and the second one,
+Automatic's second following the first);
 `assistantView` (the editor's two views:
 a phrase answered with the item as a card, a change marked with the old
 value struck through, two questions asked one at a time and numbered,

@@ -6,6 +6,7 @@ import {
   OFF,
   readLanguage,
   readSecondLanguage,
+  secondAfter,
   secondLanguageNow,
 } from './dictationLanguages.ts';
 
@@ -56,6 +57,12 @@ describe('languageOptions', () => {
     ]);
   });
 
+  it('keeps a second picked in the language listened in, so it shows as picked', () => {
+    expect(
+      languageOptions(['de-AT', 'de-DE', 'en-US'], 'de-AT', nameOf, 'de-DE').map((o) => o.id),
+    ).toEqual(['en-US', 'de-AT']);
+  });
+
   it('leaves the language listened in out of the second language’s list', () => {
     expect(
       languageOptions(['en-US', 'en-GB', 'de-AT', 'de-DE'], AUTOMATIC, nameOf, 'en-US').map(
@@ -75,5 +82,14 @@ describe('secondLanguageNow', () => {
 
   it('is none when the one picked is the language listened in', () => {
     expect(secondLanguageNow('en-GB', 'de-AT', 'en-US')).toBeUndefined();
+  });
+});
+
+describe('secondAfter', () => {
+  it('turns a second in the new language back to Automatic, and leaves any other', () => {
+    expect(secondAfter('de-AT', 'de-DE')).toBe(AUTOMATIC);
+    expect(secondAfter('de-AT', 'en-US')).toBe('de-AT');
+    expect(secondAfter(OFF, 'de-DE')).toBe(OFF);
+    expect(secondAfter('de-AT', AUTOMATIC)).toBe('de-AT');
   });
 });

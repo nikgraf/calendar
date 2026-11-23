@@ -1,4 +1,4 @@
-import { AUTOMATIC, languageOptions, OFF } from '@calendar/ai';
+import { AUTOMATIC, languageOptions, listenedLocale, OFF, secondAfter } from '@calendar/ai';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { loadSpeechModule } from '../../../modules/solunivo-speech/index.ts';
 import { deviceLocale, dictationLocale } from '../../appleSpeech.ts';
@@ -48,6 +48,12 @@ export const useDictationLocale = (): string => {
   return dictationLocale();
 };
 
+/** Picks the language listened in; a second picked in that language goes back to Automatic. */
+const pickLanguage = (language: string) => {
+  dictationLanguage.set(language);
+  secondLanguage.set(secondAfter(secondLanguage.get(), listenedLocale(language, deviceLocale())));
+};
+
 /**
  * Settings › Dictation › Language: Automatic (the iPhone's own language)
  * or one the recogniser has. A language is downloaded the first time
@@ -62,7 +68,7 @@ export function DictationLanguagePage() {
       <Section footer="Automatic listens in this iPhone’s language: change it in the Settings app, under General › Language & Region. Another language is downloaded the first time you dictate in it.">
         <CheckRow
           checked={chosen === AUTOMATIC}
-          onPress={() => dictationLanguage.set(AUTOMATIC)}
+          onPress={() => pickLanguage(AUTOMATIC)}
           subtitle={languageLabel(deviceLocale())}
           testID={`dictation-language-automatic${chosen === AUTOMATIC ? '-on' : ''}`}
           title="Automatic"
@@ -74,7 +80,7 @@ export function DictationLanguagePage() {
             <CheckRow
               checked={chosen === option.id}
               key={option.id}
-              onPress={() => dictationLanguage.set(option.id)}
+              onPress={() => pickLanguage(option.id)}
               testID={`dictation-language-${option.id}${chosen === option.id ? '-on' : ''}`}
               title={option.name}
             />
@@ -105,7 +111,13 @@ export function SecondLanguagePage() {
         <CheckRow
           checked={chosen === AUTOMATIC}
           onPress={() => secondLanguage.set(AUTOMATIC)}
-          subtitle={automatic === undefined ? 'None on this iPhone' : languageLabel(automatic)}
+          subtitle={
+            languages === undefined
+              ? undefined
+              : automatic === undefined
+                ? 'None on this iPhone'
+                : languageLabel(automatic)
+          }
           testID={`dictation-second-language-automatic${chosen === AUTOMATIC ? '-on' : ''}`}
           title="Automatic"
         />

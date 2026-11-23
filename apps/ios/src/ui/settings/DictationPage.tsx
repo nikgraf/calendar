@@ -1,4 +1,4 @@
-import { OFF, secondLanguageNow } from '@calendar/ai';
+import { AUTOMATIC, OFF, secondLanguageNow } from '@calendar/ai';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { type MicrophoneMode, loadSpeechModule } from '../../../modules/solunivo-speech/index.ts';
@@ -29,6 +29,24 @@ const useMicrophoneMode = (): MicrophoneMode | undefined => {
     return () => subscription.remove();
   }, []);
   return mode;
+};
+
+/**
+ * What Second Language shows: Off, the language it comes to, None; and
+ * nothing while Automatic's is not known yet.
+ */
+const secondValue = (
+  chosen: string,
+  second: string | undefined,
+  known: boolean,
+): string | undefined => {
+  if (chosen === OFF) {
+    return 'Off';
+  }
+  if (chosen === AUTOMATIC && !known) {
+    return undefined;
+  }
+  return second === undefined ? 'None' : languageLabel(second);
 };
 
 /**
@@ -96,9 +114,7 @@ export function DictationPage() {
             href="/settings/dictation-second-language"
             testID="dictation-second-language"
             title="Second Language"
-            value={
-              chosenSecond === OFF ? 'Off' : second === undefined ? 'None' : languageLabel(second)
-            }
+            value={secondValue(chosenSecond, second, languages !== undefined)}
             valueTestID="dictation-second-language-value"
           />
         </Section>
