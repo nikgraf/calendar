@@ -118,6 +118,7 @@ const makeStubClient = () => {
     previewMirror: () => fail('not stubbed'),
     previewMove: () => fail('not stubbed'),
     previewMoveTask: () => fail('not stubbed'),
+    previewSeriesEdit: () => fail('not stubbed'),
     previewSettingsImport: () => fail('not stubbed'),
     previewTaskToEvent: () => fail('not stubbed'),
     removeAccount: () => Effect.void,

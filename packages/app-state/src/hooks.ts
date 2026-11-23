@@ -775,6 +775,7 @@ export const useBackendMutations = () => {
       previewMirror: set('previewMirror'),
       previewMove: set('previewMove'),
       previewMoveTask: set('previewMoveTask'),
+      previewSeriesEdit: set('previewSeriesEdit'),
       previewSettingsImport: set('previewSettingsImport'),
       previewTaskToEvent: set('previewTaskToEvent'),
       removeAccount: set('removeAccount'),

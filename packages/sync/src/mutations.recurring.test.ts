@@ -841,6 +841,94 @@ describe('EventMutations recurring scopes', () => {
   );
 });
 
+describe('what a save for all events takes from the changed occurrences', () => {
+  const HOUR = 3_600_000;
+  const edited = new EventRecord({
+    ...master,
+    etag: '"o-1"',
+    id: instanceId,
+    originalStartUtc: occurrence,
+    recurrence: undefined,
+    recurringEventId: 'master1',
+    startUtc: occurrence,
+    title: 'Daily (moved)',
+  });
+  const deletedAt = occurrence + 2 * 24 * HOUR;
+  const deleted = new EventRecord({
+    ...master,
+    etag: '"o-2"',
+    id: 'master1_20260706T090000Z',
+    originalStartUtc: deletedAt,
+    recurrence: undefined,
+    recurringEventId: 'master1',
+    startUtc: deletedAt,
+    status: 'cancelled',
+  });
+  const seeded = Effect.gen(function* () {
+    yield* seedMaster;
+    yield* (yield* EventRepo).upsertMany([edited, deleted]);
+  });
+  const stored = Effect.gen(function* () {
+    const rows = yield* (yield* EventRepo).listOverrides('acc-1', 'cal-1', 'master1');
+    return [
+      (yield* rowOf('master1'))?.startUtc,
+      rows.map((row) => `${row.id} ${row.status}`).sort(),
+      (yield* listOps).length,
+    ];
+  });
+
+  it.effect('new times name the occurrence that loses its change and the day that comes back', () =>
+    Effect.gen(function* () {
+      yield* seeded;
+      const before = yield* stored;
+      const loss = yield* (yield* EventMutations).previewSeriesEdit({
+        ...target,
+        changes: { endUtc: occurrence + 2 * HOUR, startUtc: occurrence + HOUR },
+        scope: 'series',
+      });
+      expect(loss).toEqual({ changed: 1, deleted: 1 });
+      // Asked, not done: nothing is written and nothing queued.
+      expect(yield* stored).toEqual(before);
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('an edit that keeps the slots takes nothing', () =>
+    Effect.gen(function* () {
+      yield* seeded;
+      const mutations = yield* EventMutations;
+      expect(
+        yield* mutations.previewSeriesEdit({
+          ...target,
+          changes: { title: 'Standup' },
+          scope: 'series',
+        }),
+      ).toEqual({ changed: 0, deleted: 0 });
+      // A longer event from the same start: Google keeps the exceptions.
+      expect(
+        yield* mutations.previewSeriesEdit({
+          ...target,
+          changes: { endUtc: occurrence + 2 * HOUR, startUtc: occurrence },
+          scope: 'series',
+        }),
+      ).toEqual({ changed: 0, deleted: 0 });
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('one occurrence, or a split later in the series, is not asked about', () =>
+    Effect.gen(function* () {
+      yield* seeded;
+      const mutations = yield* EventMutations;
+      const changes = { endUtc: occurrence + 2 * HOUR, startUtc: occurrence + HOUR };
+      for (const scope of ['instance', 'following'] as const) {
+        expect(yield* mutations.previewSeriesEdit({ ...target, changes, scope })).toEqual({
+          changed: 0,
+          deleted: 0,
+        });
+      }
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+});
+
 describe('discarding a change of a series', () => {
   const override = new EventRecord({
     ...master,

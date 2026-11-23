@@ -24,12 +24,14 @@ import {
   meetingUrl,
   type MoveEventParams,
   moveLoss,
+  NO_SERIES_EDIT_LOSS,
   type MoveTaskParams,
   normalizeHexColor,
   PendingOp,
   type PreviewEventToTaskParams,
   type PreviewMoveTaskParams,
   remainingRecurrence,
+  type SeriesEditLoss,
   type TaskAddressParams,
   taskMoveLoss,
   TaskRecord,
@@ -55,7 +57,7 @@ import {
   mapGcalEvent,
 } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
-import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
+import { Cause, Clock, Context, Data, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
@@ -176,6 +178,11 @@ const inheritedPark = (
     ? {}
     : { conflictAt: parked.conflictAt, lastError: parked.lastError ?? 'changed on Google' };
 };
+
+/** How `previewSeriesEdit` leaves its transaction: with the answer, and nothing written. */
+class PreviewedSeriesEdit extends Data.TaggedError('PreviewedSeriesEdit')<{
+  readonly loss: SeriesEditLoss;
+}> {}
 
 /**
  * An edit that replaces a queued update waits where that one did: ahead of
@@ -1967,6 +1974,7 @@ const make: Effect.Effect<
     | 'previewEventToTask'
     | 'previewMove'
     | 'previewMoveTask'
+    | 'previewSeriesEdit'
     | 'previewTaskToEvent'
   > = {
     ...taskMutations,
@@ -2744,6 +2752,50 @@ const make: Effect.Effect<
       );
     });
 
+  /**
+   * What a series edit would take from the occurrences changed on their
+   * own, read off the edit itself: it runs in a transaction that is
+   * rolled back, and the exceptions' rows are counted before and after.
+   * So the answer is the save's own, with what is queued and what Google
+   * holds as the save will find them. An edit the save would refuse
+   * takes nothing: the save says why.
+   */
+  const previewSeriesEdit: EventMutationsShape['previewSeriesEdit'] = (params) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, masterId, originalStartUtc, scope } = params;
+      const master = yield* eventRepo.getById(accountId, calendarId, masterId);
+      if (
+        !master ||
+        scope === 'instance' ||
+        (scope === 'following' && originalStartUtc > master.startUtc) ||
+        (yield* providerOf(accountId)) === 'apple'
+      ) {
+        return NO_SERIES_EDIT_LOSS;
+      }
+      const exceptions = eventRepo.listOverrides(accountId, calendarId, masterId);
+      return yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const before = yield* exceptions;
+            yield* shape.updateRecurring(params);
+            const after = new Set((yield* exceptions).map((row) => row.id));
+            const gone = before.filter((row) => !after.has(row.id));
+            return yield* Effect.fail(
+              new PreviewedSeriesEdit({
+                loss: {
+                  changed: gone.filter((row) => row.status !== 'cancelled').length,
+                  deleted: gone.filter((row) => row.status === 'cancelled').length,
+                },
+              }),
+            );
+          }),
+        )
+        .pipe(
+          Effect.catchTag('PreviewedSeriesEdit', ({ loss }) => Effect.succeed(loss)),
+          Effect.catch(() => Effect.succeed(NO_SERIES_EDIT_LOSS)),
+        );
+    });
+
   const previewMove = (params: MoveEventParams) =>
     Effect.gen(function* () {
       const route = yield* routeOf(params);
@@ -3085,6 +3137,7 @@ const make: Effect.Effect<
     previewEventToTask,
     previewMove,
     previewMoveTask,
+    previewSeriesEdit,
     previewTaskToEvent,
     respondToEvent: byProvider(apple.respondToEvent, google.respondToEvent),
     setCalendarColor: byProvider(apple.setCalendarColor, google.setCalendarColor),

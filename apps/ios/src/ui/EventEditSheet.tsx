@@ -116,6 +116,13 @@ const wording = (
   const subject = capitalize(request.subject);
   const other = request.target ?? (request.subject === 'event' ? 'task' : 'event');
   switch (request.kind) {
+    case 'allEvents':
+      return {
+        message: request.summary,
+        no: 'Keep Editing',
+        title: 'Change all events?',
+        yes: 'Save',
+      };
     case 'move':
       return {
         message: request.summary,

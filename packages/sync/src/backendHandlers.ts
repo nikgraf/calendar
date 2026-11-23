@@ -508,6 +508,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* mutations.previewMoveTask(params);
     }),
 
+  previewSeriesEdit: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.previewSeriesEdit(params);
+    }),
+
   previewSettingsImport: ({ document }) => previewSettingsImport(document),
 
   previewTaskToEvent: (params) =>
