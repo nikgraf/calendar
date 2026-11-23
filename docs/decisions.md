@@ -1045,10 +1045,12 @@ was cut (pruned 2026-11-17).
   recogniser of the other language (the device's languages, its keyboards
   on iOS, its region's own), and the words that reading has where the
   place stood are searched after the recogniser's likeliest own; the
-  phrase sent stays the first language's. Place bench, Nik's recordings
-  (forty places in English sentences): offered 2, with the German reading 15. Rejected: an own speech model for now, a setting for the language,
-  the second reading for the model. Open: names neither language has as a
-  word (Kaffemik, Karpfeneder), street addresses, an iPhone check.
+  phrase sent stays the first language's; a hit spelled a letter or two
+  off such a reading counts. Place bench, Nik's forty English sentences:
+  offered 2 → 20. Rejected: an own speech model for now, a setting for
+  the language, the second reading for the model. Open: names neither
+  language has as a word (Kaffemik, Karpfeneder), street addresses, the
+  lookup's time budget, an iPhone check.
 - **Places on a map** (2026-11-16, #334) — "which place?" shows its
   places on one map, numbered like the rows; a pin takes its place. The map
   fits the places within 150 km of each other: pins that would cover
