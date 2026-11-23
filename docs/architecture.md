@@ -697,7 +697,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   on screen keeps the given-up change (`PendingOpRepo.keepGivenUp`,
   called by every Google event mutation, the conversions' and the
   copy-then-delete moves' included: `standing` in mutations.ts): it is
-  sent after all, since the new change stands on it. The discard reads
+  sent after all, since the new change stands on it (one occurrence's
+  only where Google's copy of the series does not draw its slot: it
+  stands without the given-up change otherwise). A pull asks nothing
+  about a given-up change: its discard takes Google's version. The discard reads
   the change again once Google has answered, in one transaction with
   what it does: the answer can take a while, and only the drain waits. A move in that state waits the same way,
   since a change made meanwhile would go to the wrong calendar. A full

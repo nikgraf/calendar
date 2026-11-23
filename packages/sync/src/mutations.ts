@@ -31,6 +31,7 @@ import {
   PendingOp,
   type PreviewEventToTaskParams,
   type PreviewMoveTaskParams,
+  type RecurringScope,
   remainingRecurrence,
   type SeriesEditLoss,
   type TaskAddressParams,
@@ -202,6 +203,12 @@ const resetBy = (edited: EventRecord, exception: EventRecord): boolean => {
     ).length > 0
   );
 };
+
+/** The slot a change of one occurrence names; none for a change of the series. */
+const occurrenceOf = (params: {
+  readonly originalStartUtc: number;
+  readonly scope: RecurringScope;
+}): number | undefined => (params.scope === 'instance' ? params.originalStartUtc : undefined);
 
 /** How `previewSeriesEdit` leaves its transaction: with the answer, and nothing written. */
 class PreviewedSeriesEdit extends Data.TaggedError('PreviewedSeriesEdit')<{
@@ -2407,12 +2414,32 @@ const make: Effect.Effect<
   /**
    * A change of an event, or of an occurrence of its series, keeps a
    * change of it the user had given up and that still waits for Google's
-   * word (`PendingOpRepo.keepGivenUp`).
+   * word (`PendingOpRepo.keepGivenUp`) — where the new change stands on
+   * it. One occurrence's (`slot`, or the row's own of an exception named
+   * by its id) stands without it where Google's copy of the series draws
+   * that slot too: a drag of a day both draw re-sent a new end for the
+   * series the user had just given up.
    */
   const kept = (
     { accountId, calendarId }: { readonly accountId: string; readonly calendarId: string },
     eventId: string,
-  ) => pendingOpRepo.keepGivenUp({ accountId, calendarId, eventId });
+    slot?: number,
+  ) =>
+    Effect.gen(function* () {
+      const row =
+        slot === undefined ? yield* eventRepo.getById(accountId, calendarId, eventId) : undefined;
+      const masterId = slot === undefined ? row?.recurringEventId : eventId;
+      const at = slot ?? row?.originalStartUtc;
+      if (masterId !== undefined && at !== undefined) {
+        const copy = (yield* opsForEvent(accountId, calendarId, masterId)).find(
+          (op) => op.discarded === true && op.kind === 'update',
+        )?.beforePayload;
+        if (copy?.recurrence && drawsSlot(copy, projectInstance(copy, at, 0))) {
+          return;
+        }
+      }
+      yield* pendingOpRepo.keepGivenUp({ accountId, calendarId, eventId });
+    });
 
   /**
    * The Google event mutations as every path runs them, the conversions
@@ -2424,13 +2451,19 @@ const make: Effect.Effect<
     deleteEvent: (params: Parameters<EventMutationsShape['deleteEvent']>[0]) =>
       Effect.andThen(kept(params, params.eventId), shape.deleteEvent(params)),
     deleteRecurring: (params: Parameters<EventMutationsShape['deleteRecurring']>[0]) =>
-      Effect.andThen(kept(params, params.masterId), shape.deleteRecurring(params)),
+      Effect.andThen(
+        kept(params, params.masterId, occurrenceOf(params)),
+        shape.deleteRecurring(params),
+      ),
     respondToEvent: (params: Parameters<EventMutationsShape['respondToEvent']>[0]) =>
       Effect.andThen(kept(params, params.eventId), shape.respondToEvent(params)),
     updateEvent: (params: Parameters<EventMutationsShape['updateEvent']>[0]) =>
       Effect.andThen(kept(params, params.eventId), shape.updateEvent(params)),
     updateRecurring: (params: Parameters<EventMutationsShape['updateRecurring']>[0]) =>
-      Effect.andThen(kept(params, params.masterId), shape.updateRecurring(params)),
+      Effect.andThen(
+        kept(params, params.masterId, occurrenceOf(params)),
+        shape.updateRecurring(params),
+      ),
   };
 
   // Every queue-backed method runs inside one transaction (see

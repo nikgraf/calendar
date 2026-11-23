@@ -349,7 +349,7 @@ describe('moveEvent inside one Google account', () => {
       );
       expect(Result.isFailure(result) && result.failure._tag).toBe('EventAlreadyThereError');
       expect((yield* queued).map((op) => op.kind)).toEqual(['delete']);
-    }).pipe(Effect.provide(testLayer(recordingGoogle([]), appleFake()))),
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), appleFake()))),
   );
 
   it.effect('refuses it while another event of that id is moving between other calendars', () =>

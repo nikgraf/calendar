@@ -6758,6 +6758,89 @@ describe('pending-op queue: discarding a change that was tried before', () => {
     },
   );
 
+  it.effect('an occurrence Google draws anyway does not keep the change given up', () => {
+    // Review (Opus): a shorter series, tried, given up with Google out of
+    // reach; then one occurrence both versions draw is moved. That edit
+    // stands without the new end, and kept it all the same: the end the
+    // user had just given up was sent.
+    const google = newFake();
+    const network = { down: true };
+    google.fault = (call) =>
+      network.down && call.url.includes('/events/r1') ? 'refused' : undefined;
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const before = drawnOnGoogle(google, 'cal-1', 'r1');
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=2'] },
+          originalStartUtc: R1_START,
+          scope: 'series',
+        });
+        yield* mutations.processPendingOps();
+        yield* discardAll(mutations);
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { title: 'Only this one' },
+          originalStartUtc: R1_START + DAY,
+          scope: 'instance',
+        });
+        expect((yield* ops.listAll()).map((op) => [op.eventId === 'r1', op.discarded])).toEqual([
+          [true, true],
+          [false, undefined],
+        ]);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(yield* ops.listAll()).toEqual([]);
+        // The series as long as it was, with the one occurrence renamed.
+        expect(drawnOnGoogle(google, 'cal-1', 'r1')).toEqual(before);
+        expect(
+          google
+            .instancesOf('cal-1', 'r1', WINDOW_FROM, WINDOW_TO)
+            .map((instance) => instance.summary),
+        ).toContain('Only this one');
+      }),
+    );
+  });
+
+  it.effect('a pull does not ask about a change the user has given up', () => {
+    // Review (Opus): a delete, tried, given up with Google out of reach,
+    // and the event renamed on another device. The pull parked the delete
+    // as "changed on Google"; "keep mine" then unparked a change that is
+    // never sent again, and the event came back all the same.
+    const google = newFake();
+    const network = { down: true };
+    google.fault = (call) =>
+      network.down && call.method !== 'GET' && call.url.includes('/events/e1')
+        ? 'refused'
+        : network.down && /\/events\/e1$/.test(new URL(call.url).pathname)
+          ? 'refused'
+          : undefined;
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: 'e1' });
+        yield* mutations.processPendingOps();
+        yield* discardAll(mutations);
+        google.patchEventServerSide('cal-1', 'e1', { summary: 'Renamed elsewhere' });
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* ops.listAll()).map((op) => [op.kind, op.discarded, op.conflictAt])).toEqual([
+          ['delete', true, undefined],
+        ]);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(yield* ops.listAll()).toEqual([]);
+        expect(yield* shownAt('e1')).toEqual(['cal-1 synced']);
+      }),
+    );
+  });
+
   it.effect('with Google out of reach an edit goes back as never sent, as before', () => {
     // Nothing is taken away where it lands: had it landed, the next pull
     // brings it, and whatever was made on top is laid over that.

@@ -18,6 +18,8 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
+  type GcalEvent,
+  type GcalEventPatch,
   ApiUnavailableError,
   ConflictError,
   GoogleCalendarClient,
@@ -1037,6 +1039,82 @@ describe('a discard that asks Google while the user goes on', () => {
       }).pipe(Effect.provide(testLayerWith(client)));
     }),
   );
+});
+
+/** A Google date-time in UTC. */
+const iso = (utc: number) => ({ dateTime: new Date(utc).toISOString(), timeZone: 'UTC' });
+
+describe('an occurrence edited again while its first edit is out', () => {
+  const HOUR = 3_600_000;
+  /** Google's exception after a PATCH: the series at the slot with what the PATCH named. */
+  const exceptionAfter = (event: GcalEventPatch, etag: string): GcalEvent => ({
+    end: iso(Date.parse(event.end?.dateTime ?? '') || occurrence + HOUR),
+    etag,
+    id: instanceId,
+    originalStartTime: iso(occurrence),
+    recurringEventId: 'master1',
+    start: iso(Date.parse(event.start?.dateTime ?? '') || occurrence),
+    status: 'confirmed',
+    summary: typeof event.summary === 'string' ? event.summary : master.title,
+  });
+
+  for (const [what, firstEdit, secondEdit] of [
+    [
+      'new times',
+      { endUtc: occurrence + 2 * HOUR, startUtc: occurrence + HOUR },
+      { endUtc: occurrence + 3 * HOUR, startUtc: occurrence + 2 * HOUR },
+    ],
+    ['a new title', { title: 'First' }, { title: 'Second' }],
+  ] as const) {
+    it.effect(`is not asked about its own first edit when that lands (${what})`, () =>
+      // Review (Codex): a plain occurrence has no etag to check, so its
+      // first PATCH goes unchecked, and its reply is laid under what
+      // still waits as Google's newer version. The second edit, queued in
+      // its place meanwhile, was measured against that reply: the first
+      // edit's own change read as another device's, and the second was
+      // parked.
+      Effect.gen(function* () {
+        const sent = yield* Deferred.make<void>();
+        const answer = yield* Deferred.make<void>();
+        let writes = 0;
+        const client: GoogleCalendarClientShape = {
+          ...stubClient,
+          patchEvent: ({ event }) => {
+            writes += 1;
+            const reply = exceptionAfter(event, `"o-${String(writes)}"`);
+            return writes === 1
+              ? Effect.andThen(
+                  Deferred.succeed(sent, undefined),
+                  Effect.as(Deferred.await(answer), reply),
+                )
+              : Effect.succeed(reply);
+          },
+        };
+        return yield* Effect.gen(function* () {
+          yield* seedMaster;
+          const mutations = yield* EventMutations;
+          const edit = (changes: { endUtc?: number; startUtc?: number; title?: string }) =>
+            mutations.updateRecurring({ ...target, changes, scope: 'instance' });
+          yield* edit(firstEdit);
+          const drain = yield* Effect.forkChild(mutations.processPendingOps());
+          yield* Deferred.await(sent);
+          yield* edit(secondEdit);
+          yield* Deferred.succeed(answer, undefined);
+          yield* Fiber.join(drain);
+          // Not parked: the second edit goes out too, and is what stays.
+          yield* mutations.processPendingOps();
+          expect((yield* listOps).map((op) => [op.kind, op.conflictAt])).toEqual([]);
+          expect(writes).toBe(2);
+          const row = yield* rowOf(instanceId);
+          expect([row?.title, row?.startUtc, row?.syncStatus]).toEqual([
+            secondEdit.title ?? master.title,
+            secondEdit.startUtc ?? occurrence,
+            'synced',
+          ]);
+        }).pipe(Effect.provide(testLayerWith(client)));
+      }),
+    );
+  }
 });
 
 describe('discarding a change of a series', () => {

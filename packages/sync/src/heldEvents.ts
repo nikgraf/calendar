@@ -208,8 +208,15 @@ export interface HeldEvents {
    * change of the event is laid over it again, row and all. A change that
    * clashes with it is parked for the user. `except` is the op whose
    * reply this is, still queued: its change is in `theirs`.
+   * `sent` is what that write sent, when the op is queued no more (an
+   * edit replaced it while it was out): what `theirs` holds of it is the
+   * user's own first change, and no news to the edit queued in its place.
    */
-  readonly take: (theirs: EventRecord, except?: string) => Effect.Effect<void, SqlError>;
+  readonly take: (
+    theirs: EventRecord,
+    except?: string,
+    sent?: EventRecord,
+  ) => Effect.Effect<void, SqlError>;
 }
 
 /** The op kinds that hold an event Google has: the ones a newer copy concerns. */
@@ -234,7 +241,12 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
    * Google's newer copy of one held event, taken in. `except` is an op
    * whose reply `theirs` is: still queued, and its change in `theirs`.
    */
-  const takeOver = (theirs: EventRecord, ops: ReadonlyArray<PendingOp>, except?: string) =>
+  const takeOver = (
+    theirs: EventRecord,
+    ops: ReadonlyArray<PendingOp>,
+    except?: string,
+    sent?: EventRecord,
+  ) =>
     Effect.gen(function* () {
       const event = {
         accountId: theirs.accountId,
@@ -266,8 +278,21 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
       const laidOver = new Map(
         (yield* pendingOpRepo.listForEvent(event, except)).map((op) => [op.id, op.basePayload]),
       );
-      const news = new Set(Object.keys(changedFields(old, theirs)));
+      // What Google's version changed, less what our own write that it
+      // answers put there (`sent`): two quick edits of one occurrence had
+      // the second parked on the first one's new time or title.
+      const ours = sent ? new Set(Object.keys(changedFields(sent, theirs))) : undefined;
+      const news = new Set(
+        Object.keys(changedFields(old, theirs)).filter((field) => ours?.has(field) !== false),
+      );
       for (const op of holding) {
+        // Given up, and waiting only for Google's word (`discarded`): its
+        // discard takes Google's version whatever that is, so nothing is
+        // asked. Parked, "keep mine" unparked a change that was never
+        // sent again, and the event came back all the same.
+        if (op.discarded === true) {
+          continue;
+        }
         if (op.kind === 'delete') {
           // A delete of an event that changed since asks first, as the 412
           // of its If-Match would: the version it names is the one the
@@ -346,7 +371,7 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
       return free;
     });
 
-  const take: HeldEvents['take'] = (theirs, except) =>
+  const take: HeldEvents['take'] = (theirs, except, sent) =>
     Effect.flatMap(
       pendingOpRepo.listForEvent({
         accountId: theirs.accountId,
@@ -358,6 +383,7 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
           theirs,
           ops.filter((op) => op.id !== except),
           except,
+          sent,
         ),
     );
 

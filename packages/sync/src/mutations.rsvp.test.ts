@@ -21,7 +21,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { EventMutations } from './mutations.ts';
@@ -168,6 +168,10 @@ const ifMatchGoogle = (initialEtag: string, { firstEditFails = false } = {}) => 
   };
   return { client, sent };
 };
+
+/** Keeps the drain a mutation forks from running before the next call. */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 describe('EventMutations.respondToEvent', () => {
   it.effect('updates only the own attendee and patches attendees-only', () => {
@@ -498,6 +502,9 @@ describe('an RSVP discarded after a delete took the row', () => {
       ).toBe('needsAction');
       expect(row?.syncStatus).toBe('synced');
     }).pipe(
+      // Neither change is tried in between: a delete that was tried waits
+      // for Google's word when it is discarded (`finishDiscard`).
+      noYield,
       Effect.provide(
         makeLayer({
           deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),

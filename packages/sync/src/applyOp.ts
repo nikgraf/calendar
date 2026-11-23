@@ -2102,7 +2102,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             // still queued it is Google's newer version, and they are
             // laid over it as over a pull's — taken as their copy as it
             // stands, what that device changed read as theirs to send.
-            yield* heldEvents.take(synced, op.id);
+            // (What this write itself sent is no news to an edit queued in
+            // its place while it was out: `sent`.)
+            yield* heldEvents.take(synced, op.id, op.payload);
           } else {
             // The row is theirs; what they replace is now what just landed.
             yield* advanceOthers(op, event, synced);
