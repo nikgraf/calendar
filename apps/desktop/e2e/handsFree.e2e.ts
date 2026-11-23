@@ -167,4 +167,45 @@ describe('Hands-free dictation', () => {
     // The calendar window opens the microphone: the choice reaches it.
     await app.cdp.waitUntil(() => localStorage.getItem('dictation.reduceNoise') === 'off');
   });
+
+  it('picks the language and the second language in Settings › Dictation, Automatic until then', async () => {
+    const settings = await app.openSettings('dictation');
+    const language = '[data-testid="dictation-language-select"]';
+    const second = '[data-testid="dictation-second-language-select"]';
+    // From nothing chosen, also on a retry (see above).
+    await app.cdp.evaluate(() => {
+      localStorage.removeItem('dictation.language');
+      localStorage.removeItem('dictation.secondLanguage');
+    });
+    // The fixture's recogniser lists five languages (`fixtureLanguages`).
+    await settings.waitUntil(($, select: string) => $.all(`${select} option`).length > 2, second);
+    expect(await settings.evaluate(($, select: string) => $.value(select), language)).toBe('auto');
+    const secondChoices = () =>
+      settings.evaluate(
+        ($, select: string) =>
+          $.all<HTMLOptionElement>(`${select} option`).map((option) => option.value),
+        second,
+      );
+    await settings.evaluate(($, select: string) => $.setValue(select, 'en-GB'), language);
+    // Listening in English, Automatic's second is German, and English leaves its list.
+    await settings.waitUntil(
+      ($, select: string) => $.text(`${select} option`) === 'Automatic (German (Austria))',
+      second,
+    );
+    expect(await secondChoices()).toEqual(['auto', 'off', 'fr-FR', 'de-AT', 'de-DE']);
+    await settings.evaluate(($, select: string) => $.setValue(select, 'de-DE'), language);
+    // Listening in German, the other way round.
+    await settings.waitUntil(
+      ($, select: string) => $.text(`${select} option`) === 'Automatic (English (United States))',
+      second,
+    );
+    expect(await secondChoices()).toEqual(['auto', 'off', 'en-GB', 'en-US', 'fr-FR']);
+    await settings.evaluate(($, select: string) => $.setValue(select, 'off'), second);
+    // The calendar window reads both at its next phrase.
+    await app.cdp.waitUntil(
+      () =>
+        localStorage.getItem('dictation.language') === 'de-DE' &&
+        localStorage.getItem('dictation.secondLanguage') === 'off',
+    );
+  });
 });

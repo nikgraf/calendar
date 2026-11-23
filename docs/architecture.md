@@ -153,12 +153,18 @@ SpeechTranscriber, alternatives kept: each segment of the reading comes
 with the readings the recogniser weighed for it (the first is the
 segment itself), and the dictated phrase goes to the thread with them
 (`Heard`), for the place lookup below. Beside it the phrase is read in
-the user's other language (`SpeechAssets.other`: the first language
-that is not the one listened in among the device's languages, its
-keyboards on iOS, and its region's own, so German on an English iPhone
-in Austria; its assets installed with the first language's, and the
-pass left out without them), and that reading goes along as
-`Heard.other`: never the phrase sent, only searched for the place. The
+the user's second language (`SpeechAssets.other`), and that reading
+goes along as `Heard.other`: never the phrase sent, only searched for
+the place. Both languages are Settings › Dictation's, kept on the
+device (`dictation-languages.json` on iOS, the renderer's storage on
+the Mac; ai `dictationLanguages.ts`) and passed with every prepare and
+start: the language listened in is the device's until one is picked;
+the second is Automatic (the first language that is not the one
+listened in among the device's languages, its keyboards on iOS, and its
+region's own, so German on an English iPhone in Austria), Off, or one
+picked. The second's assets are fetched on the side when dictation is
+prepared, and the pass is left out without them. The lists come from
+the recogniser (`speech.languages`, the module's `languages`). The
 audio stays in memory and goes with the phrase. The phrase ends on its words, not its loudness:
 `listenForPhrase` (`packages/ai/src/phraseEnd.ts`) ends it when the
 quick words have stood still for 900 ms, or, while the accurate ones

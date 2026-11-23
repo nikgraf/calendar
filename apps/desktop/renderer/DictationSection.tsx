@@ -1,13 +1,61 @@
-import { useSyncExternalStore } from 'react';
-import { dictationLocale, languageName, noiseReduction } from './ai/dictationSettings.ts';
+import { AUTOMATIC, languageOptions, listenedLocale, OFF } from '@calendar/ai';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import {
+  deviceLocale,
+  dictationLanguage,
+  languageName,
+  noiseReduction,
+  secondLanguage,
+} from './ai/dictationSettings.ts';
+import { FIELD_CLASS, LABEL_CLASS } from './ui/fieldStyles.ts';
+
+/** What the recogniser has, for the language listened in. */
+interface SpeechLanguages {
+  readonly automatic?: string | undefined;
+  readonly available: ReadonlyArray<string>;
+}
+
+/**
+ * The languages dictation may listen in, and the second language
+ * Automatic comes to for `locale`, as the helper answers; nothing until
+ * it has, or when it cannot (no helper).
+ */
+const useSpeechLanguages = (locale: string): SpeechLanguages | undefined => {
+  const [answer, setAnswer] = useState<
+    { readonly languages: SpeechLanguages; readonly locale: string } | undefined
+  >();
+  useEffect(() => {
+    let gone = false;
+    window.calendarBridge
+      .modelSpeechLanguages(locale)
+      .then((languages) => {
+        if (!gone) {
+          setAnswer({ languages, locale });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+    };
+  }, [locale]);
+  return answer?.locale === locale ? answer.languages : undefined;
+};
 
 /**
  * Settings › Dictation: how the microphone records (Chromium's voice
- * processing, on by default) and the language dictation listens in, which
- * is the Mac's own. Both are this Mac's alone, like the iPhone's page.
+ * processing, on by default) and the two languages: the one dictation
+ * listens in and the second a phrase is read in for places, each
+ * Automatic until picked. All this Mac's alone, like the iPhone's page.
  */
 export function DictationSection() {
   const reduceNoise = useSyncExternalStore(noiseReduction.subscribe, noiseReduction.get);
+  const chosen = useSyncExternalStore(dictationLanguage.subscribe, dictationLanguage.get);
+  const chosenSecond = useSyncExternalStore(secondLanguage.subscribe, secondLanguage.get);
+  const device = deviceLocale();
+  const listened = listenedLocale(chosen, device);
+  const languages = useSpeechLanguages(listened);
+  const available = languages?.available ?? [];
+  const automatic = languages?.automatic;
 
   return (
     <>
@@ -30,9 +78,46 @@ export function DictationSection() {
       <section className="rounded-popover bg-surface-subtle p-4" data-testid="dictation-language">
         <h2 className="font-medium">Language</h2>
         <p className="mt-1 text-sm text-ink-secondary">
-          Dictation listens in {languageName(dictationLocale())}, this Mac&rsquo;s language. Change
-          it in System Settings › General › Language &amp; Region.
+          Dictation listens in the language. Each phrase is read in the second language too, so a
+          place said that language&rsquo;s way is found, such as a German place in an English
+          sentence. Automatic follows this Mac&rsquo;s languages and region (System Settings ›
+          General › Language &amp; Region).
         </p>
+        <label className={`${LABEL_CLASS} mt-3 block`}>
+          Language
+          <select
+            className={`${FIELD_CLASS} mt-1`}
+            data-testid="dictation-language-select"
+            onChange={(change) => dictationLanguage.set(change.target.value)}
+            value={chosen}
+          >
+            <option value={AUTOMATIC}>Automatic ({languageName(device)})</option>
+            {languageOptions(available, chosen, languageName).map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={`${LABEL_CLASS} mt-3 block`}>
+          Second language
+          <select
+            className={`${FIELD_CLASS} mt-1`}
+            data-testid="dictation-second-language-select"
+            onChange={(change) => secondLanguage.set(change.target.value)}
+            value={chosenSecond}
+          >
+            <option value={AUTOMATIC}>
+              Automatic ({automatic === undefined ? 'none on this Mac' : languageName(automatic)})
+            </option>
+            <option value={OFF}>Off</option>
+            {languageOptions(available, chosenSecond, languageName, listened).map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
     </>
   );
