@@ -179,17 +179,26 @@ describe('Hands-free dictation', () => {
   });
 });
 
-// The microphone's loop for keep listening and hold to talk: a phrase, a
-// pause long enough to end it, the phrase going on before the reading
-// (1.5 s here) is back, then a long quiet.
-const SPLIT_LOOP = [800, DICTATION_TONE_MS, 1300, DICTATION_TONE_MS, 4000];
-const SPLIT_PHRASES = ['Dinner', '| +2 | 19:00-20:00', '| |', '21:00-22:00'];
+// Keep listening: a phrase, a pause long enough to end it, the phrase
+// going on before its reading (1.5 s here) is back, then a long quiet.
+const GROW_LOOP = [800, DICTATION_TONE_MS, 1300, DICTATION_TONE_MS, 4000];
+// Hold to talk: the same, with a pause long enough for the first half to
+// be read and land (0.9 s pause + 1.5 s reading) were it not held.
+const HOLD_LOOP = [800, DICTATION_TONE_MS, 3500, DICTATION_TONE_MS, 6000];
+const SPLIT_PHRASES = ['Dinner', '| +2 | 19:00-20:00'];
 
-describe('Keep listening and hold to talk', () => {
+const openNewEvent = async (app: App) => {
+  await app.cdp.evaluate(commandN);
+  await app.cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
+};
+const micOff = ($: PageKit) =>
+  !$.el('[data-testid="quick-add-mic"]')?.matches('[aria-pressed="true"]');
+
+describe('Keep listening', () => {
   let app: App;
   beforeAll(async () => {
     app = await launchApp(seed, {
-      microphone: { loop: SPLIT_LOOP, phrases: SPLIT_PHRASES, readMs: 1500 },
+      microphone: { loop: GROW_LOOP, phrases: SPLIT_PHRASES, readMs: 1500 },
       model: 'fixture',
     });
   }, 60_000);
@@ -199,8 +208,7 @@ describe('Keep listening and hold to talk', () => {
 
   it('words said while a phrase is read join it, and the grown phrase is read instead', async () => {
     const { cdp } = app;
-    await cdp.evaluate(commandN);
-    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
+    await openNewEvent(app);
     await cdp.clickTestId('quick-add-mic');
     // "Dinner", a pause that sends it, then the rest before it landed: one turn.
     await cdp.waitUntil(
@@ -213,27 +221,43 @@ describe('Keep listening and hold to talk', () => {
     expect(await cdp.evaluate(dictating)).toBe(true);
     // Done: the click sends nothing more (nothing was said since).
     await cdp.clickTestId('quick-add-mic');
-    await cdp.waitUntil(
-      ($) => !$.el('[data-testid="quick-add-mic"]')?.matches('[aria-pressed="true"]'),
-    );
+    await cdp.waitUntil(micOff);
     // The microphone read to the end once more, and found nothing to send.
     await cdp.waitUntil(($) => $.text('[data-testid="quick-add-status"]') === '');
     expect(await cdp.evaluate(said)).toBe(1);
   }, 60_000);
+});
+
+describe('Hold to talk', () => {
+  let app: App;
+  beforeAll(async () => {
+    app = await launchApp(seed, {
+      microphone: { loop: HOLD_LOOP, phrases: SPLIT_PHRASES, readMs: 1500 },
+      model: 'fixture',
+    });
+  }, 60_000);
+  afterAll(async () => {
+    await app.stop();
+  });
 
   it('held, it listens through a pause and sends when let go of', async () => {
     const { cdp } = app;
+    await openNewEvent(app);
     const mic = await cdp.locate('[data-testid="quick-add-mic"]');
     await cdp.mouse('mousePressed', mic.x, mic.y);
     await cdp.waitUntil(
       ($) => $.text('[data-testid="quick-add-status"]') === 'Holding… release to send',
     );
-    // Both halves heard, the pause between them sent nothing.
+    // Both halves heard, past the pause between them that would have sent
+    // the first: nothing sent while held.
     await cdp.waitUntil({ timeoutMs: 20_000 }, ($) =>
-      $.text('[data-testid="assistant-pending"]').includes('21:00-22:00'),
+      $.text('[data-testid="assistant-pending"]').includes('19:00-20:00'),
     );
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    expect(await cdp.evaluate(said)).toBe(1);
+    expect(await cdp.evaluate(($) => $.text('[data-testid="assistant-pending"]'))).toContain(
+      'Dinner',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    expect(await cdp.evaluate(said)).toBe(0);
     expect(
       await cdp.evaluate(($) =>
         $.el('[data-testid="quick-add-mic"]')?.getAttribute('data-holding'),
@@ -243,13 +267,12 @@ describe('Keep listening and hold to talk', () => {
     await cdp.mouse('mouseReleased', mic.x, mic.y);
     await cdp.waitUntil(
       { timeoutMs: 20_000 },
-      ($) => $.count('[data-testid="assistant-said"]') === 2,
+      ($) => $.count('[data-testid="assistant-said"]') === 1,
     );
-    await cdp.waitUntil(startIs, START, '21:00');
-    // Let go of, it listens no further.
-    await cdp.waitUntil(
-      ($) => !$.el('[data-testid="quick-add-mic"]')?.matches('[aria-pressed="true"]'),
-    );
+    await cdp.waitUntil(startIs, START, '19:00');
     expect(await cdp.evaluate(titleValue, TITLE)).toBe('Dinner');
+    // Let go of, it listens no further.
+    await cdp.waitUntil(micOff);
+    expect(await cdp.evaluate(said)).toBe(1);
   }, 60_000);
 });

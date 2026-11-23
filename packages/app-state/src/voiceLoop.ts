@@ -71,6 +71,27 @@ export const sendPress = ({
   readonly saidSince: boolean;
 }): 'land' | 'read' => (inFlight && !saidSince ? 'land' : 'read');
 
+/**
+ * How long after the microphone was let go of a click still belongs to
+ * that press: a click follows its press's release at once on the Mac,
+ * and on iOS a tap shorter than 130 ms sends the press before the release.
+ */
+export const CLICK_AFTER_UP_MS = 600;
+
+/**
+ * Whether the microphone's click is a press of its own (`micPress`): not
+ * while a press is down — on iOS a short tap sends the click before the
+ * release — nor right after one was let go of (`micUp` handled it). From
+ * the keyboard or VoiceOver it comes alone, and is.
+ */
+export const micClick = ({
+  pressing,
+  sinceUpMs,
+}: {
+  readonly pressing: boolean;
+  readonly sinceUpMs: number;
+}): 'ignore' | 'press' => (pressing || sinceUpMs < CLICK_AFTER_UP_MS ? 'ignore' : 'press');
+
 /** Words per recogniser: what each has written, counted as `phraseWords` counts. */
 export type WordCounts = Readonly<Record<WordsSource, number>>;
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  CLICK_AFTER_UP_MS,
   grewSince,
+  micClick,
   maySay,
   micDown,
   micPress,
@@ -178,5 +180,20 @@ describe('sendPress', () => {
   it('reads what is being said when no phrase is on its way', () => {
     expect(sendPress({ inFlight: false, saidSince: true })).toBe('read');
     expect(sendPress({ inFlight: false, saidSince: false })).toBe('read');
+  });
+});
+
+describe('micClick', () => {
+  it('is a press from the keyboard or VoiceOver: no press down, none let go of lately', () => {
+    expect(micClick({ pressing: false, sinceUpMs: Number.POSITIVE_INFINITY })).toBe('press');
+    expect(micClick({ pressing: false, sinceUpMs: CLICK_AFTER_UP_MS })).toBe('press');
+  });
+
+  it('belongs to the press while it is down: an iOS tap under 130 ms clicks before it lifts', () => {
+    expect(micClick({ pressing: true, sinceUpMs: Number.POSITIVE_INFINITY })).toBe('ignore');
+  });
+
+  it('belongs to the press just let go of: the release handled it', () => {
+    expect(micClick({ pressing: false, sinceUpMs: 5 })).toBe('ignore');
   });
 });
