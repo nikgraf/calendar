@@ -6,6 +6,7 @@ import {
 } from '../../../modules/solunivo-parakeet/index.ts';
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
 import { loadAssistantModel, releaseAssistantModel } from '../../assistantRuntime.ts';
+import { llamaHolder } from '../../llamaOwner.ts';
 import { SPIKE_CLIPS, SPIKE_PEOPLE } from '../../speechSpikeClips.ts';
 import {
   type ClipFiles,
@@ -109,7 +110,18 @@ const parakeetPort = (): ParakeetPort | undefined => {
 const makeStore = (): SpeechSpikeStore => {
   const probe = loadProcessMemoryModule();
   const made = createSpeechSpikeStore({
-    assistant: { load: loadAssistantModel, release: releaseAssistantModel },
+    assistant: {
+      load: loadAssistantModel,
+      release: async () => {
+        // A model Model Spike left loaded stays across pages, and its memory would read as Parakeet's.
+        if (llamaHolder() === 'spike') {
+          throw new Error(
+            'Model Spike holds a model: unload it there first, so this run measures Parakeet.',
+          );
+        }
+        await releaseAssistantModel();
+      },
+    },
     clips: SPIKE_CLIPS,
     files: deviceFiles(),
     keepAwake: (on) => probe?.keepAwake(on),

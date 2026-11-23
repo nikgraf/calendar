@@ -277,6 +277,24 @@ describe('createSpeechSpikeStore', () => {
     expect(store.getState().notice).toBe('The app left the screen.');
   });
 
+  it('runs nothing where another model cannot be let go first, and says why', async () => {
+    const { log, store } = setup({
+      assistant: {
+        load: async () => {},
+        release: async () => {
+          throw new Error(
+            'Model Spike holds a model: unload it there first, so this run measures Parakeet.',
+          );
+        },
+      },
+    });
+    store.setOptions({ beside: false });
+    await store.run();
+    expect(log.some((line) => line.startsWith('load '))).toBe(false);
+    expect(store.getState().notice).toMatch(/^Model Spike holds a model/u);
+    expect(store.getState().report).toBeUndefined();
+  });
+
   it('says why where sharing the report failed', async () => {
     const made = setup({
       files: {
