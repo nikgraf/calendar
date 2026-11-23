@@ -312,6 +312,9 @@ export const loadAssistantModel = async (): Promise<void> => {
   });
 };
 
+/** Takes the Assistant's model out of the app's memory, as leaving the screen does; the next question loads it again. */
+export const releaseAssistantModel = (): Promise<void> => runtime().model.leave();
+
 /**
  * At launch (from CalendarScreen): picks up a transfer and a file the last
  * launch left, once the app is in front; lets the model go when the app

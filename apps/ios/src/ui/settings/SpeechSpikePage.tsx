@@ -5,7 +5,7 @@ import {
   type ParakeetVersion,
 } from '../../../modules/solunivo-parakeet/index.ts';
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
-import { loadAssistantModel } from '../../assistantRuntime.ts';
+import { loadAssistantModel, releaseAssistantModel } from '../../assistantRuntime.ts';
 import { SPIKE_CLIPS, SPIKE_PEOPLE } from '../../speechSpikeClips.ts';
 import {
   type ClipFiles,
@@ -109,7 +109,7 @@ const parakeetPort = (): ParakeetPort | undefined => {
 const makeStore = (): SpeechSpikeStore => {
   const probe = loadProcessMemoryModule();
   const made = createSpeechSpikeStore({
-    assistant: loadAssistantModel,
+    assistant: { load: loadAssistantModel, release: releaseAssistantModel },
     clips: SPIKE_CLIPS,
     files: deviceFiles(),
     keepAwake: (on) => probe?.keepAwake(on),

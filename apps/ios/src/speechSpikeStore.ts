@@ -35,8 +35,10 @@ export interface ParakeetPort {
 }
 
 export interface SpeechSpikeDeps {
-  /** Loads the Assistant's own model into the app; rejects where it is not here. */
-  readonly assistant: (() => Promise<void>) | undefined;
+  /** The Assistant's own model: loaded into the app (rejects where it is not here), and let go. */
+  readonly assistant:
+    | { readonly load: () => Promise<void>; readonly release: () => Promise<void> }
+    | undefined;
   readonly clips: ReadonlyArray<SpikeClip>;
   /** Undefined on a binary without the file system module. */
   readonly files: ClipFiles | undefined;
@@ -220,6 +222,10 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
       try {
         // One clip at a time: each is timed on its own.
         const heard = await parakeet.transcribe(uris[index] ?? '');
+        // Cut while it ran: its time holds the time the app was away, so it is left out.
+        if (cut !== undefined) {
+          break;
+        }
         const { raw, ...rest } = heard;
         rows.push({
           ...rest,
@@ -228,7 +234,8 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
           ...(raw === heard.text ? {} : { raw }),
         });
       } catch (error) {
-        cut = `${clip.id} failed: ${messageOf(error)}`;
+        // A cut that came first keeps its reason.
+        cut ??= `${clip.id} failed: ${messageOf(error)}`;
       }
     }
     return rows;
@@ -251,6 +258,9 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
         set({ notice: cut });
         return;
       }
+      // A model an earlier run, or the Assistant, left loaded goes first: the
+      // reading before is a baseline, and "alone" means alone.
+      await deps.assistant?.release();
       const before = watch.sample()?.footprint;
       let afterAssistant: number | undefined;
       if (options.beside) {
@@ -258,7 +268,7 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
         if (deps.assistant === undefined) {
           throw new Error('This build cannot load the Assistant’s model.');
         }
-        await deps.assistant();
+        await deps.assistant.load();
         afterAssistant = watch.sample()?.footprint;
       }
       set({ step: { fraction: 0, kind: 'loading' } });
@@ -294,7 +304,8 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
         },
       });
     } catch (error) {
-      set({ notice: messageOf(error) });
+      // Cut while a step ran: the step's failure is the cut's doing, and the cut says why.
+      set({ notice: cut ?? messageOf(error) });
     } finally {
       watch.stop();
       fetching = undefined;

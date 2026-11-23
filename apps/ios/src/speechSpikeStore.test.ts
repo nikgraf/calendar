@@ -52,9 +52,14 @@ const setup = (over: Partial<SpeechSpikeDeps> = {}) => {
     },
   };
   const deps: SpeechSpikeDeps = {
-    assistant: async () => {
-      log.push('assistant');
-      footprint += 900;
+    assistant: {
+      load: async () => {
+        log.push('assistant');
+        footprint += 900;
+      },
+      release: async () => {
+        log.push('release assistant');
+      },
     },
     clips: CLIPS,
     files: {
@@ -78,6 +83,34 @@ const setup = (over: Partial<SpeechSpikeDeps> = {}) => {
   return { log, store: createSpeechSpikeStore(deps) };
 };
 
+/** A run whose second clip sees the app leave while it is transcribed, then lands or fails. */
+const cutWhileTranscribing = (fails: boolean) => {
+  const made = setup({
+    parakeet: {
+      load: async () => ({ loadMs: 1 }),
+      release: async () => {},
+      transcribe: async (uri) => {
+        if (uri.includes('turn-16')) {
+          // The app leaves while this clip is transcribed; the clip lands minutes later, or fails.
+          made.store.interrupt();
+          if (fails) {
+            throw new Error('Core ML refused');
+          }
+        }
+        return {
+          audioSeconds: 3,
+          ms: 180_000,
+          raw: 'x',
+          replacements: [],
+          rescoreMs: 0,
+          text: 'x',
+        };
+      },
+    },
+  });
+  return made;
+};
+
 describe('createSpeechSpikeStore', () => {
   it('fetches the clips, loads the Assistant then Parakeet, runs every clip, scores and lets go', async () => {
     const { log, store } = setup();
@@ -86,6 +119,7 @@ describe('createSpeechSpikeStore', () => {
       'awake true',
       'fetch places/place-en-07.m4a',
       'fetch turns/turn-16.m4a',
+      'release assistant',
       'assistant',
       'load ultra [Jörg Hofstätter, Sarah]',
       'transcribe file:///places/place-en-07.m4a',
@@ -125,6 +159,9 @@ describe('createSpeechSpikeStore', () => {
     store.setOptions({ beside: false, version: 'v3', vocabulary: 'none' });
     await store.run();
     expect(log).not.toContain('assistant');
+    // A model an earlier run (or the Assistant) loaded goes first: "alone" means alone.
+    expect(log).toContain('release assistant');
+    expect(log.indexOf('release assistant')).toBeLessThan(log.indexOf('load v3 []'));
     expect(log).toContain('load v3 []');
     expect(store.getState().report?.memory.afterAssistant).toBeUndefined();
   });
@@ -169,6 +206,33 @@ describe('createSpeechSpikeStore', () => {
     expect(store.getState().step).toEqual({ kind: 'idle' });
   });
 
+  it('leaves out the clip under way when the app leaves, and keeps the cut’s reason', async () => {
+    for (const fails of [false, true]) {
+      const { store } = cutWhileTranscribing(fails);
+      await store.run();
+      const { report } = store.getState();
+      expect(report?.rows.map((row) => row.id)).toEqual(['place-en-07']);
+      expect(report?.cut).toBe('The app left the screen.');
+    }
+  });
+
+  it('says the app left where a load failed after it did', async () => {
+    const { store } = setup({
+      parakeet: {
+        load: async () => {
+          store.interrupt();
+          throw new Error('The network connection was lost.');
+        },
+        release: async () => {},
+        transcribe: async () => {
+          throw new Error('not reached');
+        },
+      },
+    });
+    await store.run();
+    expect(store.getState().notice).toBe('The app left the screen.');
+  });
+
   it('counts the memory warnings iOS sent while it ran', async () => {
     const { store } = setup();
     const warned = { done: false };
@@ -186,8 +250,11 @@ describe('createSpeechSpikeStore', () => {
 
   it('says why where the Assistant’s model cannot load, and lets Parakeet go anyway', async () => {
     const { log, store } = setup({
-      assistant: async () => {
-        throw new Error('The Assistant’s model is not downloaded.');
+      assistant: {
+        load: async () => {
+          throw new Error('The Assistant’s model is not downloaded.');
+        },
+        release: async () => {},
       },
     });
     await store.run();
