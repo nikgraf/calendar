@@ -143,7 +143,8 @@ const foundAs =
 /**
  * The places dictation's other readings of the words name (`alternatives`,
  * the likeliest first): the past places each names, then MapKit's hits
- * that resemble a reading and are nearby or where it says — a place the
+ * that resemble a reading (a name it is but for a letter or two too:
+ * the search knew what was meant) and are nearby or where it says — a place the
  * user has been to beats any search hit, and the far namesakes and the
  * hits that resemble nothing are no one's guess here. Each marked with
  * its reading, so it is offered and never taken. MapKit is asked for
@@ -166,7 +167,7 @@ const alternativeCandidates = (
           Effect.timeout(wait ?? 0),
           Effect.catch(() => Effect.succeed([])),
           Effect.map((hits) =>
-            rankFoundPlaces(reading, hits, region)
+            rankFoundPlaces(reading, hits, region, { alike: true })
               .filter(({ match }) => match !== 'search')
               .map(foundCandidate(reading))
               .map(foundAs(reading)),

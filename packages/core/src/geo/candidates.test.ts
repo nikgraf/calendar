@@ -236,6 +236,26 @@ describe('rankFoundPlaces', () => {
     ]);
   });
 
+  it('counts a name a letter off as named only when asked to, and only nearby', () => {
+    const schottentor = {
+      address: 'Vienna, Austria',
+      lat: 48.2136,
+      lng: 16.3619,
+      name: 'Schottentor',
+    };
+    const far = { ...schottentor, address: 'Benoni, South Africa', lat: -26.1885, lng: 28.3208 };
+    // As said, it is no more than a nearby hit: never taken.
+    expect(read('Schottenor', [schottentor], events)).toEqual([['Schottentor', 'search']]);
+    const alike = (places: ReadonlyArray<typeof schottentor>) =>
+      rankFoundPlaces('Schottenor', places, events, { alike: true }).map(({ match, place }) => [
+        place.name,
+        match,
+      ]);
+    expect(alike([schottentor])).toEqual([['Schottentor', 'phonetic']]);
+    // Far away it is a namesake at most, as any far match is.
+    expect(alike([far])).toEqual([['Schottentor', 'search']]);
+  });
+
   it('puts the nearby place the text names first, then nearby hits, then far namesakes', () => {
     expect(read('Cafe Meek', [benoni, weg, london, kaffemik], events)).toEqual([
       ['Kaffemik', 'phonetic'],

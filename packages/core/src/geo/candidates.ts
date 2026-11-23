@@ -8,6 +8,7 @@ import {
   placeMatch,
   sameAddress,
   saysWhere,
+  spelledAlike,
 } from './resemblance.ts';
 
 /**
@@ -165,15 +166,20 @@ const FAR_OFFERS = 1;
  * found Meek Café in Benoni, 8,000 km from every event the user has. The
  * rest is `search`, offered and never taken: the nearby hits that do not
  * resemble the text, then one far namesake. Any other far hit is no
- * one's guess and is left out.
+ * one's guess and is left out. `alike`: a name the text is but for a
+ * letter or two resembles it too, by sound (`spelledAlike`) — for a text
+ * that is another reading of the words, whose places are only offered.
  */
 export const rankFoundPlaces = <Place extends FoundPlace>(
   text: string,
   places: ReadonlyArray<Place>,
   region: GeoRegion | undefined,
+  { alike = false }: { readonly alike?: boolean } = {},
 ): ReadonlyArray<{ readonly match: PlaceCandidate['match']; readonly place: Place }> => {
   const read = places.map((place, index) => {
-    const match = placeMatch(text, place);
+    const match =
+      placeMatch(text, place) ??
+      (alike && spelledAlike(text, place) ? ('phonetic' as const) : undefined);
     const near = isNearby(region, place);
     const named = match !== undefined && (near || saysWhere(text, place)) ? match : undefined;
     // Named first, by how well; then the nearby rest; then far namesakes.

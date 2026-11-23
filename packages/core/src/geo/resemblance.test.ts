@@ -11,7 +11,7 @@ import {
   TIME_ZONE_NEAR_METERS,
   TIME_ZONE_REGION_RADIUS_METERS,
 } from './regions.ts';
-import { placeMatch, sameAddress, saysWhere } from './resemblance.ts';
+import { placeMatch, sameAddress, saysWhere, spelledAlike } from './resemblance.ts';
 
 describe('koelnerKey', () => {
   it('gives words that sound alike the same key', () => {
@@ -335,6 +335,37 @@ describe('placeMatch', () => {
       sameAddress('Hauptplatz 1, 2340 Mödling, Austria', 'Hauptplatz 1, 2500 Baden, Austria'),
     ).toBe(false);
     expect(sameAddress('Zollergasse 5, Vienna', 'Zollergasse 5, 1070 Vienna, Austria')).toBe(true);
+  });
+});
+
+describe('spelledAlike', () => {
+  // Readings of Nik's recordings (2026-11-23) that MapKit found the place for.
+  it('takes a name written a letter or two off', () => {
+    expect(spelledAlike('Schottenor', { name: 'Schottentor' })).toBe(true);
+    expect(spelledAlike('Türkenschanzark', { name: 'Türkenschanzpark' })).toBe(true);
+    expect(spelledAlike('Marhilfestraße', { name: 'Mariahilfer Straße' })).toBe(true);
+    expect(spelledAlike('Mayer am Fahrplatz', { name: 'Mayer am Pfarrplatz' })).toBe(true);
+    expect(placeMatch('Schottenor', { name: 'Schottentor' })).toBeUndefined();
+  });
+
+  it('takes the name’s leading words, and a short word beside the name', () => {
+    expect(spelledAlike('Plachuta', { name: 'Plachutta Wollzeile' })).toBe(true);
+    expect(spelledAlike('the Burggarten', { name: 'Burggarten' })).toBe(true);
+    expect(spelledAlike('Cap Kallenberg', { name: 'Kahlenberg' })).toBe(true);
+  });
+
+  it('takes no other name, however short or close a part of it', () => {
+    expect(spelledAlike('Wespernhof', { name: 'Westbahnhof' })).toBe(false);
+    expect(spelledAlike('Café Speer', { name: 'Café Sperl' })).toBe(false);
+    expect(spelledAlike('Gastor Persal', { name: 'Gasthaus Pöschl' })).toBe(false);
+    expect(spelledAlike('Cafe', { name: 'Café Central' })).toBe(false);
+    expect(spelledAlike('Speer am Markt', { name: 'Sperl' })).toBe(false);
+  });
+
+  it('keeps a number as it is', () => {
+    expect(spelledAlike('Neubergasse 12', { name: 'Neubaugasse 12' })).toBe(true);
+    expect(spelledAlike('Neubergasse 12', { name: 'Neubaugasse 120' })).toBe(false);
+    expect(spelledAlike('Neubergasse 12', { name: 'Neubaugasse' })).toBe(false);
   });
 });
 
