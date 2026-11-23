@@ -372,6 +372,15 @@ describe('readingsFor', () => {
       'Mit Tom at the Naschmarkt',
     );
     expect(read && readingsFor(read, 'Nashmacht')).toEqual(['Nash market', 'Naschmarkt']);
+    // The recogniser's likeliest is the other language's too: it stays first.
+    const agreed = heardFromSegments(
+      [
+        { text: 'Meet Tom at the' },
+        { alternatives: [' Nashmacht', ' Naschmarkt', ' Nash market'], text: ' Nashmacht' },
+      ],
+      'Mit Tom at the Naschmarkt',
+    );
+    expect(agreed && readingsFor(agreed, 'Nashmacht')).toEqual(['Naschmarkt', 'Nash market']);
     const alone = heardFromSegments(
       [{ text: 'Meet Tom at the Nashmacht' }],
       'Mit Tom at the Naschmarkt',

@@ -468,11 +468,10 @@ export const readingsFor = (
   limit: number = ALTERNATIVES_LIMIT,
 ): ReadonlyArray<string> => {
   const other = otherLanguageReading(heard, text);
-  const rest = alternativesFor(heard, text, limit).filter(
-    (reading) => other === undefined || keysOf(reading) !== keysOf(other),
-  );
-  return (other === undefined ? rest : [...rest.slice(0, 1), other, ...rest.slice(1)]).slice(
-    0,
-    limit,
-  );
+  const own = alternativesFor(heard, text, limit);
+  // One the recogniser weighed too stays where it ranked it.
+  if (other === undefined || own.some((reading) => keysOf(reading) === keysOf(other))) {
+    return own;
+  }
+  return [...own.slice(0, 1), other, ...own.slice(1)].slice(0, limit);
 };
