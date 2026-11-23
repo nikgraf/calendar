@@ -1273,9 +1273,18 @@ export interface LaunchOptions {
    * `getUserMedia` itself is stood in for, in the page.)
    */
   readonly microphone?: {
+    /**
+     * The loop as stretches in ms, quiet first, then tone, quiet, tone…:
+     * `DICTATION_LOOP_MS` by default. Each tone says the next phrase;
+     * tones are `DICTATION_TONE_MS` long (the fixture spreads a phrase's
+     * words over that).
+     */
+    readonly loop?: ReadonlyArray<number>;
     readonly phrases: ReadonlyArray<
       string | { readonly segments: ReadonlyArray<TranscriptSegment> }
     >;
+    /** How long a reading of the phrase takes while listening goes on (the helper's, about a second). */
+    readonly readMs?: number;
   };
   /**
    * Absent (default): the real helper, so the ⌘K bar shows whatever this
@@ -1327,23 +1336,40 @@ const DICTATION_SAMPLE_RATE = 16_000;
 const sampleAt = (ms: number) => Math.round((DICTATION_SAMPLE_RATE * ms) / 1000);
 /** The fixture microphone's loop: quiet room, a phrase, then a pause long enough to end it. */
 export const DICTATION_LOOP_MS = { phrase: 1200, quietAfter: 2500, quietBefore: 800 } as const;
+/** How long each tone of the fixture microphone plays: a phrase. */
+export const DICTATION_TONE_MS = DICTATION_LOOP_MS.phrase;
 
 /**
  * One loop of the fixture microphone: a quiet room's noise (about -60
- * dBFS), a phrase-long tone over it (about -23 dBFS), then the room again
- * for longer than the pause that ends a phrase. Deterministic: the same
- * samples every run.
+ * dBFS), then each tone (about -23 dBFS) over it and the room again, as
+ * `loop` lays them out (by default one tone, then the room for longer than
+ * the pause that ends a phrase). Deterministic: the same samples every run.
  */
-const dictationAudio = (): Float32Array => {
-  const { phrase, quietAfter, quietBefore } = DICTATION_LOOP_MS;
-  const samples = new Float32Array(sampleAt(quietBefore + phrase + quietAfter));
+const dictationAudio = (
+  loop: ReadonlyArray<number> = [
+    DICTATION_LOOP_MS.quietBefore,
+    DICTATION_LOOP_MS.phrase,
+    DICTATION_LOOP_MS.quietAfter,
+  ],
+): Float32Array => {
+  const total = loop.reduce((sum, ms) => sum + ms, 0);
+  const samples = new Float32Array(sampleAt(total));
+  // Where each tone plays, in samples.
+  const tones: Array<readonly [number, number]> = [];
+  let at = 0;
+  for (const [index, ms] of loop.entries()) {
+    if (index % 2 === 1) {
+      tones.push([sampleAt(at), sampleAt(at + ms)]);
+    }
+    at += ms;
+  }
   let seed = 1;
   const noise = () => {
     seed = (seed * 16_807) % 2_147_483_647;
     return (seed / 2_147_483_647 - 0.5) * 0.002;
   };
   for (let index = 0; index < samples.length; index += 1) {
-    const speaking = index >= sampleAt(quietBefore) && index < sampleAt(quietBefore + phrase);
+    const speaking = tones.some(([from, to]) => index >= from && index < to);
     samples[index] =
       noise() +
       (speaking ? 0.1 * Math.sin((2 * Math.PI * 220 * index) / DICTATION_SAMPLE_RATE) : 0);
@@ -1353,8 +1379,9 @@ const dictationAudio = (): Float32Array => {
 
 /**
  * The page's microphone, stood in for: each `getUserMedia` answers a fresh
- * stream of one looping buffer of `dictationAudio`, played through Web
- * Audio — the same samples every run, whatever the room.
+ * stream of one looping buffer of `dictationAudio`, from its start, played
+ * through Web Audio — the same samples every run, whatever the room. How
+ * often it was opened is on `<html data-microphone-opens>`.
  */
 const fakeMicrophone = (_: PageKit, sampleRate: number, base64: string): void => {
   const context = new AudioContext({ sampleRate });
@@ -1362,13 +1389,15 @@ const fakeMicrophone = (_: PageKit, sampleRate: number, base64: string): void =>
   const samples = new Float32Array(bytes.buffer);
   const buffer = context.createBuffer(1, samples.length, context.sampleRate);
   buffer.copyToChannel(samples, 0);
-  const source = context.createBufferSource();
-  source.buffer = buffer;
-  source.loop = true;
-  source.start();
   navigator.mediaDevices.getUserMedia = async () => {
+    const root = document.documentElement;
+    root.dataset.microphoneOpens = String(Number(root.dataset.microphoneOpens ?? '0') + 1);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
     const stream = context.createMediaStreamDestination();
     source.connect(stream);
+    source.start();
     return stream.stream;
   };
 };
@@ -1500,7 +1529,13 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   const microphoneEnv: Record<string, string> = options.microphone
     ? (() => {
         const fixturePath = join(userDataDir, 'microphone-fixture.json');
-        writeFileSync(fixturePath, JSON.stringify({ phrases: options.microphone.phrases }));
+        writeFileSync(
+          fixturePath,
+          JSON.stringify({
+            phrases: options.microphone.phrases,
+            readMs: options.microphone.readMs ?? 0,
+          }),
+        );
         return { CALENDAR_MICROPHONE: 'fixture', CALENDAR_MICROPHONE_FIXTURE: fixturePath };
       })()
     : {};
@@ -1595,7 +1630,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       await cdp.evaluate(
         fakeMicrophone,
         DICTATION_SAMPLE_RATE,
-        Buffer.from(dictationAudio().buffer).toString('base64'),
+        Buffer.from(dictationAudio(options.microphone.loop).buffer).toString('base64'),
       );
     }
     if (options.camera) {

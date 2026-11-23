@@ -1186,6 +1186,8 @@ export const useThreadEditor = ({
     marks,
     moveToSlot,
     onPhrase,
+    /** The phrase being read is let go of: dictation reads it again, grown (`useQuickAddModel`). */
+    dropPhrase: thread.drop,
     /** A contact picked for a name a turn invited: the guest joins the form. */
     pickInvitee,
     /** A place picked among a turn's candidates: the form takes its text and pin. */

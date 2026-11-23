@@ -1,8 +1,9 @@
+import type { WordsSource } from '@calendar/ai';
 import type { VoiceState } from './quickAddModel.ts';
 
 /** Where hands-free dictation stands, as the microphone button sees it. */
 export interface VoiceLoopState {
-  /** Hands-free is on: every pause sends the phrase, then it listens again. */
+  /** Hands-free is on: every pause sends the phrase, and it listens on. */
   readonly handsFree: boolean;
   readonly voice: VoiceState;
 }
@@ -20,10 +21,87 @@ export interface VoiceLoopState {
 export const micPress = ({ handsFree, voice }: VoiceLoopState): 'end' | 'listen' | 'send' =>
   voice === 'recording' ? 'send' : handsFree || voice !== 'idle' ? 'end' : 'listen';
 
+/** How long the microphone is held before it is a hold, not a tap. */
+export const HOLD_MS = 350;
+
 /**
- * Hands-free listens again once the last phrase is done with: read, and
- * landed in the form (`hold` is the editor still applying it — a phrase
- * sent earlier would read the form as it was).
+ * What putting a finger (or the mouse button) down on the microphone
+ * does: off, it listens at once — whether this is a tap (hands-free) or a
+ * hold is known only later, and the words said meanwhile must not be lost.
+ */
+export const micDown = ({ handsFree, voice }: VoiceLoopState): 'listen' | 'none' =>
+  !handsFree && voice === 'idle' ? 'listen' : 'none';
+
+/**
+ * What lifting it does. `held`: it was down for `HOLD_MS` or more (hold to
+ * talk); `listened`: putting it down started the listening (`micDown`).
+ * - `send` — held, and listening: the phrase is sent, through any pause in it.
+ * - `end` — held, before the microphone opened: nothing was recorded.
+ * - `keep` — a tap that started hands-free: it listens on.
+ * - otherwise a tap, as `micPress`.
+ */
+export const micUp = ({
+  handsFree,
+  held,
+  listened,
+  voice,
+}: VoiceLoopState & {
+  readonly held: boolean;
+  readonly listened: boolean;
+}): 'end' | 'keep' | 'listen' | 'send' => {
+  if (held) {
+    return voice === 'recording' ? 'send' : 'end';
+  }
+  return listened ? 'keep' : micPress({ handsFree, voice });
+};
+
+/**
+ * What "that's all" (a tap while listening, a hold let go of) does with
+ * the phrase on its way, if one is:
+ * - `land` — nothing was said after it: it lands as it is, and the
+ *   microphone closes.
+ * - `read` — words followed it (or none is on its way): everything since
+ *   the last phrase that landed is read as one phrase, and sent.
+ */
+export const sendPress = ({
+  inFlight,
+  saidSince,
+}: {
+  readonly inFlight: boolean;
+  readonly saidSince: boolean;
+}): 'land' | 'read' => (inFlight && !saidSince ? 'land' : 'read');
+
+/** Words per recogniser: what each has written, counted as `phraseWords` counts. */
+export type WordCounts = Readonly<Record<WordsSource, number>>;
+
+const wordsIn = (text: string): ReadonlyArray<string> => text.split(/\s+/).filter(Boolean);
+
+/** How many words a recogniser's text holds. */
+export const wordCount = (text: string): number => wordsIn(text).length;
+
+/**
+ * A recogniser's words for the phrase being said: what it wrote since the
+ * listening began (it writes all of it, every phrase), less the words of
+ * the phrases that landed before (`landed`).
+ */
+export const phraseWords = (text: string, landed: number): string =>
+  wordsIn(text).slice(landed).join(' ');
+
+/**
+ * Whether words came after a phrase was sent (`atPause`: the counts when
+ * its pause ended): a new word of the quick recogniser, or the accurate
+ * one going past what either had heard by then. The accurate recogniser
+ * writes in bursts a second behind the quick one: a word of the phrase
+ * itself that it writes after the pause is not a new one.
+ */
+export const grewSince = (atPause: WordCounts, now: WordCounts): boolean =>
+  now.quick > atPause.quick || now.accurate > Math.max(atPause.accurate, atPause.quick);
+
+/**
+ * Hands-free opens the microphone once nothing else is under way: on the
+ * first press, and not while the form still takes a phrase in (`hold` is
+ * the editor still applying it). Once open it stays open, phrase after
+ * phrase, until hands-free ends.
  */
 export const shouldListen = ({
   handsFree,
