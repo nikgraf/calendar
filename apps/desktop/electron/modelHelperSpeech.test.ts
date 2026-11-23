@@ -28,6 +28,9 @@ vi.mock('electron', () => ({
 vi.mock('./helperProcess.ts', () => ({
   callHelper: async (method: string, params: unknown) => {
     main.calls.push({ method, params });
+    if (method === 'speech.read') {
+      return { mark: 32_000, segments: [{ alternatives: [], text: 'Lunch' }] };
+    }
     if (method === 'speech.finish') {
       return { segments: [{ alternatives: [], text: 'Lunch' }] };
     }
@@ -171,6 +174,30 @@ describe('dictation in main', () => {
     helperSays({ session: 1, source: 'quick', text: 'Lunch' });
     expect(window.sent).toEqual([{ session: 1, source: 'quick', text: 'Lunch' }]);
     expect(main.calls.map((entry) => entry.method)).toEqual(['speech.start']);
+  });
+
+  it('reads the window’s phrase listening on, and lets go of it once it landed', async () => {
+    const window = sender();
+    const other = sender();
+    await call('model:speech-start', window, 'en-US');
+    await expect(call('model:speech-read', window, 1)).resolves.toEqual({
+      mark: 32_000,
+      segments: [{ alternatives: [], text: 'Lunch' }],
+    });
+    // Another window's, an older phrase's, a mark that is no frame: nothing.
+    expect(await call('model:speech-read', other, 1)).toEqual({ segments: [] });
+    expect(await call('model:speech-read', window, 2)).toEqual({ segments: [] });
+    call('model:speech-cut', other, 1, 32_000);
+    call('model:speech-cut', window, 1, -1);
+    call('model:speech-cut', window, 1, 1.5);
+    call('model:speech-cut', window, 1, 32_000);
+    // Still listening: the words keep coming to the window.
+    helperSays({ session: 1, source: 'quick', text: 'Lunch make it two' });
+    expect(window.sent).toEqual([{ session: 1, source: 'quick', text: 'Lunch make it two' }]);
+    expect(main.calls.slice(1)).toEqual([
+      { method: 'speech.read', params: { session: 1 } },
+      { method: 'speech.cut', params: { mark: 32_000, session: 1 } },
+    ]);
   });
 
   it('tells the window its phrase was lost when the helper exits', async () => {

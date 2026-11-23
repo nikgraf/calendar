@@ -8,16 +8,55 @@ import {
   type WordsSource,
 } from '@calendar/ai';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { maySay, micPress, pendingLine, shouldListen } from './voiceLoop.ts';
+import {
+  grewSince,
+  HOLD_MS,
+  landedWords,
+  maySay,
+  CLICK_AFTER_UP_MS,
+  micClick,
+  micDown,
+  micPress,
+  micUp,
+  pendingLine,
+  phraseWords,
+  sendPress,
+  shouldListen,
+  tapNeverCame,
+  type WordCounts,
+  wordCount,
+} from './voiceLoop.ts';
 
-/** A phrase that never pauses is sent after this long rather than recorded until the app dies. */
+/** A phrase that never pauses is sent this long after its first word rather than recorded until the app dies. */
 const MAX_RECORDING_MS = 60_000;
 /** Hands-free with nobody speaking turns the microphone off: it is never left listening to a room. */
 const IDLE_LISTENING_MS = 30_000;
 
 export type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
 
+/** A phrase sent at its pause, on its way (`useQuickAddModel`'s `flight`). */
+interface Flight {
+  /** Each recogniser's words when its pause ended: more is the phrase going on (`grewSince`). */
+  readonly atPause: WordCounts;
+  /** Let go of: words joined it, or a press read it again; the reading that replaced it owns everything. */
+  dropped: boolean;
+  /** Cut by the 60 s cap: words after it are the next phrase, never part of it (`landedWords`). */
+  readonly forced: boolean;
+  /** Where its audio ended, once read: cut there once it landed. */
+  mark?: number | undefined;
+  /** Its listening ended before it landed: it lands, and nothing is listened for after it. */
+  orphan: boolean;
+  /** The thread is reading it. */
+  sent: boolean;
+}
+
 export interface QuickAddModelOptions {
+  /**
+   * The dictated phrase the thread is reading was let go of (words said
+   * before it landed joined it, and the grown phrase is read instead): the
+   * thread drops its answer.
+   */
+  readonly dropPhrase?: (() => void) | undefined;
   /**
    * Moves whenever the form is edited by hand: hands-free dictation ends
    * there, since the user has taken over.
@@ -48,10 +87,13 @@ export interface QuickAddModelOptions {
  * The state machine behind the editors' quick-add field on both
  * platforms: phrase, submit (to the thread) and the dictation lifecycle (find a
  * time is the event form's own tool, `useFindTimeModel`). Dictation is
- * hands-free: one press of the microphone listens, the words stopping
- * sends what was said as a phrase (`listenForPhrase`), and it listens again — until the microphone is
- * pressed, the form or the field is edited by hand, or nobody speaks for
- * a while (see `voiceLoop.ts` for the press). The two shells
+ * hands-free: one press of the microphone opens it, the words stopping
+ * sends what was said as a phrase (`listenForPhrase`), and the
+ * microphone stays open — words said before that phrase landed join it,
+ * words after it are the next phrase — until the microphone is pressed,
+ * the form or the field is edited by hand, or nobody speaks for a while.
+ * Held down, the microphone listens through any pause until it is let
+ * go of (see `voiceLoop.ts` for the press). The two shells
  * re-implemented this separately
  * once and drifted — MicrophoneDeniedError was handled in different
  * phases on each platform, so whichever phase a platform's speech impl
@@ -60,6 +102,7 @@ export interface QuickAddModelOptions {
  * retry affordances) stays in the components.
  */
 export const useQuickAddModel = ({
+  dropPhrase,
   editKey,
   hold = false,
   initialText,
@@ -148,10 +191,55 @@ export const useQuickAddModel = ({
   const arming = useRef(false);
   /** The locale's models were installed once: listening again skips straight to the microphone. */
   const prepared = useRef(false);
-  /** A recording is being stopped and read: its ear's late "end", the cap and a press ask once. */
+  /** The microphone is open: a phrase that lands is followed by the next one's ear. */
+  const open = useRef(false);
+  /** The listening is being finished and read: its ear's late "end", the cap and a press ask once. */
   const stopping = useRef(false);
   /** The ear of the phrase being listened to: its words so far, and when it ends. */
   const ear = useRef<PhraseListener | null>(null);
+  /** Each recogniser's words since the listening began (it writes all of them, every phrase). */
+  const texts = useRef<Record<WordsSource, string>>({ accurate: '', quick: '' });
+  /** The words of the phrases that landed: the next phrase's words begin after them. */
+  const landed = useRef<WordCounts>({ accurate: 0, quick: 0 });
+  /** The microphone held down (hold to talk): no pause ends the phrase; lifting it sends. */
+  const [holding, setHolding] = useState(false);
+  const holdingRef = useRef(false);
+  /**
+   * The phrase sent at its pause and not landed yet, the microphone still
+   * open: words that follow before it lands join it (`grewSince`), and it
+   * is read again, grown. A flight lets go of nothing it does not own: one
+   * that was `dropped` (it grew, or "that's all" read it again) leaves
+   * everything to the reading that replaced it; one whose listening ended
+   * meanwhile (`orphan`) still lands, and only closes the microphone's
+   * wait for it.
+   */
+  const flight = useRef<Flight | null>(null);
+  /** The recognisers that listen, as the start answered: every phrase's ear is told. */
+  const sources = useRef<ReadonlyArray<WordsSource>>(['accurate', 'quick']);
+  // The editor applying the last phrase: the next one waits to be sent.
+  const holdRef = useRef(hold);
+  holdRef.current = hold;
+  const holdWaiters = useRef<Array<() => void>>([]);
+  useEffect(() => {
+    if (!hold) {
+      for (const resume of holdWaiters.current.splice(0)) {
+        resume();
+      }
+    }
+  }, [hold]);
+  const afterHold = () =>
+    holdRef.current
+      ? new Promise<void>((resume) => {
+          holdWaiters.current.push(resume);
+        })
+      : Promise.resolve();
+  const dropRef = useRef(dropPhrase);
+  dropRef.current = dropPhrase;
+
+  const counts = (): WordCounts => ({
+    accurate: wordCount(texts.current.accurate),
+    quick: wordCount(texts.current.quick),
+  });
 
   /** The phrase is dropped: its ear stops, its words go. */
   const closeEar = () => {
@@ -160,13 +248,189 @@ export const useQuickAddModel = ({
     setLive('');
   };
 
+  /**
+   * The phrase on its way is let go of: its reading no longer counts, and
+   * the thread drops its answer (`dropPhrase`).
+   */
+  const dropFlight = () => {
+    const was = flight.current;
+    flight.current = null;
+    if (!was) {
+      return;
+    }
+    was.dropped = true;
+    if (was.sent) {
+      dropRef.current?.();
+      setSending(null);
+    }
+  };
+
+  /**
+   * The listening ended with a phrase on its way: it still lands, and
+   * nothing is listened for after it. Whether one is.
+   */
+  const orphanFlight = (): boolean => {
+    const was = flight.current;
+    flight.current = null;
+    if (was) {
+      was.orphan = true;
+    }
+    return was !== null;
+  };
+
   const failed = (message: string) => {
+    // A press under way when it failed: lifting it starts nothing.
+    stopHolding();
     closeEar();
+    orphanFlight();
+    open.current = false;
     switchHandsFree(false);
     setHeard(false);
     setVoice('idle');
     setError(message);
   };
+
+  /**
+   * A new phrase's ear. `primed`: the words already said for it go in at
+   * once (a phrase that grew, or one held after a pause), and it started.
+   */
+  const openEar = ({ primed = false } = {}) => {
+    const listening = listenForPhrase(() => {
+      if (ear.current === listening) {
+        void pauseRef.current();
+      }
+    });
+    ear.current = listening;
+    listening.listensWith(sources.current);
+    if (holdingRef.current) {
+      // Held: no pause ends it; lifting the microphone does.
+      listening.stop();
+    }
+    if (primed) {
+      for (const source of ['accurate', 'quick'] as const) {
+        listening.words(source, phraseWords(texts.current[source], landed.current[source]));
+      }
+      const started = listening.heard();
+      setHeard(started);
+      setLive(listening.text());
+    }
+    return listening;
+  };
+
+  /**
+   * The phrase on its way landed (taken, refused, or heard as nothing):
+   * its audio goes, its words are behind the next phrase's, and while the
+   * microphone is open the next phrase is listened for.
+   */
+  const land = (own: Flight) => {
+    if (own.dropped) {
+      return;
+    }
+    if (own.orphan) {
+      // The microphone's wait for it ends (`endVoice`); its listening is gone.
+      setVoice((now) => (now === 'transcribing' && !stopping.current ? 'idle' : now));
+      return;
+    }
+    if (flight.current !== own) {
+      return;
+    }
+    flight.current = null;
+    if (own.mark !== undefined) {
+      speech.cut(own.mark);
+    }
+    landed.current = landedWords({ atPause: own.atPause, forced: own.forced, now: counts() });
+    if (open.current && !stopping.current) {
+      // After a cut phrase, what was said since is the next one's start.
+      openEar({ primed: own.forced });
+    }
+  };
+
+  /**
+   * A dictated phrase in flight, handed to the thread. A phrase dropped
+   * meanwhile (it grew) leaves everything to the one read instead.
+   */
+  const sendHeard = async (own: Flight, heard: Heard) => {
+    setPhrase(heard.text);
+    setSending(heard.text);
+    setError(null);
+    try {
+      const message = await phraseRef.current(heard.text, heard);
+      if (!own.dropped) {
+        if (message === undefined) {
+          setPhrase('');
+        } else {
+          setError(message);
+        }
+      }
+    } catch {
+      if (!own.dropped) {
+        setError('On-device model unavailable.');
+      }
+    } finally {
+      if (!own.dropped) {
+        setSending(null);
+        land(own);
+      }
+    }
+  };
+
+  /**
+   * The phrase's words stopped: it is read and sent at once, the
+   * microphone left open. What is said before it lands joins it; what
+   * comes after is the next phrase.
+   */
+  const onPause = async (forced = false) => {
+    if (holdingRef.current || stopping.current) {
+      return;
+    }
+    ear.current?.stop();
+    ear.current = null;
+    setHeard(false);
+    const own: Flight = { atPause: counts(), dropped: false, forced, orphan: false, sent: false };
+    flight.current = own;
+    try {
+      const read = await speech.read();
+      if (own.dropped) {
+        return;
+      }
+      if (read === undefined) {
+        // The listening went (ended, lost): nothing to send, nothing to cut.
+        own.mark = undefined;
+        land(own);
+        return;
+      }
+      own.mark = read.mark;
+      if (read.heard === undefined) {
+        // Hands-free hears noise as often as words: it just listens on.
+        setLive('');
+        land(own);
+        return;
+      }
+      // A phrase sent while the form still takes the last one in would read it as it was.
+      await afterHold();
+      if (own.dropped) {
+        return;
+      }
+      // The words heard give way to the phrase as read, in one render.
+      setLive('');
+      own.sent = true;
+      await sendHeard(own, read.heard);
+    } catch {
+      if (own.dropped) {
+        return;
+      }
+      if (own.orphan) {
+        land(own);
+        setError('Could not transcribe that.');
+        return;
+      }
+      starting.current = null;
+      void speech.cancel();
+      failed('Could not transcribe that.');
+    }
+  };
+  const pauseRef = useRef(onPause);
+  pauseRef.current = onPause;
 
   /**
    * Stopping applies the transcript at once: no second tap after the
@@ -181,8 +445,11 @@ export const useQuickAddModel = ({
     // Its ear is done: words still on their way after the press must not
     // reach the next recording. They stay on show until the phrase is read.
     starting.current = null;
+    open.current = false;
     ear.current?.stop();
     ear.current = null;
+    // Read again from where the last phrase landed: a phrase on its way goes with it.
+    dropFlight();
     setVoice('transcribing');
     setHeard(false);
     try {
@@ -191,8 +458,7 @@ export const useQuickAddModel = ({
       // The words heard give way to the phrase as read, in one render.
       setLive('');
       if (!text) {
-        // Hands-free hears noise as often as words: it just listens again.
-        if (!handsFreeRef.current && !quiet) {
+        if (!quiet) {
           setError("Didn't catch that — try again.");
         }
         return;
@@ -211,13 +477,26 @@ export const useQuickAddModel = ({
   const stopRef = useRef(stopRecording);
   stopRef.current = stopRecording;
 
-  /** A recogniser's words, handled by the latest render. */
+  /** A recogniser's words (all of them since the listening began), handled by the latest render. */
   const onWords = (source: WordsSource, text: string) => {
+    texts.current[source] = text;
+    const was = flight.current;
+    if (!ear.current && was !== null) {
+      if (
+        !was.forced &&
+        grewSince({ atPause: was.atPause, landed: landed.current, now: counts() })
+      ) {
+        // Said before the phrase landed: it is part of it.
+        dropFlight();
+        openEar({ primed: true });
+      }
+      return;
+    }
     const listening = ear.current;
     if (!listening) {
       return;
     }
-    if (listening.words(source, text) === 'start') {
+    if (listening.words(source, phraseWords(text, landed.current[source])) === 'start') {
       setHeard(true);
       // Speaking again is the answer to the last phrase's message.
       setError(null);
@@ -229,7 +508,7 @@ export const useQuickAddModel = ({
 
   /** The phrase went with its recognisers: nothing will end it, so it ends here. */
   const onLost = () => {
-    if (!ear.current) {
+    if (!open.current) {
       return;
     }
     starting.current = null;
@@ -275,13 +554,12 @@ export const useQuickAddModel = ({
           return;
         }
       }
-      // The phrase ends when its words stop: the ear sends it then.
-      const listening = listenForPhrase(() => {
-        if (ear.current === listening) {
-          void stopRef.current();
-        }
-      });
-      ear.current = listening;
+      texts.current = { accurate: '', quick: '' };
+      landed.current = { accurate: 0, quick: 0 };
+      sources.current = ['accurate', 'quick'];
+      orphanFlight();
+      // A phrase ends when its words stop: the ear sends it then.
+      const listening = openEar();
       /** This start came to nothing: its ear goes, a newer one stays. */
       const drop = () => {
         listening.stop();
@@ -297,7 +575,7 @@ export const useQuickAddModel = ({
             }
           },
           onWords: (source, text) => {
-            // Only this recording's words: a later one has its own ear.
+            // Only this listening's words: a later one has its own ear.
             if (starting.current === controller && !controller.signal.aborted) {
               wordsRef.current(source, text);
             }
@@ -310,7 +588,9 @@ export const useQuickAddModel = ({
           drop();
           return;
         }
+        sources.current = started.sources;
         listening.listensWith(started.sources);
+        open.current = true;
         setVoice('recording');
       } catch (error) {
         drop();
@@ -331,20 +611,44 @@ export const useQuickAddModel = ({
   };
 
   /**
-   * Hands-free ends: a recording is dropped unheard, a start still
-   * preparing or waiting for the microphone is given up. A phrase being
-   * read still lands — it was said before the user took over.
+   * Hands-free ends: the microphone closes and what is being said goes
+   * unheard; a start still preparing or waiting for the microphone is
+   * given up. A phrase on its way still lands — it was said before the
+   * user took over — and the microphone waits for it (`transcribing`), as
+   * it waits for a phrase read at a press.
    */
   const endVoice = () => {
     switchHandsFree(false);
     setHeard(false);
+    stopHolding();
     if (voice === 'preparing' || voice === 'recording' || arming.current) {
       starting.current?.abort();
       arming.current = false;
+      open.current = false;
       closeEar();
       void speech.cancel();
-      setVoice('idle');
+      setVoice(orphanFlight() ? 'transcribing' : 'idle');
     }
+  };
+  const endRef = useRef(endVoice);
+  endRef.current = endVoice;
+
+  /**
+   * "That's all": what was said is sent, and nothing more is listened
+   * for. A phrase already on its way with nothing said after it just
+   * lands; otherwise everything since the last phrase landed is read as one.
+   */
+  const send = () => {
+    switchHandsFree(false);
+    stopHolding();
+    // After the pause the phrase has no ear until words follow it.
+    if (
+      sendPress({ inFlight: flight.current !== null, saidSince: ear.current !== null }) === 'land'
+    ) {
+      endVoice();
+      return;
+    }
+    void stopRecording(!heard);
   };
 
   /**
@@ -362,8 +666,8 @@ export const useQuickAddModel = ({
     void submit(text, undefined, { field: false });
   };
 
-  /** The microphone button. */
-  const toggleVoice = () => {
+  /** The microphone pressed as a button (a click from the keyboard, VoiceOver), or tapped. */
+  const press = () => {
     switch (micPress({ handsFree, voice })) {
       case 'listen': {
         setError(null);
@@ -371,13 +675,156 @@ export const useQuickAddModel = ({
         return;
       }
       case 'send': {
-        switchHandsFree(false);
-        void stopRecording(!heard);
+        send();
         return;
       }
       case 'end': {
         endVoice();
       }
+    }
+  };
+
+  /** The finger (or mouse button) on the microphone: when it went down, and whether that started listening. */
+  const down = useRef<{
+    /** Its click came while it was down: a tap. */
+    clicked: boolean;
+    readonly listened: boolean;
+    readonly timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  /** A release waiting for its click (`micUp` → `wait`): what the tap does, and when it gives up. */
+  const awaitingClick = useRef<{
+    readonly tap: () => void;
+    readonly timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  /** When the microphone was last let go of: the click that follows a press is not another. */
+  const lastUp = useRef(Number.NEGATIVE_INFINITY);
+
+  /**
+   * The hold, or the press under way, is over before the microphone is
+   * let go of (sent, or dictation ended): letting go of it, and its click,
+   * then do nothing more.
+   */
+  function stopHolding() {
+    if (down.current) {
+      clearTimeout(down.current.timer);
+      down.current = null;
+    }
+    holdingRef.current = false;
+    setHolding(false);
+  }
+
+  /**
+   * Held long enough: hold to talk. No pause ends the phrase, and a
+   * phrase still on its way is part of it (it is read again, with what is
+   * said now, once the microphone is lifted).
+   */
+  const beginHold = () => {
+    holdingRef.current = true;
+    setHolding(true);
+    ear.current?.stop();
+    if (ear.current === null && flight.current !== null) {
+      dropFlight();
+      openEar({ primed: true });
+    }
+  };
+  const holdRefFn = useRef(beginHold);
+  holdRefFn.current = beginHold;
+
+  /** The microphone pressed down: off, it listens at once (`micDown`). */
+  const micDownPress = () => {
+    if (down.current) {
+      clearTimeout(down.current.timer);
+    }
+    const listened = micDown({ handsFree, voice }) === 'listen';
+    if (listened) {
+      setError(null);
+      switchHandsFree(true);
+    }
+    down.current = {
+      clicked: false,
+      listened,
+      timer: setTimeout(() => holdRefFn.current(), HOLD_MS),
+    };
+  };
+
+  /** The microphone let go of (`micUp`): a hold sends, a tap is a press. */
+  const micUpPress = () => {
+    // Also a press ended under the finger (sent, or dictation ended): its click is not another.
+    lastUp.current = Date.now();
+    const was = down.current;
+    if (!was) {
+      return;
+    }
+    clearTimeout(was.timer);
+    down.current = null;
+    const held = holdingRef.current;
+    stopHolding();
+    const release = (clicked: boolean) =>
+      micUp({ clicked, handsFree, held, listened: was.listened, voice });
+    const action = release(was.clicked);
+    if (action === 'wait') {
+      awaitingClick.current = {
+        tap: () => {
+          act(release(true));
+        },
+        timer: setTimeout(() => {
+          awaitingClick.current = null;
+          if (tapNeverCame({ listened: was.listened }) === 'end') {
+            endRef.current();
+          }
+        }, CLICK_AFTER_UP_MS),
+      };
+      return;
+    }
+    act(action);
+  };
+
+  /** What a release does (`micUp`), once it is known to be a tap or a hold. */
+  const act = (action: 'end' | 'keep' | 'listen' | 'send' | 'wait') => {
+    switch (action) {
+      case 'send': {
+        send();
+        return;
+      }
+      case 'end': {
+        endVoice();
+        return;
+      }
+      case 'listen': {
+        setError(null);
+        switchHandsFree(true);
+        return;
+      }
+      case 'keep':
+      case 'wait':
+    }
+  };
+
+  /** The microphone's click: after a press it handled, nothing more; from the keyboard, a press. */
+  const toggleVoice = () => {
+    const waiting = awaitingClick.current;
+    switch (
+      micClick({
+        pressing: down.current !== null,
+        sinceUpMs: Date.now() - lastUp.current,
+        waiting: waiting !== null,
+      })
+    ) {
+      case 'mark': {
+        down.current!.clicked = true;
+        return;
+      }
+      case 'confirm': {
+        clearTimeout(waiting!.timer);
+        awaitingClick.current = null;
+        waiting!.tap();
+        return;
+      }
+      case 'press': {
+        press();
+        return;
+      }
+      case 'ignore':
     }
   };
 
@@ -411,22 +858,33 @@ export const useQuickAddModel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handled once, as it turns off
   }, [off]);
 
-  // Send a phrase that never pauses, and never leave one running when the
-  // field goes away (unmount cancels below).
+  // Send a phrase that never pauses (held, the hold ends with it), and
+  // never leave one running when the field goes away (unmount cancels below).
   useEffect(() => {
-    if (voice !== 'recording') {
+    if (voice !== 'recording' || !heard) {
       return;
     }
-    const timer = setTimeout(() => void stopRecording(), MAX_RECORDING_MS);
+    const timer = setTimeout(() => {
+      if (holdingRef.current) {
+        // As a hold let go of: sent, and nothing more is listened for.
+        switchHandsFree(false);
+        stopHolding();
+        void stopRef.current();
+      } else {
+        // Cut here for good: what follows is the next phrase.
+        void pauseRef.current(true);
+      }
+    }, MAX_RECORDING_MS);
     return () => {
       clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- restart the cap per recording
-  }, [voice]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restart the cap per phrase
+  }, [voice, heard]);
 
-  // Listening to a silent room for long: hands-free gives up.
+  // Listening to a silent room for long: hands-free gives up. Not while a
+  // phrase is read or the microphone is held.
   useEffect(() => {
-    if (!handsFree || voice !== 'recording' || heard) {
+    if (!handsFree || voice !== 'recording' || heard || busy || holding) {
       return;
     }
     const timer = setTimeout(endVoice, IDLE_LISTENING_MS);
@@ -434,12 +892,25 @@ export const useQuickAddModel = ({
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restart the wait per silence
-  }, [handsFree, voice, heard]);
+  }, [handsFree, voice, heard, busy, holding]);
 
   useEffect(
     () => () => {
       starting.current?.abort();
       ear.current?.stop();
+      if (down.current) {
+        clearTimeout(down.current.timer);
+      }
+      if (awaitingClick.current) {
+        clearTimeout(awaitingClick.current.timer);
+      }
+      // A phrase still on its way belongs to an editor that is gone: its
+      // answer lands nowhere, and nothing it would cut or open is its own.
+      open.current = false;
+      if (flight.current) {
+        flight.current.dropped = true;
+        flight.current = null;
+      }
       void speech.cancel();
     },
     [speech],
@@ -458,6 +929,8 @@ export const useQuickAddModel = ({
     handsFree,
     /** A first word of the phrase being recorded was heard. */
     heard,
+    /** The microphone is held down: it listens through any pause until let go of. */
+    holding,
     /**
      * Words typed or dictated into the field and not sent yet: closing
      * the editor would lose them (`editorUnsaved`).
@@ -469,6 +942,9 @@ export const useQuickAddModel = ({
      */
     pending: pendingLine({ busy, live, phrase: sending ?? phrase }),
     phrase,
+    /** The microphone pressed down, and let go of: a hold talks until let go, a tap is `toggleVoice`. */
+    micDown: micDownPress,
+    micUp: micUpPress,
     /** Words the editor offers, said as if typed (`say`). */
     say,
     /** Offered words may be said now: no phrase is on its way (`maySay`). */

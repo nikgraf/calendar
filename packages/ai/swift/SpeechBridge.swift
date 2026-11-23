@@ -1,4 +1,4 @@
-// Solunivo speech bridge: one spoken phrase at a time, over SpeechAnalyzer.
+// Solunivo speech bridge: dictation over SpeechAnalyzer, one listening at a time.
 //
 // ONE source for two native hosts — the macOS helper (SPM executable) and
 // the iOS Expo module `solunivo-speech` — each of which symlinks this file
@@ -7,10 +7,13 @@
 // the phrase is said and report their words as they change: `quick`
 // (DictationTranscriber: a word a fraction of a second after it is said)
 // and `accurate` (SpeechTranscriber: better words, in bursts). When the
-// caller decides the phrase is over (`finish`, from the words: packages/ai
+// caller decides a phrase is over (from the words: packages/ai
 // `listenForPhrase`), the phrase is read once more, whole, by the
 // recogniser phrases were always read with, and that reading is the
-// answer. With it the phrase is read in the user's other language too
+// answer: `read` while the microphone stays open (hands-free: words said
+// meanwhile are kept, and either join the phrase or begin the next one),
+// `finish` as it closes. `cut` lets go of a phrase that landed: the next
+// `read` begins after it. With it the phrase is read in the user's other language too
 // (`SpeechAssets.other`): a name said the German way inside an English
 // sentence is written as English words by the English recogniser and as
 // itself by the German one, and the place lookup searches that reading as
@@ -18,8 +21,10 @@
 //
 // The JSON shapes are the `SpeechToText` seam's in packages/ai: words go
 // out as (session, source "quick" | "accurate", text = everything that
-// recogniser wrote so far); `finish` answers segments `{text, alternatives}`
-// and `other`, the phrase as the other language's recogniser wrote it.
+// recogniser wrote so far, across every phrase of the listening); `read`
+// and `finish` answer segments `{text, alternatives}` and `other`, the
+// phrase as the other language's recogniser wrote it; `read` adds `mark`,
+// where its audio ended, for `cut`.
 import AVFoundation
 import Foundation
 import Speech
@@ -149,14 +154,24 @@ enum SpeechAssets {
   }
 }
 
-/// One phrase being listened to: the live recognisers, and the audio for
-/// the final reading. `append` may be called from any one thread at a
-/// time (the microphone's tap, the helper's stdin reader), in order.
+/// One listening: the live recognisers, and the audio of the phrase not
+/// yet let go of (`cut`), for its final reading. `append` may be called
+/// from any one thread at a time (the microphone's tap, the helper's stdin
+/// reader), in order.
 final class SpeechListening: @unchecked Sendable {
   typealias Words = @Sendable (_ source: String, _ text: String) -> Void
 
-  /// Audio kept beyond this is dropped: the app sends a phrase after 60 s.
+  /// Audio kept beyond this goes, the oldest first: the app sends a
+  /// phrase 60 s after its first word.
   private static let maxSeconds = 90.0
+  /// Before a phrase's first word, only this much of the room is kept: a
+  /// hands-free listening that waited half a minute for a word must not
+  /// read the half minute again. The first words are seen when a
+  /// recogniser writes them, a second or so after they were said and
+  /// later on a busy device: the lead is generous, since a phrase's start
+  /// cut off is a phrase lost, and reading a few seconds of room costs a
+  /// tenth of a second.
+  private static let leadSeconds = 8.0
 
   /// The recognisers listening: "accurate", and "quick" when its assets are here.
   let sources: [String]
@@ -166,15 +181,22 @@ final class SpeechListening: @unchecked Sendable {
   private let locale: Locale
   private let readers: [Task<Void, Never>]
   private let lock = NSLock()
+  private let words: WordsSeen
   private var converter: AVAudioConverter?
-  private var kept: [AVAudioPCMBuffer] = []
+  /// The phrase's audio, each block with where it began in the listening.
+  private var kept: [(start: AVAudioFramePosition, buffer: AVAudioPCMBuffer)] = []
   private var keptFrames: AVAudioFramePosition = 0
+  /// Every frame taken in so far: where the next block begins.
+  private var total: AVAudioFramePosition = 0
+  /// A phrase was read and not yet let go of: its audio stays, however
+  /// long the pause after it (words that follow may join it).
+  private var reading = false
   private var open = true
 
   private init(
     analyzer: SpeechAnalyzer, format: AVAudioFormat,
     input: AsyncStream<AnalyzerInput>.Continuation, locale: Locale, readers: [Task<Void, Never>],
-    sources: [String]
+    sources: [String], words: WordsSeen
   ) {
     self.sources = sources
     self.analyzer = analyzer
@@ -182,6 +204,7 @@ final class SpeechListening: @unchecked Sendable {
     self.input = input
     self.locale = locale
     self.readers = readers
+    self.words = words
   }
 
   static func start(locale identifier: String, onWords: @escaping Words) async throws
@@ -209,6 +232,7 @@ final class SpeechListening: @unchecked Sendable {
     let analyzer = SpeechAnalyzer(
       modules: modules, options: .init(priority: .userInitiated, modelRetention: .lingering))
     try await analyzer.start(inputSequence: stream)
+    let seen = WordsSeen()
     var readers = [
       Task {
         var done = ""
@@ -216,6 +240,7 @@ final class SpeechListening: @unchecked Sendable {
           for try await result in accurate.results {
             let text = joined(done, String(result.text.characters))
             if result.isFinal { done = text }
+            seen.mark()
             onWords("accurate", text)
           }
         } catch {}
@@ -229,6 +254,7 @@ final class SpeechListening: @unchecked Sendable {
             for try await result in quick.results {
               let text = joined(done, String(result.text.characters))
               if result.isFinal { done = text }
+              seen.mark()
               onWords("quick", text)
             }
           } catch {}
@@ -236,7 +262,7 @@ final class SpeechListening: @unchecked Sendable {
     }
     return SpeechListening(
       analyzer: analyzer, format: format, input: input, locale: locale, readers: readers,
-      sources: quick == nil ? ["accurate"] : ["accurate", "quick"])
+      sources: quick == nil ? ["accurate"] : ["accurate", "quick"], words: seen)
   }
 
   /// The other language to read the phrase in: only when its recogniser is
@@ -257,10 +283,53 @@ final class SpeechListening: @unchecked Sendable {
   func append(_ buffer: AVAudioPCMBuffer) {
     lock.withLock {
       guard open, let converted = convert(buffer) else { return }
-      guard Double(keptFrames) < Self.maxSeconds * format.sampleRate else { return }
-      kept.append(converted)
-      keptFrames += AVAudioFramePosition(converted.frameLength)
+      let frames = AVAudioFramePosition(converted.frameLength)
+      kept.append((start: total, buffer: converted))
+      keptFrames += frames
+      total += frames
       input.yield(AnalyzerInput(buffer: converted))
+      trim()
+    }
+  }
+
+  /// Called under the lock. The oldest audio goes past the cap; and while
+  /// no phrase is being read, the room before the phrase's first words,
+  /// beyond the lead a phrase keeps (nothing was said in it that a
+  /// recogniser wrote down).
+  private func trim() {
+    let rate = format.sampleRate
+    let lead = AVAudioFramePosition(Self.leadSeconds * rate)
+    let wordsAt = words.firstAt(now: total)
+    while let first = kept.first, kept.count > 1 {
+      let end = first.start + AVAudioFramePosition(first.buffer.frameLength)
+      let capped = Double(keptFrames) > Self.maxSeconds * rate
+      let room = !reading && end < wordsAt - lead
+      guard capped || room else { return }
+      kept.removeFirst()
+      keptFrames -= AVAudioFramePosition(first.buffer.frameLength)
+    }
+  }
+
+  /// The phrase so far, to read while listening goes on (`readAll`):
+  /// its audio, and `mark`, where it ended. Its audio stays until `cut`.
+  func snapshot() -> (audio: KeptAudio, mark: AVAudioFramePosition) {
+    lock.withLock {
+      reading = true
+      return (KeptAudio(buffers: kept.map(\.buffer)), total)
+    }
+  }
+
+  /// The phrase read up to `mark` landed: its audio goes, and the next
+  /// reading begins after it.
+  func cut(through mark: AVAudioFramePosition) {
+    lock.withLock {
+      guard reading else { return }
+      reading = false
+      words.reset()
+      while let first = kept.first, first.start < mark {
+        kept.removeFirst()
+        keptFrames -= AVAudioFramePosition(first.buffer.frameLength)
+      }
     }
   }
 
@@ -270,6 +339,12 @@ final class SpeechListening: @unchecked Sendable {
     let audio = close()
     await analyzer.cancelAndFinishNow()
     for reader in readers { reader.cancel() }
+    return try await readAll(audio)
+  }
+
+  /// Reads audio once more, whole, and in the other language beside it.
+  /// No segments when nothing was said.
+  func readAll(_ audio: [AVAudioPCMBuffer]) async throws -> SpeechReading {
     guard !audio.isEmpty else { return SpeechReading(other: nil, segments: []) }
     // Both passes only read the audio, at the same time.
     let kept = KeptAudio(buffers: audio)
@@ -291,7 +366,7 @@ final class SpeechListening: @unchecked Sendable {
     lock.withLock {
       open = false
       input.finish()
-      let audio = kept
+      let audio = kept.map(\.buffer)
       kept = []
       keptFrames = 0
       return audio
@@ -357,8 +432,37 @@ final class SpeechListening: @unchecked Sendable {
   }
 }
 
+/// Where the phrase's first words came, as a frame of the listening: the
+/// first a recogniser wrote since the listening began or the last phrase
+/// was let go of (`reset`). Marked from the recognisers' tasks, read
+/// under the listening's lock.
+private final class WordsSeen: @unchecked Sendable {
+  private let lock = NSLock()
+  private var first: AVAudioFramePosition?
+  /// Where the listening's audio stands, kept in step by `append`.
+  private var now: AVAudioFramePosition = 0
+
+  func mark() {
+    lock.withLock {
+      if first == nil { first = now }
+    }
+  }
+
+  func reset() {
+    lock.withLock { first = nil }
+  }
+
+  /// The frame of the phrase's first words; `now` when none came yet.
+  func firstAt(now total: AVAudioFramePosition) -> AVAudioFramePosition {
+    lock.withLock {
+      now = total
+      return first ?? total
+    }
+  }
+}
+
 /// A finished phrase's audio, no longer written to: safe to read from two tasks.
-private struct KeptAudio: @unchecked Sendable {
+struct KeptAudio: @unchecked Sendable {
   let buffers: [AVAudioPCMBuffer]
 }
 
@@ -384,9 +488,9 @@ private func joined(_ done: String, _ text: String) -> String {
   (done + " " + text).split(whereSeparator: \.isWhitespace).joined(separator: " ")
 }
 
-/// The one phrase listened to at a time, by the id its caller gave it: a
-/// start replaces (and drops) the phrase before, and a late call about an
-/// older phrase does nothing. Starts, finishes and cancels run one after
+/// The one listening at a time, by the id its caller gave it: a start
+/// replaces (and drops) the listening before, and a late call about an
+/// older one does nothing. Starts, reads, finishes and cancels run one after
 /// another in the order they were called: each is queued synchronously,
 /// as the call arrives (the helper's stdin reader, the iOS module's serial
 /// queue), and its task is what the caller awaits. Two bars that start and
@@ -426,6 +530,33 @@ final class SpeechSessions: @unchecked Sendable {
   func append(id: Int, _ buffer: AVAudioPCMBuffer) {
     let listening = lock.withLock { current?.id == id ? current?.listening : nil }
     listening?.append(buffer)
+  }
+
+  /// A reading of the phrase so far, the microphone left open; nil when
+  /// `id` is not the listening (dropped, or replaced). Only taking its
+  /// audio is queued with the other steps: the reading runs beside them,
+  /// so a cancel or a finish (and the microphone closing with it) never
+  /// waits for it.
+  func read(id: Int) -> Task<(reading: SpeechReading, mark: AVAudioFramePosition)?, Error> {
+    let taken = serial { () -> (SpeechListening, KeptAudio, AVAudioFramePosition)? in
+      guard
+        let listening = self.lock.withLock({
+          self.current?.id == id ? self.current?.listening : nil
+        })
+      else { return nil }
+      let (audio, mark) = listening.snapshot()
+      return (listening, audio, mark)
+    }
+    return Task {
+      guard let (listening, audio, mark) = try await taken.value else { return nil }
+      return (try await listening.readAll(audio.buffers), mark)
+    }
+  }
+
+  /// The phrase read up to `mark` landed: at once, not queued, as audio is.
+  func cut(id: Int, through mark: AVAudioFramePosition) {
+    let listening = lock.withLock { current?.id == id ? current?.listening : nil }
+    listening?.cut(through: mark)
   }
 
   /// Queues a finish; nil when `id` is not the phrase listened to (dropped, or replaced).

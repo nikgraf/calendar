@@ -31,11 +31,16 @@ type Quick = ReturnType<typeof useQuickAddModel>;
 const barStatus = ({
   busy,
   error,
+  holding,
   voice,
-}: Pick<Quick, 'busy' | 'error' | 'voice'>): {
+}: Pick<Quick, 'busy' | 'error' | 'holding' | 'voice'>): {
   readonly text: string;
   readonly tone: 'error' | 'hint';
 } | null => {
+  // Held: it listens through any pause, until the thumb lifts.
+  if (holding) {
+    return { text: 'Holding… lift to send', tone: 'hint' };
+  }
   if (voice === 'preparing') {
     return { text: 'Preparing dictation…', tone: 'hint' };
   }
@@ -157,8 +162,9 @@ function DemoBar({
 /**
  * The Assistant's bar, at the bottom by the thumb: Type, the microphone,
  * Form. Speaking is the way in — one tap of the microphone listens, each
- * pause sends what was said and it listens again, until it is tapped
- * again or the form is edited by hand (`useQuickAddModel`). Type swaps
+ * pause sends what was said and it listens on, until it is tapped again
+ * or the form is edited by hand; held, it listens through any pause until
+ * the thumb lifts (`useQuickAddModel`). Type swaps
  * the bar for a field with a send button, riding above the keyboard; the
  * field giving up the focus (the keyboard dismissed, a phrase taken)
  * brings the bar back, its words kept. The focus, not the keyboard: on
@@ -207,6 +213,9 @@ export function AssistantBar({
     endVoice,
     handsFree,
     heard,
+    holding,
+    micDown,
+    micUp,
     phrase,
     setPhrase,
     submit,
@@ -327,21 +336,26 @@ export function AssistantBar({
           {voiceAvailable ? (
             <Animated.View style={micStyle}>
               <Pressable
+                accessibilityHint="Hold to talk through pauses"
                 accessibilityLabel={handsFree ? 'Stop dictating' : 'Dictate'}
                 accessibilityRole="button"
                 accessibilityState={{ selected: handsFree }}
                 // On, it always answers (to stop); off, not while a typed phrase
                 // is read, without the model or with an older step on show.
                 disabled={!handsFree && (off || working)}
-                onPress={() => {
+                // A tap is a press; held, it talks until the thumb lifts.
+                // VoiceOver's activation may come as a press alone.
+                onPress={toggleVoice}
+                onPressIn={() => {
                   if (!handsFree) {
                     Keyboard.dismiss();
                   }
-                  toggleVoice();
+                  micDown();
                 }}
+                onPressOut={micUp}
                 style={[
                   styles.mic,
-                  handsFree && styles.micOn,
+                  (handsFree || holding) && styles.micOn,
                   !handsFree && (off || working) && styles.disabled,
                 ]}
                 testID="quick-add-mic"

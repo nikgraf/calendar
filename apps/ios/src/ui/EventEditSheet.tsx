@@ -840,6 +840,7 @@ export function EventEditSheet({
   // flip to the form neither drops the words nor ends the listening: an
   // edit by hand there does (`editKey`).
   const quick = useQuickAddModel({
+    dropPhrase: editor.dropPhrase,
     editKey: editor.userEdits,
     hold: editor.applying,
     initialText: seed.quickAddText,
