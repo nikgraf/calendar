@@ -1188,7 +1188,10 @@ nothing are answered without a version, a dictated phrase's other
 readings offered); `editorDiscard` (the question before an edited editor
 closes); `quickAddInvitees` and `quickAddPlaces` (a phrase's guests and
 places: one match taken, two asked about, the places on one map);
-`unsynced` (a queued change's diff and discard, a parked one's choice).
+`unsynced` (a queued change's diff and discard, a parked one's choice);
+`seriesEditQuestion` (the question before new times for all events drop
+an occurrence changed on its own; set the end time before the start: a
+start at the old end is refused as typed).
 
 Page code is a TypeScript function (`page.ts`), sent as its source with
 its arguments as JSON: `cdp.evaluate(fn, ...args)` returns what it

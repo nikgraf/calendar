@@ -8,36 +8,6 @@ was written; re-verify before starting one.
 
 ## Tier 0 — bugs
 
-- [ ] A cut, a new rule, new times or a delete that landed with its
-      answer lost and is then discarded **while Google cannot be
-      reached** is put back as if Google never got it, until the next
-      pull says otherwise. (Reachable, the discard asks Google and shows
-      what it has: `finishDiscard`, #374.) Until that pull the app draws
-      occurrences, or an event, that Google has no more, and a change
-      made to one is refused and dropped with a notice. A move in that
-      state waits for Google instead (`PendingOp.discarded`); the same
-      wait here would keep an accidental delete from being undone while
-      offline, since a request that failed offline and one whose answer
-      was lost look alike. Telling them apart needs the device's own word
-      on whether it was online (no such seam yet). The sequence test
-      leaves such occurrences unjudged (`reshapedAway`).
-- [ ] A to-do whose create landed with its answer lost shows twice
-      until the create's retry adopts Google's task (on `main` too;
-      `tasks.insert` is not idempotent): a pull writes Google's task
-      beside the temporary row, and the user can act on both. Moved,
-      ticked or edited on both sides before the retry, the two sets of
-      changes meet as one task's: a change keyed to the list the other
-      side moved it out of meets a 404 and is dropped, and a row can stay
-      unsynced with no change behind it until the next pull. Adopt the
-      task when the pull's page brings it (match it as the retry does),
-      so the twin never shows. Sequence 290 at 80 steps
-      (`QUEUE_SEQUENCE_STEPS=80`), the only one of 2,000 that fails
-      there; once it passes, add an 80-step run to `queue-search.yml`.
-- [ ] An "All events" edit that changes a series' start drops every
-      changed occurrence (Google cancels them with the new start,
-      verified live 2026-11-22, and the app follows since #374): say so
-      in the editor before the save, as the move and delete previews do.
-
 - [ ] Let agent refs resolve zero-duration Google series occurrences
       (`packages/agent/src/resolve.ts`, `ruleProduces`; found reviewing
       #365, present before it). Slot validation uses `[start, start+1)`

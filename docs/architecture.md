@@ -686,14 +686,20 @@ it whenever a kind is added. Rules that keep the queue correct:
   no exception for: asked by its id, Google answers with the series
   drawn at that slot, which cannot be told from an exception and is
   nothing to store, so such a change goes back as never sent and the
-  next pull brings what it made if it had landed. Open: with Google out
-  of reach the
-  change is put back as never sent, as the user asked; a cut, a new
-  rule, new times or a delete that had landed then leaves on screen what
-  Google has no more until the next pull, and a change made to it is
-  refused and dropped with a notice (todo.md, Tier 0). A move in that
-  state waits for Google instead, since a change made meanwhile would go
-  to the wrong calendar.
+  next pull brings what it made if it had landed. With Google out of
+  reach, a change that takes something away where it lands (a delete; a
+  cut, a new rule or new times, which drop occurrences) stays as it is,
+  given up and never sent again, until Google answers: put back at once,
+  it left on screen what Google might have no more, and a change made to
+  that was refused and dropped. Any other edit goes back at once: had it
+  landed, the next pull brings it and what was made on top is laid over
+  that. A change the user makes meanwhile to what a waiting discard left
+  on screen keeps the given-up change (`PendingOpRepo.keepGivenUp`,
+  called by every Google event mutation): it is sent after all, since
+  the new change stands on it. A move in that state waits the same way,
+  since a change made meanwhile would go to the wrong calendar. A full
+  list forgets no copy of an event whose create is still queued: Google
+  lists it nowhere yet, and its copy is what the create sends.
 
 Rules a change to the queue keeps (each broke once):
 

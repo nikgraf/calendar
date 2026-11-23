@@ -558,7 +558,16 @@ was cut (pruned 2026-11-17).
   event has one waiting update; a series' text wins over an occurrence's,
   a redrawn series drops and holds its exceptions, as on Google. Rejected:
   per-change snapshots; updates sent in turn; a delete queued per dropped
-  exception. Open: the provider seam; todo.md's Tier 0.
+  exception. Open: the provider seam.
+- **A given-up delete or redraw waits for Google** (2026-11-23, #374) —
+  discarded after it was tried and with Google out of reach, a delete, a
+  cut, a new rule or new times stay as they are until Google says what it
+  has, as a sent move does (Nik chose waiting for the move); a change
+  made meanwhile to what it left on screen keeps it. Rejected: putting it
+  back at once (it showed what Google might have no more, and a change
+  made there was dropped), and waiting for every edit (a plain edit that
+  had landed comes with the next pull, nothing lost). A lost to-do create
+  is settled by the pull that brings its task, by the retry's own match.
 - **UI action state** (2026-11-05, #296) — an async action of a
   component is one value (`useAction`: idle, running, failed with its
   line, done with the result) on the editors' one-write slot; a value
@@ -587,10 +596,17 @@ was cut (pruned 2026-11-17).
   fast-check (steps read the app's state, and a seed must replay exactly)
   and a full model of the expected state. It covers repeating events
   since #374, on a fake that mirrors what is recorded of a series; the
-  gaps it still finds are its `KNOWN_FAILING`, and todo.md's Tier 0.
+  gaps it still finds are its `KNOWN_FAILING` (none since #374).
 
 ## Calendar: editing, gestures, views
 
+- **The editor asks before a save for all events drops occurrences**
+  (2026-11-23, #374) — a new start or rule makes Google cancel the
+  occurrences changed on their own; the editor names how many lose their
+  change and how many deleted days come back, and "Keep editing" writes
+  nothing. The count is the save's own: `previewSeriesEdit` runs it in a
+  transaction it rolls back. Rejected: a second copy of the save's rules
+  for the preview. Open: an agent's "all events" edit is not asked.
 - **New events start in a default calendar** (2026-11-21, #373) —
   Settings › Calendar picks where the editor, the Assistant's drafts and
   Add all start, or Last used (the behaviour before: the calendar last
