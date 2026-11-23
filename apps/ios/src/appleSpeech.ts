@@ -19,15 +19,16 @@ export const dictationLocale = (): string => {
 const unsupported = () =>
   new SpeechUnsupportedError({ message: 'Speech recognition is not built into this app.' });
 
-/** The phrase listened to, by the id this adapter gave it, and its words' subscription. */
+/** The listening, by the id this adapter gave it, and its words' subscription. */
 let current: { readonly remove: () => void; readonly session: number } | undefined;
 let sessions = 0;
 
 /**
  * Apple's on-device SpeechAnalyzer through the app's own module
  * (`modules/solunivo-speech`): the microphone streams into it, its
- * recognisers' words come back while the phrase is said, and the phrase
- * is read whole when it is finished. Audio never leaves the device and is
+ * recognisers' words come back while a phrase is said, and the phrase
+ * is read whole when it ends, the microphone left open (`read`) or closed
+ * with it (`finish`). Audio never leaves the device and is
  * never written to a file. The module is loaded lazily: a binary built
  * before it (an OTA update on an older build) offers no dictation rather
  * than crashing at launch.
@@ -43,6 +44,12 @@ export const appleSpeech: SpeechToText = {
     await loadSpeechModule()
       ?.cancel(active.session)
       .catch(() => undefined);
+  },
+  cut: (mark) => {
+    const active = current;
+    if (active) {
+      loadSpeechModule()?.cut(active.session, mark);
+    }
   },
   finish: async () => {
     const active = current;
@@ -74,6 +81,17 @@ export const appleSpeech: SpeechToText = {
       }
       throw error;
     }
+  },
+  read: async () => {
+    const active = current;
+    const native = loadSpeechModule();
+    if (!active || !native) {
+      return undefined;
+    }
+    const result = await native.read(active.session);
+    return result
+      ? { heard: heardFromSegments(result.segments, result.other), mark: result.mark }
+      : undefined;
   },
   start: async ({ onWords, signal }) => {
     const native = loadSpeechModule();

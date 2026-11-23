@@ -41,12 +41,17 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.invoke('model:recognize-text', imageBase64),
   /** Drops the phrase being listened to. */
   modelSpeechCancel: (session: number) => ipcRenderer.invoke('model:speech-cancel', session),
+  /** The phrase read up to `mark` landed: its audio goes, and the next reading begins after it. */
+  modelSpeechCut: (session: number, mark: number) =>
+    ipcRenderer.send('model:speech-cut', session, mark),
+  /** Reads the phrase so far whole while listening goes on; `mark` is where its audio ended. */
+  modelSpeechRead: (session: number) => ipcRenderer.invoke('model:speech-read', session),
   /** Stops listening and reads the phrase whole: its segments, and the phrase as the other language reads it. */
   modelSpeechFinish: (session: number) => ipcRenderer.invoke('model:speech-finish', session),
   /** One block of the microphone (16 kHz mono Int16), in the order it was recorded. */
   modelSpeechAudio: (session: number, pcm: Uint8Array) =>
     ipcRenderer.send('model:speech-audio', session, pcm),
-  /** Starts listening to one phrase: its session, which the other calls and the words name. */
+  /** Starts a listening: its session, which the other calls and the words name. */
   modelSpeechStart: (locale: string) => ipcRenderer.invoke('model:speech-start', locale),
   modelStatus: () => ipcRenderer.invoke('model:status'),
   onAgentsChanged: (listener: () => void) => {

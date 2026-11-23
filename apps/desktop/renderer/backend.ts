@@ -102,7 +102,13 @@ declare global {
       modelRecognizeText: (imageBase64: string) => Promise<{ text: string }>;
       modelSpeechAudio: (session: number, pcm: Uint8Array) => void;
       modelSpeechCancel: (session: number) => Promise<unknown>;
+      modelSpeechCut: (session: number, mark: number) => void;
       modelSpeechFinish: (session: number) => Promise<{
+        other?: string;
+        segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
+      }>;
+      modelSpeechRead: (session: number) => Promise<{
+        mark?: number;
         other?: string;
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
