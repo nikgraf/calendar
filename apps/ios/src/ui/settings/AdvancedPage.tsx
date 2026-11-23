@@ -1,5 +1,6 @@
 import { useBackendMutations } from '@calendar/app-state';
 import { useState } from 'react';
+import { loadParakeetModule } from '../../../modules/solunivo-parakeet/index.ts';
 import { loadOpenModelRuntime } from '../../openModel.ts';
 import { ActionRow, Footer, NavRow, Section, SettingsPage } from '../GroupedList.tsx';
 
@@ -9,6 +10,7 @@ import { ActionRow, Footer, NavRow, Section, SettingsPage } from '../GroupedList
  * (SettingsFilePage). Model Spike is listed where the binary can run a
  * model of its own: both variants since llama.rn is linked in both, so a
  * TestFlight build measures too, as PR Preview loads a pull request there.
+ * Speech Spike likewise where the binary has Parakeet (`solunivo-parakeet`).
  */
 export function AdvancedPage() {
   const { clearLocationCache } = useBackendMutations();
@@ -65,6 +67,13 @@ export function AdvancedPage() {
             href="/settings/model-spike"
             testID="settings-row-model-spike"
             title="Model Spike"
+          />
+        ) : null}
+        {loadParakeetModule() ? (
+          <NavRow
+            href="/settings/speech-spike"
+            testID="settings-row-speech-spike"
+            title="Speech Spike"
           />
         ) : null}
       </Section>

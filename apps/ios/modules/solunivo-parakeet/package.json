@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-parakeet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Parakeet speech recognition through FluidAudio, for the Speech Spike page — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}

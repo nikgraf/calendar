@@ -69,6 +69,7 @@ export default function SettingsLayout() {
             <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
             <Stack.Screen name="pr-preview" options={{ title: 'PR Preview' }} />
             <Stack.Screen name="model-spike" options={{ title: 'Model Spike' }} />
+            <Stack.Screen name="speech-spike" options={{ title: 'Speech Spike' }} />
           </Stack>
         </NotificationSettingsProvider>
         <NoticeStack offset={insets.bottom + NOTICE_GAP}>
