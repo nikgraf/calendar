@@ -385,3 +385,63 @@ export const alternativesFor = (
   }
   return readings;
 };
+
+/**
+ * `text` as the recogniser of the user's other language wrote its words
+ * (`Heard.other`): "Nashmacht" → "Naschmarkt", from "Meet Tom at the
+ * Nashmacht on Saturday" and "Miet Tomat Naschmarkt on Saturday". The
+ * words are found among what was heard, as for the alternatives, and the
+ * other reading is lined up with the whole phrase word by word; the
+ * words it has where they stood take their place, the rest of `text`
+ * stays. Undefined without another reading, when the words are not among
+ * what was heard or stand in it more than once, when the other reading
+ * has nothing certain there (`wordsAt`), or when it reads them the same.
+ */
+export const otherLanguageReading = (heard: Heard, text: string): string | undefined => {
+  if (heard.other === undefined) {
+    return undefined;
+  }
+  const own = wordsOf(text);
+  const phrase = segmentWords(heard.segments).map((entry) => entry.word);
+  const found = findWords(own, phrase);
+  const [run] = found;
+  if (run === undefined || found.length > 1) {
+    return undefined;
+  }
+  const other = wordsOf(heard.other);
+  const taken = wordsAt(alignWords(phrase, other), run.heard);
+  if (taken === undefined || taken.length === 0) {
+    return undefined;
+  }
+  const words = taken.map((at) => other[at]!);
+  const said = phrase.slice(run.heard[0], run.heard[1]);
+  if (words.map((word) => word.key).join(' ') === said.map((word) => word.key).join(' ')) {
+    return undefined;
+  }
+  const before = text.slice(0, own[run.words[0]]!.start);
+  const after = text.slice(own[run.words[1] - 1]!.end);
+  return `${before}${words.map((word) => word.text).join(' ')}${after}`;
+};
+
+/** A reading as compared: its words' keys. */
+const keysOf = (reading: string): string =>
+  wordsOf(reading)
+    .map((word) => word.key)
+    .join(' ');
+
+/**
+ * Every other reading of `text` worth a search, the likeliest first: the
+ * other language's (`otherLanguageReading`: a name said that language's
+ * way is a word of it), then the recogniser's own (`alternativesFor`).
+ */
+export const readingsFor = (
+  heard: Heard,
+  text: string,
+  limit: number = ALTERNATIVES_LIMIT,
+): ReadonlyArray<string> => {
+  const other = otherLanguageReading(heard, text);
+  const rest = alternativesFor(heard, text, limit).filter(
+    (reading) => other === undefined || keysOf(reading) !== keysOf(other),
+  );
+  return (other === undefined ? rest : [other, ...rest]).slice(0, limit);
+};

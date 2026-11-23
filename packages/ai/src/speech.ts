@@ -9,6 +9,13 @@ export interface TranscriptSegment {
 
 /** What a phrase was heard as, once it was read in full. */
 export interface Heard {
+  /**
+   * The whole phrase as the recogniser of the user's other language wrote
+   * it (German on an English device in Austria), when there is one: a name
+   * said that language's way stands in it as itself. Never the phrase
+   * that is sent: only the place lookup reads it (`otherLanguageReading`).
+   */
+  readonly other?: string | undefined;
   readonly segments: ReadonlyArray<TranscriptSegment>;
   readonly text: string;
 }
@@ -34,7 +41,8 @@ export class MicrophoneDeniedError extends Data.TaggedError('MicrophoneDeniedErr
  * desktop helper). Listening streams the microphone into two recognisers
  * that write the words as they are said (`onWords`); finishing reads the
  * whole phrase once more, with the recogniser the words were always read
- * with, and returns that. When the phrase ends is the caller's to decide
+ * with, and returns that, beside it the phrase as the user's other
+ * language reads it (`Heard.other`). When the phrase ends is the caller's to decide
  * (`listenForPhrase`, from the words).
  */
 export interface SpeechToText {
@@ -102,7 +110,13 @@ export const transcriptFromSegments = (
 /** A finished phrase from the recogniser's segments; undefined for silence. */
 export const heardFromSegments = (
   segments: ReadonlyArray<TranscriptSegment>,
+  other?: string,
 ): Heard | undefined => {
   const text = transcriptFromSegments(segments);
-  return text === undefined ? undefined : { segments, text };
+  if (text === undefined) {
+    return undefined;
+  }
+  return other === undefined || other.trim() === ''
+    ? { segments, text }
+    : { other, segments, text };
 };

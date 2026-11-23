@@ -38,7 +38,21 @@ describe('heardFromSegments', () => {
     });
   });
 
+  it('keeps the other language’s reading beside it, unless it wrote nothing', () => {
+    const segments = [{ text: 'Meet Tom at the Nashmacht' }];
+    expect(heardFromSegments(segments, 'Mit Tom at the Naschmarkt')).toEqual({
+      other: 'Mit Tom at the Naschmarkt',
+      segments,
+      text: 'Meet Tom at the Nashmacht',
+    });
+    expect(heardFromSegments(segments, ' ')).toEqual({
+      segments,
+      text: 'Meet Tom at the Nashmacht',
+    });
+  });
+
   it('is nothing for silence', () => {
     expect(heardFromSegments([{ text: '  ' }])).toBeUndefined();
+    expect(heardFromSegments([{ text: '  ' }], 'Hm')).toBeUndefined();
   });
 });

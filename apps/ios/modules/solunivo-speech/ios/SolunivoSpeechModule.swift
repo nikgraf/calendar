@@ -94,8 +94,7 @@ public class SolunivoSpeechModule: Module {
       let task = SpeechSessions.shared.finish(id: session) { Microphone.shared.close() }
       Task {
         do {
-          let segments = try await task.value
-          promise.resolve(segments.map { ["segments": $0.map(\.json)] })
+          promise.resolve(try await task.value?.json)
         } catch {
           promise.reject("SpeechError", Self.message(error))
         }

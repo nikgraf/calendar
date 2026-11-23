@@ -164,12 +164,14 @@ was written; re-verify before starting one.
       mishears and the user has never been to finds nothing (MapKit's
       search reads a doubled letter, not "Cafe Meek" for Kaffemik, and
       the Assistant's model keeps the name as heard). The final reading's
-      alternatives are searched too since #324, which found two more of
-      the place bench's 34 synthetic cases and Kaffemik in none of its
-      seven: real recordings in `places.json` (the iPhone's "Cafe Meek"
-      had "Meek" among them), then the readings given to the model with
-      past places and contacts, measured there; vocabulary itself reaches
-      only DictationTranscriber, whose words are shown, not sent.
+      alternatives are searched too since #324, and the phrase as the
+      user's other language reads it (place bench, Nik's recordings).
+      Left: the venues and surnames neither language has as a word
+      (Kaffemik, Kleinod, Karpfeneder) and street addresses, for which
+      the readings go to the model with past places and contacts,
+      measured there, or to a recogniser that takes a list of names (a
+      bench arm first); vocabulary itself reaches only
+      DictationTranscriber, whose words are shown, not sent.
       MapKit's structured city/region/country fields in a native build.
 - [ ] Dictation follow-ups (`docs/decisions.md` → AI, "Dictation ends
       on its words, and shows them"; measured on synthetic phrases
@@ -184,8 +186,9 @@ was written; re-verify before starting one.
       deaf one word behind the accurate one ever cuts a phrase short:
       the rule ends on the quick words then, a case constructed in
       review but never seen in the recordings, where both cures cost
-      more than they saved, #322); English and German in one phrase (one
-      locale per recogniser today); a person talking nearby (their
+      more than they saved, #322); a phrase said in the other language
+      altogether (it is read in it, but only its place is used); a
+      person talking nearby (their
       words count: Voice Isolation measured first, then a speaker
       match learned from phrases already said); Siri as a way in (an
       App Shortcut that asks for the phrase; iOS 27's calendar schema

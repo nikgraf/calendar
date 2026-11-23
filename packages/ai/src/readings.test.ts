@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { alignWords, alternativesFor, findWords, wordsAt, wordsOf } from './readings.ts';
+import {
+  alignWords,
+  alternativesFor,
+  findWords,
+  otherLanguageReading,
+  readingsFor,
+  wordsAt,
+  wordsOf,
+} from './readings.ts';
 import { heardFromSegments, type TranscriptSegment } from './speech.ts';
 
 const heard = (segments: ReadonlyArray<TranscriptSegment>) => {
@@ -275,5 +283,82 @@ describe('alternativesFor', () => {
         'Meek',
       ),
     ).toEqual(['Mik']);
+  });
+});
+
+// Each pair is one recording read twice (Nik, iPhone, 2026-11-23): by the
+// English recogniser, and by the German one beside it.
+const both = (text: string, other: string) => {
+  const read = heardFromSegments([{ text }], other);
+  if (read === undefined) {
+    throw new Error('nothing heard');
+  }
+  return read;
+};
+
+describe('otherLanguageReading', () => {
+  it('reads a name as the other language wrote it where it stood', () => {
+    const naschmarkt = both(
+      'Meet Tom Baker at the Nashmacht on Saturday at 10.',
+      'Mit Tom Baker at the Naschmarkt on seday ten.',
+    );
+    expect(otherLanguageReading(naschmarkt, 'Nashmacht')).toBe('Naschmarkt');
+    const praterstern = both(
+      'Pick up David at Barathsten tomorrow at half past 5.',
+      'Pickup, Davidat Praterstern Tomorrow, Half Past Five.',
+    );
+    expect(otherLanguageReading(praterstern, 'Barathsten')).toBe('Praterstern');
+  });
+
+  it('reads two words as the one the other language has, and one as two', () => {
+    const platz = both(
+      'Meet Stefan Muller, at Stefan Platz, today at 6.',
+      'Miet Stephan Müllerat Stephansplatz todayat six.',
+    );
+    expect(otherLanguageReading(platz, 'Stefan Platz')).toBe('Stephansplatz');
+    const cafe = both(
+      'Coffee with Thomas Kapmeter at Café Bruke on Friday at free.',
+      'Coffee with Thomas Carpmaderat Café Brückel und Fridayat Free.',
+    );
+    expect(otherLanguageReading(cafe, 'Café Bruke')).toBe('Café Brückel');
+  });
+
+  it('keeps what the model added to the words that were said', () => {
+    const heard = both(
+      'Walk with Anna and Shampun on Sunday morning.',
+      'Walk with Anna in Schönbrunn und Sunday Morning.',
+    );
+    expect(otherLanguageReading(heard, 'Shampun, Vienna')).toBe('Schönbrunn, Vienna');
+  });
+
+  it('is nothing without another reading, for words nobody said, or the same words', () => {
+    const heard = both('Lunch at Kaffemik tomorrow', 'Lunch at Kaffemik tomorrow');
+    expect(otherLanguageReading(heard, 'Kaffemik')).toBeUndefined();
+    expect(otherLanguageReading(heard, 'Plachutta')).toBeUndefined();
+    const one = heardFromSegments([{ text: 'Lunch at Kaffemik tomorrow' }]);
+    expect(one && otherLanguageReading(one, 'Kaffemik')).toBeUndefined();
+  });
+
+  it('is nothing for words said twice: which place is meant is not its to say', () => {
+    const heard = both('From Nashmacht to Nashmacht', 'From Naschmarkt to Naschmarkt');
+    expect(otherLanguageReading(heard, 'Nashmacht')).toBeUndefined();
+  });
+});
+
+describe('readingsFor', () => {
+  it('puts the other language’s reading before the recogniser’s own', () => {
+    const read = heardFromSegments(
+      [
+        { text: 'Meet Tom at the' },
+        { alternatives: [' Nashmacht', ' Nash market', ' Naschmarkt'], text: ' Nashmacht' },
+      ],
+      'Mit Tom at the Naschmarkt',
+    );
+    expect(read && readingsFor(read, 'Nashmacht')).toEqual(['Naschmarkt', 'Nash market']);
+  });
+
+  it('is the recogniser’s own readings without another language', () => {
+    const read = heard([{ alternatives: ['at Kaffe Mik'], text: 'at Meek' }]);
+    expect(readingsFor(read, 'Meek')).toEqual(alternativesFor(read, 'Meek'));
   });
 });

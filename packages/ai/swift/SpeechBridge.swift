@@ -10,14 +10,23 @@
 // caller decides the phrase is over (`finish`, from the words: packages/ai
 // `listenForPhrase`), the phrase is read once more, whole, by the
 // recogniser phrases were always read with, and that reading is the
-// answer. The audio stays in memory for that pass only.
+// answer. With it the phrase is read in the user's other language too
+// (`SpeechAssets.other`): a name said the German way inside an English
+// sentence is written as English words by the English recogniser and as
+// itself by the German one, and the place lookup searches that reading as
+// well. The audio stays in memory for those passes only.
 //
 // The JSON shapes are the `SpeechToText` seam's in packages/ai: words go
 // out as (session, source "quick" | "accurate", text = everything that
-// recogniser wrote so far); `finish` answers segments `{text, alternatives}`.
+// recogniser wrote so far); `finish` answers segments `{text, alternatives}`
+// and `other`, the phrase as the other language's recogniser wrote it.
 import AVFoundation
 import Foundation
 import Speech
+
+#if os(iOS)
+  import UIKit
+#endif
 
 enum SpeechBridgeError: Error, Sendable {
   case failed(String)
@@ -40,6 +49,20 @@ struct SpeechSegment: Sendable {
   var json: [String: Any] { ["alternatives": alternatives, "text": text] }
 }
 
+/// A phrase as finally read: in the language listened in, and, when the
+/// user has another one, the whole of it as that language's recogniser
+/// wrote it.
+struct SpeechReading: Sendable {
+  let other: String?
+  let segments: [SpeechSegment]
+
+  var json: [String: Any] {
+    var json: [String: Any] = ["segments": segments.map(\.json)]
+    if let other { json["other"] = other }
+    return json
+  }
+}
+
 enum SpeechAssets {
   /// The recogniser phrases are read with: also the one that listens as `accurate`.
   static func accurate(_ locale: Locale, live: Bool) -> SpeechTranscriber {
@@ -60,9 +83,40 @@ enum SpeechAssets {
     await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: identifier))
   }
 
+  /// The user's other language, as a locale the recogniser has: the
+  /// first one that is not the language listened in among the languages
+  /// the device is set to, the keyboards it has (iOS) and the language of
+  /// its region (an English iPhone in Austria: German). Nil when there is
+  /// none. The names of places and people around the user are in it.
+  static func other(than locale: Locale) async -> Locale? {
+    var candidates = Locale.preferredLanguages
+    #if os(iOS)
+      candidates += await MainActor.run {
+        UITextInputMode.activeInputModes.compactMap(\.primaryLanguage)
+      }
+    #endif
+    // Where the device is set to be, before the region the locale asked
+    // for carries (an "en-US" asked for on a Mac in Austria).
+    for region in [Locale.current.region, locale.region].compactMap({ $0 }) {
+      candidates.append(Locale.Language(identifier: "und-\(region.identifier)").maximalIdentifier)
+    }
+    let listened = locale.language.languageCode
+    for identifier in candidates {
+      guard
+        let found = await SpeechTranscriber.supportedLocale(
+          equivalentTo: Locale(identifier: identifier)),
+        found.language.languageCode != listened
+      else { continue }
+      return found
+    }
+    return nil
+  }
+
   /// Installs the locale's assets; a no-op once present. The accurate
   /// recogniser is required; the quick one is installed when the locale
-  /// has it, and listening goes without it otherwise.
+  /// has it, and listening goes without it otherwise. So is the other
+  /// language's recogniser: without its assets the phrase is read in one
+  /// language, as before.
   static func prepare(locale identifier: String) async throws {
     guard let locale = await locale(identifier) else {
       throw SpeechBridgeError.unsupported("locale not supported: \(identifier)")
@@ -70,6 +124,9 @@ enum SpeechAssets {
     try await install([accurate(locale, live: true)], required: true)
     if let quickLocale = await DictationTranscriber.supportedLocale(equivalentTo: locale) {
       try? await install([quick(quickLocale)], required: false)
+    }
+    if let other = await other(than: locale) {
+      try? await install([accurate(other, live: false)], required: false)
     }
   }
 
@@ -104,6 +161,8 @@ final class SpeechListening: @unchecked Sendable {
   private let format: AVAudioFormat
   private let input: AsyncStream<AnalyzerInput>.Continuation
   private let locale: Locale
+  /// The user's other language, when its recogniser is here: read once more in it.
+  private let other: Locale?
   private let readers: [Task<Void, Never>]
   private let lock = NSLock()
   private var converter: AVAudioConverter?
@@ -113,14 +172,15 @@ final class SpeechListening: @unchecked Sendable {
 
   private init(
     analyzer: SpeechAnalyzer, format: AVAudioFormat,
-    input: AsyncStream<AnalyzerInput>.Continuation, locale: Locale, readers: [Task<Void, Never>],
-    sources: [String]
+    input: AsyncStream<AnalyzerInput>.Continuation, locale: Locale, other: Locale?,
+    readers: [Task<Void, Never>], sources: [String]
   ) {
     self.sources = sources
     self.analyzer = analyzer
     self.format = format
     self.input = input
     self.locale = locale
+    self.other = other
     self.readers = readers
   }
 
@@ -175,8 +235,20 @@ final class SpeechListening: @unchecked Sendable {
         })
     }
     return SpeechListening(
-      analyzer: analyzer, format: format, input: input, locale: locale, readers: readers,
+      analyzer: analyzer, format: format, input: input, locale: locale,
+      other: await Self.otherReader(than: locale, format: format), readers: readers,
       sources: quick == nil ? ["accurate"] : ["accurate", "quick"])
+  }
+
+  /// The other language to read the phrase in: only when its recogniser is
+  /// installed (prepare could) and takes the audio as it is kept.
+  private static func otherReader(than locale: Locale, format: AVAudioFormat) async -> Locale? {
+    guard let other = await SpeechAssets.other(than: locale) else { return nil }
+    let module = SpeechAssets.accurate(other, live: false)
+    guard await AssetInventory.status(forModules: [module]) == .installed,
+      await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [module]) == format
+    else { return nil }
+    return other
   }
 
   /// The microphone's audio, in whatever format it comes. The buffer is the
@@ -191,14 +263,19 @@ final class SpeechListening: @unchecked Sendable {
     }
   }
 
-  /// Stops listening and reads the phrase once more, whole. Empty when
-  /// nothing was said.
-  func finish() async throws -> [SpeechSegment] {
+  /// Stops listening and reads the phrase once more, whole, and in the
+  /// other language beside it. No segments when nothing was said.
+  func finish() async throws -> SpeechReading {
     let audio = close()
     await analyzer.cancelAndFinishNow()
     for reader in readers { reader.cancel() }
-    guard !audio.isEmpty else { return [] }
-    return try await Self.read(audio, locale: locale)
+    guard !audio.isEmpty else { return SpeechReading(other: nil, segments: []) }
+    // Both passes only read the audio, at the same time.
+    let kept = KeptAudio(buffers: audio)
+    async let second = Self.readOther(kept, locale: other)
+    let segments = try await Self.read(kept, locale: locale)
+    let other = await second
+    return SpeechReading(other: segments.isEmpty ? nil : other, segments: segments)
   }
 
   /// Stops listening and drops the phrase.
@@ -251,7 +328,7 @@ final class SpeechListening: @unchecked Sendable {
 
   /// The final reading: the whole phrase through the recogniser phrases
   /// were always read with, alternatives included.
-  private static func read(_ audio: [AVAudioPCMBuffer], locale: Locale) async throws
+  fileprivate static func read(_ audio: KeptAudio, locale: Locale) async throws
     -> [SpeechSegment]
   {
     let transcriber = SpeechAssets.accurate(locale, live: false)
@@ -268,7 +345,7 @@ final class SpeechListening: @unchecked Sendable {
       return segments
     }
     let (stream, input) = AsyncStream<AnalyzerInput>.makeStream()
-    for buffer in audio { input.yield(AnalyzerInput(buffer: buffer)) }
+    for buffer in audio.buffers { input.yield(AnalyzerInput(buffer: buffer)) }
     input.finish()
     if let last = try await analyzer.analyzeSequence(stream) {
       try await analyzer.finalizeAndFinish(through: last)
@@ -276,6 +353,24 @@ final class SpeechListening: @unchecked Sendable {
       await analyzer.cancelAndFinishNow()
     }
     return try await collect.value
+  }
+}
+
+/// A finished phrase's audio, no longer written to: safe to read from two tasks.
+private struct KeptAudio: @unchecked Sendable {
+  let buffers: [AVAudioPCMBuffer]
+}
+
+extension SpeechListening {
+  /// The phrase as the other language's recogniser writes it: nil without
+  /// one, when it wrote nothing, or when it failed (the answer does not
+  /// wait on it then, nor fail with it).
+  fileprivate static func readOther(_ audio: KeptAudio, locale: Locale?) async -> String?
+  {
+    guard let locale, let segments = try? await read(audio, locale: locale) else { return nil }
+    let text = segments.map(\.text).joined(separator: " ")
+      .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    return text.isEmpty ? nil : text
   }
 }
 
@@ -330,7 +425,7 @@ final class SpeechSessions: @unchecked Sendable {
   }
 
   /// Queues a finish; nil when `id` is not the phrase listened to (dropped, or replaced).
-  func finish(id: Int, close: (@Sendable () -> Void)? = nil) -> Task<[SpeechSegment]?, Error> {
+  func finish(id: Int, close: (@Sendable () -> Void)? = nil) -> Task<SpeechReading?, Error> {
     serial {
       guard let listening = self.take(id) else { return nil }
       close?()

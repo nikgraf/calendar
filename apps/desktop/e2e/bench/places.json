@@ -831,5 +831,2390 @@
     "near": "vienna",
     "said": "Beer at Schweizerhaus on Saturday",
     "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Lunch with Sarah tomorrow at one at"
+      },
+      {
+        "alternatives": [
+          " Figli Muller.",
+          " Figle Muller.",
+          " Figelmuller.",
+          " Figel Muller.",
+          " Figlemuller."
+        ],
+        "text": " Figli Muller."
+      }
+    ],
+    "id": "nik-en-01",
+    "location": "Figli Muller",
+    "names": ["Figlmüller"],
+    "near": "vienna",
+    "other": "Lunchiff Sarah t Tomorrowat oneat Figemüller.",
+    "said": "Lunch with Sarah tomorrow at one at Figlmüller",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-01.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Coffee with Thomas"
+      },
+      {
+        "alternatives": [" Kapmeter at", " Kapmeter, at", " Kapmeda, at"],
+        "text": " Kapmeter at"
+      },
+      {
+        "alternatives": [" Café", " Cafe"],
+        "text": " Café"
+      },
+      {
+        "alternatives": [" Bruke on", " Bruke, on"],
+        "text": " Bruke on"
+      },
+      {
+        "text": " Friday at"
+      },
+      {
+        "alternatives": [" free.", " 3."],
+        "text": " free."
+      }
+    ],
+    "id": "nik-en-02",
+    "location": "Café Bruke",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "other": "Coffee with Thomas Carpmaderat Café Brückel und Fridayat Free.",
+    "said": "Coffee with Thomas Karpfeneder at Café Prückel on Friday at three",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-02.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Meet Tom Baker at the"
+      },
+      {
+        "alternatives": [
+          " Nashmacht on",
+          " Nashmarkt on",
+          " Nashmacht, on",
+          " Nashmagt on",
+          " Nashmacht. on"
+        ],
+        "text": " Nashmacht on"
+      },
+      {
+        "text": " Saturday at 10."
+      }
+    ],
+    "id": "nik-en-03",
+    "location": "Nashmacht",
+    "names": ["Naschmarkt", "The Vienna Naschmarkt"],
+    "near": "vienna",
+    "other": "Mit Tom Baker at the Naschmarkt on seday ten.",
+    "said": "Meet Tom Baker at the Naschmarkt on Saturday at ten",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-03.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Walk with Anna and"
+      },
+      {
+        "alternatives": [" Shampun", " Champun", " Shampoon", " Champoon", " Champon"],
+        "text": " Shampun"
+      },
+      {
+        "text": " on Sunday morning."
+      }
+    ],
+    "id": "nik-en-04",
+    "location": "Shampun",
+    "names": ["Schönbrunn", "Schloss Schönbrunn"],
+    "near": "vienna",
+    "other": "Walk with Anna in Schönbrunn und Sunday Morning.",
+    "said": "Walk with Anna in Schönbrunn on Sunday morning",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-04.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Meet Stefan"
+      },
+      {
+        "alternatives": [" Muller, at", " Muller at"],
+        "text": " Muller, at"
+      },
+      {
+        "text": " Stefan"
+      },
+      {
+        "alternatives": [" Platz, today", " Platz today"],
+        "text": " Platz, today"
+      },
+      {
+        "text": " at"
+      },
+      {
+        "alternatives": [" 6.", " 6"],
+        "text": " 6."
+      }
+    ],
+    "id": "nik-en-05",
+    "location": "Stefan Platz",
+    "names": ["Stephansplatz"],
+    "near": "vienna",
+    "other": "Miet Stephan Müllerat Stephansplatz todayat six.",
+    "said": "Meet Stefan Müller at Stephansplatz today at six",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-05.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Pick up David at"
+      },
+      {
+        "alternatives": [" Barathsten", " Baratistan", " Barathistan"],
+        "text": " Barathsten"
+      },
+      {
+        "text": " tomorrow at half past"
+      },
+      {
+        "alternatives": [" 5.", " five.", " five"],
+        "text": " 5."
+      }
+    ],
+    "id": "nik-en-06",
+    "location": "Barathsten",
+    "names": ["Praterstern"],
+    "near": "vienna",
+    "other": "Pickup, Davidat Praterstern Tomorrow, Half Past Five.",
+    "said": "Pick up David at Praterstern tomorrow at half past five",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-06.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Concert at"
+      },
+      {
+        "alternatives": [
+          " collegebloods next",
+          " college Bloods, next",
+          " collegebloods, next",
+          " college Bloods next",
+          " Carlsblood's next"
+        ],
+        "text": " collegebloods next"
+      },
+      {
+        "text": " 1st day at"
+      },
+      {
+        "alternatives": [" 8.", " 8"],
+        "text": " 8."
+      }
+    ],
+    "id": "nik-en-07",
+    "location": "collegebloods",
+    "names": ["Karlsplatz"],
+    "near": "vienna",
+    "other": "Concertat Carlsplatz, Next first at eight.",
+    "said": "Concert at Karlsplatz next Thursday at eight",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-07.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Shopping with Emily"
+      },
+      {
+        "alternatives": [" Carter on", " Carter, on"],
+        "text": " Carter on"
+      },
+      {
+        "text": " Marie"
+      },
+      {
+        "alternatives": [" Verstrasse on", " Werstrasse on", " Verstrasse, on", " Werstrasse, on"],
+        "text": " Verstrasse on"
+      },
+      {
+        "text": " Saturday afternoon."
+      }
+    ],
+    "id": "nik-en-08",
+    "location": "Marie Verstrasse",
+    "names": ["Mariahilfer Straße", "Mariahilfer Strasse"],
+    "near": "vienna",
+    "other": "Shopping with Emily Carter und Marhilfestraße und Sday Afternon.",
+    "said": "Shopping with Emily Carter on Mariahilfer Straße on Saturday afternoon",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-08.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Meet Max at"
+      },
+      {
+        "alternatives": [" Swedenbloods tonight", " Swedenblood tonight", " Sweden Bloods tonight"],
+        "text": " Swedenbloods tonight"
+      },
+      {
+        "text": " at"
+      },
+      {
+        "alternatives": [" 7.", " seven."],
+        "text": " 7."
+      }
+    ],
+    "id": "nik-en-09",
+    "location": "Swedenbloods",
+    "names": ["Schwedenplatz"],
+    "near": "vienna",
+    "other": "Meatma at Schwedenplatz, Tonited Seven.",
+    "said": "Meet Max at Schwedenplatz tonight at seven",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-09.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Dinner with"
+      },
+      {
+        "alternatives": [" Katrina", " Catrina", " Katarina"],
+        "text": " Katrina"
+      },
+      {
+        "text": " Gruber at Gastos Perschel on Wednesday at half past"
+      },
+      {
+        "alternatives": [" seven.", " 7."],
+        "text": " seven."
+      }
+    ],
+    "id": "nik-en-10",
+    "location": "Gastos Perschel",
+    "names": ["Gasthaus Pöschl"],
+    "near": "vienna",
+    "other": "Die nerve Katharine Gruberat Gastor Persal und Wednesdayat halfpast Seven.",
+    "said": "Dinner with Katharina Gruber at Gasthaus Pöschl on Wednesday at half past seven",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-10.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Coffee with Sarah at"
+      },
+      {
+        "alternatives": [" Cafe Mick", " Cafe Mike", " Cafe Mik", " CafeMic"],
+        "text": " Cafe Mick"
+      },
+      {
+        "text": " tomorrow at"
+      },
+      {
+        "alternatives": [" 10.", " 10"],
+        "text": " 10."
+      }
+    ],
+    "id": "nik-en-11",
+    "location": "Cafe Mick",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "other": "Coffee with Sarahat Coffeeke Tomorrow Ten.",
+    "said": "Coffee with Sarah at Kaffemik tomorrow at ten",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-11.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Drinks with James"
+      },
+      {
+        "alternatives": [" Wright, at", " Wright at"],
+        "text": " Wright, at"
+      },
+      {
+        "text": " Glen"
+      },
+      {
+        "alternatives": [" Ord, on", " Ord on"],
+        "text": " Ord, on"
+      },
+      {
+        "text": " Friday at 9."
+      }
+    ],
+    "id": "nik-en-12",
+    "location": "Glen Ord",
+    "names": ["Kleinod"],
+    "near": "vienna",
+    "other": "Drinks with James Wright at Glient Od on Friday at nine.",
+    "said": "Drinks with James Wright at Kleinod on Friday at nine",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-12.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Breakfast with"
+      },
+      {
+        "alternatives": [" Tom at", " Tom, at"],
+        "text": " Tom at"
+      },
+      {
+        "alternatives": [" Cafish", " Kafish"],
+        "text": " Cafish"
+      },
+      {
+        "alternatives": [" Bell on", " bell on"],
+        "text": " Bell on"
+      },
+      {
+        "text": " Sunday at"
+      },
+      {
+        "alternatives": [" 9.", " nine."],
+        "text": " 9."
+      }
+    ],
+    "id": "nik-en-13",
+    "location": "Cafish Bell",
+    "names": ["Café Sperl"],
+    "near": "vienna",
+    "other": "Breakfast with Tomat Café Speer und Sundat Nine.",
+    "said": "Breakfast with Tom at Café Sperl on Sunday at nine",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-13.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Meet"
+      },
+      {
+        "alternatives": [" Joerkovstetter", " Joerkovstette"],
+        "text": " Joerkovstetter"
+      },
+      {
+        "text": " at Cafe"
+      },
+      {
+        "alternatives": [" Havilka", " Havelka", " Havilke"],
+        "text": " Havilka"
+      },
+      {
+        "text": " on Tuesday at 4."
+      }
+    ],
+    "id": "nik-en-14",
+    "location": "Cafe Havilka",
+    "names": ["Coffee Hawelka", "Café Hawelka"],
+    "near": "vienna",
+    "other": "Miet Jörg Hofstädterat Café Havelka on Tuessted Four.",
+    "said": "Meet Jörg Hofstätter at Café Hawelka on Tuesday at four",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-14.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Run in the"
+      },
+      {
+        "alternatives": [" our garden", " hour garden", " outgarden"],
+        "text": " our garden"
+      },
+      {
+        "text": " tomorrow morning at"
+      },
+      {
+        "alternatives": [" 7.", " seven."],
+        "text": " 7."
+      }
+    ],
+    "id": "nik-en-15",
+    "location": "our garden",
+    "names": ["Augarten"],
+    "near": "vienna",
+    "other": "Run in the Auggarten Tomorrow morning it seven.",
+    "said": "Run in the Augarten tomorrow morning at seven",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-15.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Picnic with Anna in the"
+      },
+      {
+        "alternatives": [
+          " Turkishan's Park on",
+          " Turkishan's park on",
+          " Turkishans Park on",
+          " Turkishans Park, on"
+        ],
+        "text": " Turkishan's Park on"
+      },
+      {
+        "text": " Saturday at"
+      },
+      {
+        "alternatives": [" noon.", " noon?"],
+        "text": " noon."
+      }
+    ],
+    "id": "nik-en-16",
+    "location": "Turkishan's Park",
+    "names": ["Türkenschanzpark"],
+    "near": "vienna",
+    "other": "Picknick with Anna in the Türkenschanzark on Saturdayat noon.",
+    "said": "Picnic with Anna in the Türkenschanzpark on Saturday at noon",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-16.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Train from"
+      },
+      {
+        "alternatives": [" Bespenhorf", " Vespenhorf", " Bespenhof"],
+        "text": " Bespenhorf"
+      },
+      {
+        "text": " on Monday at"
+      },
+      {
+        "alternatives": [" 815.", " 8.15."],
+        "text": " 815."
+      }
+    ],
+    "id": "nik-en-17",
+    "location": "Bespenhorf",
+    "names": ["Westbahnhof", "Wien Westbahnhof"],
+    "near": "vienna",
+    "other": "Train from Wespernhof on Mondayat eight fifteen.",
+    "said": "Train from Westbahnhof on Monday at eight fifteen",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-17.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Pick up Thomas"
+      },
+      {
+        "alternatives": [" Carfmeter", " Kafmeder", " Carfmeder"],
+        "text": " Carfmeter"
+      },
+      {
+        "text": " at"
+      },
+      {
+        "alternatives": [" Hoppenhoof on", " Hoppenhof on"],
+        "text": " Hoppenhoof on"
+      },
+      {
+        "text": " 1st"
+      },
+      {
+        "alternatives": [" date", " day"],
+        "text": " date"
+      },
+      {
+        "alternatives": [" 6.", " at 6."],
+        "text": " 6."
+      }
+    ],
+    "id": "nik-en-18",
+    "location": "Hoppenhoof",
+    "names": ["Wien Hauptbahnhof", "Hauptbahnhof"],
+    "near": "vienna",
+    "other": "Pickup, Thomas Kmederat Hauptbahnhof und first Dates six.",
+    "said": "Pick up Thomas Karpfeneder at Hauptbahnhof on Thursday at six",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-18.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Lunch break in"
+      },
+      {
+        "alternatives": [" a", " the"],
+        "text": " a"
+      },
+      {
+        "alternatives": [" book", " poor"],
+        "text": " book"
+      },
+      {
+        "text": " garden tomorrow at"
+      },
+      {
+        "alternatives": [" 1230.", " 12.30."],
+        "text": " 1230."
+      }
+    ],
+    "id": "nik-en-19",
+    "location": "book garden",
+    "names": ["Burggarten"],
+    "near": "vienna",
+    "other": "Lunchbreak in the Burggarten, Tomorrow at Twelve thirty.",
+    "said": "Lunch break in the Burggarten tomorrow at twelve thirty",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-19.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Meet Emily Carter in the"
+      },
+      {
+        "alternatives": [" Fork", " Folk"],
+        "text": " Fork"
+      },
+      {
+        "alternatives": [" Scotton", " Scouten"],
+        "text": " Scotton"
+      },
+      {
+        "text": " on Sunday at"
+      },
+      {
+        "alternatives": [" free.", " three."],
+        "text": " free."
+      }
+    ],
+    "id": "nik-en-20",
+    "location": "Fork Scotton",
+    "names": ["Volksgarten"],
+    "near": "vienna",
+    "other": "Meet Emily Carter in der Volksgarten und Sundayat Free.",
+    "said": "Meet Emily Carter in the Volksgarten on Sunday at three",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-20.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Exhibition with Stefan at the"
+      },
+      {
+        "alternatives": [" museum's", " museums", " Museum's", " Museums"],
+        "text": " museum's"
+      },
+      {
+        "text": " got here on Sunday at 11."
+      }
+    ],
+    "id": "nik-en-21",
+    "location": "museum's got here",
+    "names": ["MuseumsQuartier"],
+    "near": "vienna",
+    "other": "Exhibition mit Stephan at the Muslimquartier und Sunday at even.",
+    "said": "Exhibition with Stefan at the MuseumsQuartier on Saturday at eleven",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-21.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Bike"
+      },
+      {
+        "alternatives": [" ride on", " ride, on"],
+        "text": " ride on"
+      },
+      {
+        "text": " the"
+      },
+      {
+        "alternatives": [" door next", " door, next"],
+        "text": " door next"
+      },
+      {
+        "text": " Sunday at"
+      },
+      {
+        "alternatives": [" 10.", " 10"],
+        "text": " 10."
+      }
+    ],
+    "id": "nik-en-22",
+    "location": "door",
+    "names": ["Donauinsel"],
+    "near": "vienna",
+    "other": "Bikeide on the Doneinsel Next Sunday ten.",
+    "said": "Bike ride on the Donauinsel next Sunday at ten",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-22.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Hi Kap"
+      },
+      {
+        "alternatives": [" Keinberg with", " Keinberg, with"],
+        "text": " Keinberg with"
+      },
+      {
+        "alternatives": [" Katarina", " Katrina"],
+        "text": " Katarina"
+      },
+      {
+        "alternatives": [" Kruber on", " Kruber, on"],
+        "text": " Kruber on"
+      },
+      {
+        "text": " Saturday morning."
+      }
+    ],
+    "id": "nik-en-23",
+    "location": "Kap Keinberg",
+    "names": ["Kahlenberg"],
+    "near": "vienna",
+    "other": "Hi Cap, Kallenberg with Katharina Gruber on Saturday morning.",
+    "said": "Hike up the Kahlenberg with Katharina Gruber on Saturday morning",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-23.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Dinner with Tom Baker. At Maya"
+      },
+      {
+        "alternatives": [
+          " and Farplot, next",
+          " and Farplotz, next",
+          " and Farplotz next",
+          " Amphablot next",
+          " Amphablot, next"
+        ],
+        "text": " and Farplot, next"
+      },
+      {
+        "text": " Friday at 7."
+      }
+    ],
+    "id": "nik-en-24",
+    "location": "Maya and Farplot",
+    "names": ["Mayer am Pfarrplatz"],
+    "near": "vienna",
+    "other": "Den ich Tom Bakerat Mayer am Fahrplatz Next Friday at seven.",
+    "said": "Dinner with Tom Baker at Mayer am Pfarrplatz next Friday at seven",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-24.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Beer with"
+      },
+      {
+        "alternatives": [" max", " Max"],
+        "text": " max"
+      },
+      {
+        "text": " at the"
+      },
+      {
+        "alternatives": [
+          " schwatz house on",
+          " schwatz horse on",
+          " schwatzer horse on",
+          " schwadzer horse on",
+          " Schwezerhorse on"
+        ],
+        "text": " schwatz house on"
+      },
+      {
+        "text": " 1st day at 6."
+      }
+    ],
+    "id": "nik-en-25",
+    "location": "schwatz house",
+    "names": ["Schweizerhaus"],
+    "near": "vienna",
+    "other": "Be with maxat the Schweizer House and First Dates six.",
+    "said": "Beer with Max at the Schweizerhaus on Thursday at six",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-25.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Lunch with"
+      },
+      {
+        "alternatives": [" David at", " David, at"],
+        "text": " David at"
+      },
+      {
+        "text": " some"
+      },
+      {
+        "alternatives": [" Schwarz", " schwarz"],
+        "text": " Schwarz"
+      },
+      {
+        "text": " and"
+      },
+      {
+        "alternatives": [" Camille on", " Camille, on", " Camil on"],
+        "text": " Camille on"
+      },
+      {
+        "text": " Wednesday at"
+      },
+      {
+        "alternatives": [" one.", " one"],
+        "text": " one."
+      }
+    ],
+    "id": "nik-en-26",
+    "location": "some Schwarz and Camille",
+    "names": ["Zum Schwarzen Kameel"],
+    "near": "vienna",
+    "other": "Lunch with Davidat zum schwarzen Kamel on Wednesday one.",
+    "said": "Lunch with David at Zum Schwarzen Kameel on Wednesday at one",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-26.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Dinner with your"
+      },
+      {
+        "alternatives": [" kovstette at", " kovstette, et", " kovstette et"],
+        "text": " kovstette at"
+      },
+      {
+        "alternatives": [" Blejute on", " blejute on", " blejutte on", " blejute, on"],
+        "text": " Blejute on"
+      },
+      {
+        "text": " Saturday at"
+      },
+      {
+        "alternatives": [" 8.", " 8"],
+        "text": " 8."
+      }
+    ],
+    "id": "nik-en-27",
+    "location": "Blejute",
+    "names": ["Plachutta"],
+    "near": "vienna",
+    "other": "D with Jörg Hofstädter on Sdayat eight.",
+    "said": "Dinner with Jörg Hofstätter at Plachutta on Saturday at eight",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-27.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Dinner with Sarah at"
+      },
+      {
+        "alternatives": [" Stareg on", " Starek on", " Stireg on", " Stareg, on", " Stireg, on"],
+        "text": " Stareg on"
+      },
+      {
+        "text": " the 5th of December at 7."
+      }
+    ],
+    "id": "nik-en-28",
+    "location": "Stareg",
+    "names": ["Steirereck"],
+    "near": "vienna",
+    "other": "Dith Sarahat Styek on the Fifth of December seven.",
+    "said": "Dinner with Sarah at Steirereck on the fifth of December at seven",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-28.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Meet James Wright at"
+      },
+      {
+        "alternatives": [" shotton", " shot and", " shoten", " shotting"],
+        "text": " shotton"
+      },
+      {
+        "text": " tour tomorrow at quarter to 9."
+      }
+    ],
+    "id": "nik-en-29",
+    "location": "shotton tour",
+    "names": ["Schottentor"],
+    "near": "vienna",
+    "other": "Meet, James Wrightat Schottenor, Tomorrowat Quarteronine.",
+    "said": "Meet James Wright at Schottentor tomorrow at quarter to nine",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-29.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Christmas market at Ratos"
+      },
+      {
+        "alternatives": [" Bloods", " Blodz", " Bladz", " Blads", " Blods"],
+        "text": " Bloods"
+      },
+      {
+        "text": " on Friday at 5."
+      }
+    ],
+    "id": "nik-en-30",
+    "location": "Ratos Bloods",
+    "names": ["Rathausplatz"],
+    "near": "vienna",
+    "other": "Christmas Marketat Rathausplatz on Friday at Five.",
+    "said": "Christmas market at Rathausplatz on Friday at five",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-30.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Train", "Trained"],
+        "text": "Train"
+      },
+      {
+        "text": " to"
+      },
+      {
+        "alternatives": [" munching", " Munching", " Muncing"],
+        "text": " munching"
+      },
+      {
+        "text": " on Monday at 7."
+      }
+    ],
+    "id": "nik-en-31",
+    "location": "munching",
+    "names": ["Munich", "München"],
+    "near": "vienna",
+    "other": "Train to München on Monday Seven.",
+    "said": "Train to München on Monday at seven",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-31.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Fled to"
+      },
+      {
+        "alternatives": [" Tzurich", " Türich", " Turich", " Zürich"],
+        "text": " Tzurich"
+      },
+      {
+        "text": " next Wednesday at"
+      },
+      {
+        "alternatives": [" 6:30", " 6:30."],
+        "text": " 6:30"
+      }
+    ],
+    "id": "nik-en-32",
+    "location": "Tzurich",
+    "names": ["Zürich", "Zurich"],
+    "near": "vienna",
+    "other": "Flight to Zürich, Next, Wednesdayat Halfpast Six.",
+    "said": "Flight to Zürich next Wednesday at half past six",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-32.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Weekend in"
+      },
+      {
+        "alternatives": [" Sides book", " Sidesbook", " sights book"],
+        "text": " Sides book"
+      },
+      {
+        "text": " with"
+      },
+      {
+        "alternatives": [" Anna from", " Anna, from"],
+        "text": " Anna from"
+      },
+      {
+        "text": " Friday to Sunday."
+      }
+    ],
+    "id": "nik-en-33",
+    "location": "Sides book",
+    "names": ["Salzburg"],
+    "near": "vienna",
+    "other": "Weekend in Salzburg with Anna from Friday to Sunday.",
+    "said": "Weekend in Salzburg with Anna from Friday to Sunday",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-33.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "This is Stefan"
+      },
+      {
+        "alternatives": [" Müller,", " Muller,", " Müller."],
+        "text": " Müller,"
+      },
+      {
+        "alternatives": [" in", " In"],
+        "text": " in"
+      },
+      {
+        "text": " Kosta"
+      },
+      {
+        "alternatives": [" Neuburg on", " Neuberg on", " Neuburg, on"],
+        "text": " Neuburg on"
+      },
+      {
+        "text": " Sunday at 2."
+      }
+    ],
+    "id": "nik-en-34",
+    "location": "Kosta Neuburg",
+    "names": ["Klosterneuburg"],
+    "near": "vienna",
+    "other": "Wie ist Stefan Müller in Klosterneuburg und Sunday Two?",
+    "said": "Visit Stefan Müller in Klosterneuburg on Sunday at two",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-34.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Meeting in"
+      },
+      {
+        "alternatives": [" St. Burton on", " St. Burton, on", " St Burton on", " Saint Burton on"],
+        "text": " St. Burton on"
+      },
+      {
+        "text": " 1st"
+      },
+      {
+        "alternatives": [" day", " date"],
+        "text": " day"
+      },
+      {
+        "text": " 10."
+      }
+    ],
+    "id": "nik-en-35",
+    "location": "St. Burton",
+    "names": ["St. Pölten", "Sankt Pölten"],
+    "near": "vienna",
+    "other": "Meeting in Sankt Pölten und First Atten.",
+    "said": "Meeting in St. Pölten on Tuesday at ten",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-35.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Skiing in"
+      },
+      {
+        "alternatives": [
+          " Kitzburgh next",
+          " Kitzburg next",
+          " Kitsburg next",
+          " Kittsburg next",
+          " Kittsburgh next"
+        ],
+        "text": " Kitzburgh next"
+      },
+      {
+        "text": " Saturday."
+      }
+    ],
+    "id": "nik-en-36",
+    "location": "Kitzburgh",
+    "names": ["Kitzbühel"],
+    "near": "vienna",
+    "other": "Sking in Kittbburh, Next Salday.",
+    "said": "Skiing in Kitzbühel next Saturday",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-36.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Dr."
+      },
+      {
+        "alternatives": [
+          " Voigt, cell phone, tomorrow",
+          " Voigt, cell phone. Tomorrow",
+          " Voigt Sellefund, tomorrow"
+        ],
+        "text": " Voigt, cell phone, tomorrow"
+      },
+      {
+        "text": " at"
+      },
+      {
+        "alternatives": [" 9.", " nine."],
+        "text": " 9."
+      }
+    ],
+    "id": "nik-en-37",
+    "location": "Voigt, cell phone",
+    "names": ["Wollzeile 5"],
+    "near": "vienna",
+    "other": "Docted Wzeile 5, Tomorrow, Nine.",
+    "said": "Doctor at Wollzeile 5 tomorrow at nine",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-37.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Haircut at"
+      },
+      {
+        "alternatives": [" Neubokasset's", " Neubocaset's"],
+        "text": " Neubokasset's"
+      },
+      {
+        "alternatives": [" worth on", " worth, on", " Werve on", " Werve, on"],
+        "text": " worth on"
+      },
+      {
+        "text": " Thursday at 4."
+      }
+    ],
+    "id": "nik-en-38",
+    "location": "Neubokasset's worth",
+    "names": ["Neubaugasse 12"],
+    "near": "vienna",
+    "other": "Herkert Neubergasse 12 und firstyat Four.",
+    "said": "Haircut at Neubaugasse 12 on Thursday at four",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-38.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Dealing with Emily Carter's, The"
+      },
+      {
+        "alternatives": [" Engerstrasse, Saxon", " Angerstrasse Saxon"],
+        "text": " Engerstrasse, Saxon"
+      },
+      {
+        "alternatives": [" Fietzik, on", " Fietzik on"],
+        "text": " Fietzik, on"
+      },
+      {
+        "text": " Saturday at"
+      },
+      {
+        "alternatives": [" 7.", " seven."],
+        "text": " 7."
+      }
+    ],
+    "id": "nik-en-39",
+    "location": "The Engerstrasse, Saxon Fietzik",
+    "names": ["Währinger Straße 46"],
+    "near": "vienna",
+    "other": "D with Emily Carters Wger Straße 46 und Saturday at seven.",
+    "said": "Dinner at Emily Carter's, Währinger Straße 46, on Saturday at seven",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-39.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Workshop at"
+      },
+      {
+        "alternatives": [" Pratashton", " Pratusten", " Pratustin", " Pratashtin"],
+        "text": " Pratashton"
+      },
+      {
+        "text": " ends next Monday from 9 to 12."
+      }
+    ],
+    "id": "nik-en-40",
+    "location": "Pratashton ends",
+    "names": ["Praterstraße 1"],
+    "near": "vienna",
+    "other": "Workshop at Praterstein eins Next Monday from nine to Twelve.",
+    "said": "Workshop at Praterstraße 1 next Monday from nine to twelve",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-en-40.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Mittagessen mit"
+      },
+      {
+        "alternatives": [" Sara", " Sarah"],
+        "text": " Sara"
+      },
+      {
+        "text": " morgen um eins im"
+      },
+      {
+        "alternatives": [" Fgelmüller.", " Fmüller.", " Fiegelgelmüller."],
+        "text": " Fgelmüller."
+      }
+    ],
+    "id": "nik-de-01",
+    "location": "Fgelmüller",
+    "names": ["Figlmüller"],
+    "near": "vienna",
+    "other": "Meet a guess in it, Sarah, morgum, ends in Figelmuller.",
+    "said": "Mittagessen mit Sarah morgen um eins im Figlmüller",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-01.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Kaffee mit Thomas Kapfmeder im"
+      },
+      {
+        "alternatives": [
+          " Café Brückle",
+          " Café Brücke",
+          " Café Brückl",
+          " Cafébrücke",
+          " Cafébrückl"
+        ],
+        "text": " Café Brückle"
+      },
+      {
+        "text": " am Freitag um drei."
+      }
+    ],
+    "id": "nik-de-02",
+    "location": "Café Brückle",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "other": "Cafe mi tumas kapmeder in cafe bookleam fräte kumtre.",
+    "said": "Kaffee mit Thomas Karpfeneder im Café Prückel am Freitag um drei",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-02.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Treffen mit Tom Baker am"
+      },
+      {
+        "alternatives": [" Naschmarkt", " Nasch Markt", " naschmarkt", " Nashmarkt"],
+        "text": " Naschmarkt"
+      },
+      {
+        "text": " am Samstag um"
+      },
+      {
+        "alternatives": [" zehn.", " zehn"],
+        "text": " zehn."
+      }
+    ],
+    "id": "nik-de-03",
+    "location": "Naschmarkt",
+    "names": ["Naschmarkt", "The Vienna Naschmarkt"],
+    "near": "vienna",
+    "other": "I'm Tom Baker, I'm Nashmacht, um, Samsung and Teen.",
+    "said": "Treffen mit Tom Baker am Naschmarkt am Samstag um zehn",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-03.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Spaziergang mit Anna in"
+      },
+      {
+        "alternatives": [" Schönbunn am", " Schönbrunn am", " Schönbun am"],
+        "text": " Schönbunn am"
+      },
+      {
+        "alternatives": [" Sonntagvormittag.", " Sonntagvormittag?", " Sonntagvormittag"],
+        "text": " Sonntagvormittag."
+      }
+    ],
+    "id": "nik-de-04",
+    "location": "Schönbunn",
+    "names": ["Schönbrunn", "Schloss Schönbrunn"],
+    "near": "vienna",
+    "other": "Spatier mit anna, ancient bone, um, sontek formatak.",
+    "said": "Spaziergang mit Anna in Schönbrunn am Sonntagvormittag",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-04.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Treffen mit Stefan"
+      },
+      {
+        "alternatives": [
+          " Müller am Stephansplatz",
+          " Müller Stephansplatz",
+          " Müller, Stephansplatz",
+          " Müller am Stephsplatz"
+        ],
+        "text": " Müller am Stephansplatz"
+      },
+      {
+        "text": " heute um"
+      },
+      {
+        "alternatives": [" sechs.", " sechs"],
+        "text": " sechs."
+      }
+    ],
+    "id": "nik-de-05",
+    "location": "Stephansplatz",
+    "names": ["Stephansplatz"],
+    "near": "vienna",
+    "other": "Dreif Mitch Stefen Müller, um, Stefen, Splatz, Heidel, 6.",
+    "said": "Treffen mit Stefan Müller am Stephansplatz heute um sechs",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-05.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "David"
+      },
+      {
+        "alternatives": [" und", " ein", " wird ein"],
+        "text": " und"
+      },
+      {
+        "alternatives": [" Pratersteiner", " Prateränderer"],
+        "text": " Pratersteiner"
+      },
+      {
+        "text": " abholen morgen um 5:30"
+      },
+      {
+        "alternatives": [" Uhr.", " Uhr?"],
+        "text": " Uhr."
+      }
+    ],
+    "id": "nik-de-06",
+    "location": "Pratersteiner",
+    "names": ["Praterstern"],
+    "near": "vienna",
+    "other": ", , , um, hypsex.",
+    "said": "David am Praterstern abholen, morgen um halb sechs",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-06.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": [
+          "Konzert am Karlsplatz nächsten",
+          "Konzert am Karlsplatz, nächsten",
+          "Konzertte am Karlsplatz nächsten",
+          "Konzert amarlsplatz nächsten",
+          "Konzert am Karlsplatz Näch"
+        ],
+        "text": "Konzert am Karlsplatz nächsten"
+      },
+      {
+        "text": " Donnerstag um acht."
+      }
+    ],
+    "id": "nik-de-07",
+    "location": "Karlsplatz",
+    "names": ["Karlsplatz"],
+    "near": "vienna",
+    "other": "Concertem Kaisplatz, nixen donnestogmacht.",
+    "said": "Konzert am Karlsplatz nächsten Donnerstag um acht",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-07.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Einkaufen mit Emily Carter auf der"
+      },
+      {
+        "alternatives": [
+          " Melilfer Straße",
+          " Melfer Straße",
+          " Melifer Straße",
+          " Melferstraße",
+          " Meliffer Straße"
+        ],
+        "text": " Melilfer Straße"
+      },
+      {
+        "text": " am Samstagnachmittag."
+      }
+    ],
+    "id": "nik-de-08",
+    "location": "Melilfer Straße",
+    "names": ["Mariahilfer Straße", "Mariahilfer Strasse"],
+    "near": "vienna",
+    "other": "Anchorf, meet Emily Carter, of Milverstrasse, um, Samstak Nahudak.",
+    "said": "Einkaufen mit Emily Carter auf der Mariahilfer Straße am Samstagnachmittag",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-08.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Treffen mit", "Treffenff mit"],
+        "text": "Treffen mit"
+      },
+      {
+        "text": " Max"
+      },
+      {
+        "alternatives": [" am", " im"],
+        "text": " am"
+      },
+      {
+        "alternatives": [" Schwedenplatz", " Schweden Platz"],
+        "text": " Schwedenplatz"
+      },
+      {
+        "text": " heute Abend um"
+      },
+      {
+        "alternatives": [" sieben.", " sieben?"],
+        "text": " sieben."
+      }
+    ],
+    "id": "nik-de-09",
+    "location": "Schwedenplatz",
+    "names": ["Schwedenplatz"],
+    "near": "vienna",
+    "other": "Definite Maxim Srinblads. Hot damn, don't seem.",
+    "said": "Treffen mit Max am Schwedenplatz heute Abend um sieben",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-09.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Anders mit", "Andereis mit", "Ans mit"],
+        "text": "Anders mit"
+      },
+      {
+        "text": " Katharina Gruber im Gasthaus"
+      },
+      {
+        "alternatives": [" Pöschel", " Pöschl"],
+        "text": " Pöschel"
+      },
+      {
+        "text": " am Mittwoch um 7:30"
+      },
+      {
+        "alternatives": [" Uhr.", " Uhr Uhr."],
+        "text": " Uhr."
+      }
+    ],
+    "id": "nik-de-10",
+    "location": "Gasthaus Pöschel",
+    "names": ["Gasthaus Pöschl"],
+    "near": "vienna",
+    "other": "Andes mit Katrina Gruber, in Gastas Perschel, and Mitroch, um Heilbart.",
+    "said": "Abendessen mit Katharina Gruber im Gasthaus Pöschl am Mittwoch um halb acht",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-10.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Kaffee"
+      },
+      {
+        "alternatives": [" mit Sarah", " mit Sara", " mitara"],
+        "text": " mit Sarah"
+      },
+      {
+        "text": " im Kaffee"
+      },
+      {
+        "alternatives": [" mit morgen", " mit Morgen", " mitmorgen"],
+        "text": " mit morgen"
+      },
+      {
+        "text": " um zehn."
+      }
+    ],
+    "id": "nik-de-11",
+    "location": "Kaffee mit",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "other": "Cafe mitzara, in cafe mit, mangum, tin.",
+    "said": "Kaffee mit Sarah im Kaffemik morgen um zehn",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-11.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Drinks mit James"
+      },
+      {
+        "alternatives": [" Wright im", " Wr im"],
+        "text": " Wright im"
+      },
+      {
+        "text": " kleinen"
+      },
+      {
+        "alternatives": [" Ort am", " Od am", " Ote am", " O am"],
+        "text": " Ort am"
+      },
+      {
+        "text": " Freitag um neun."
+      }
+    ],
+    "id": "nik-de-12",
+    "location": "kleinen Ort",
+    "names": ["Kleinod"],
+    "near": "vienna",
+    "other": "Drinks me, James Wright, in can, old, I'm Fred, the come, no.",
+    "said": "Drinks mit James Wright im Kleinod am Freitag um neun",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-12.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Frühstück mit Tom im"
+      },
+      {
+        "alternatives": [
+          " Café Speerl am",
+          " Café Sperl am",
+          " Café Speer am",
+          " Café, Speerl am",
+          " Café Sper am"
+        ],
+        "text": " Café Speerl am"
+      },
+      {
+        "text": " Sonntag um neun."
+      }
+    ],
+    "id": "nik-de-13",
+    "location": "Café Speerl",
+    "names": ["Café Sperl"],
+    "near": "vienna",
+    "other": "Fushtig mittom, in kerfish beelem, sonte gum, noin.",
+    "said": "Frühstück mit Tom im Café Sperl am Sonntag um neun",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-13.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Treffen mit Jörg"
+      },
+      {
+        "alternatives": [" Hofstädter", " Hofstetter", " Hofststetter"],
+        "text": " Hofstädter"
+      },
+      {
+        "text": " im Café"
+      },
+      {
+        "alternatives": [" Habelka", " Habelker"],
+        "text": " Habelka"
+      },
+      {
+        "text": " am Dienstag um vier."
+      }
+    ],
+    "id": "nik-de-14",
+    "location": "Café Habelka",
+    "names": ["Coffee Hawelka", "Café Hawelka"],
+    "near": "vienna",
+    "other": "Drev mitt jer kovstetter, in cafe hawelke, um, the insta comfier.",
+    "said": "Treffen mit Jörg Hofstätter im Café Hawelka am Dienstag um vier",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-14.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Laufe im", "Lauf im"],
+        "text": "Laufe im"
+      },
+      {
+        "alternatives": [" Augarten", " Auarten"],
+        "text": " Augarten"
+      },
+      {
+        "text": " morgen früh um"
+      },
+      {
+        "alternatives": [" sieben.", " sieben"],
+        "text": " sieben."
+      }
+    ],
+    "id": "nik-de-15",
+    "location": "Augarten",
+    "names": ["Augarten"],
+    "near": "vienna",
+    "other": "Lovelim aurgarten, morgen früm sieben.",
+    "said": "Laufen im Augarten morgen früh um sieben",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-15.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Picknick mit Anna im"
+      },
+      {
+        "alternatives": [" Türkenschanzspark", " Türkenanzpark", " Türkenanzspark"],
+        "text": " Türkenschanzspark"
+      },
+      {
+        "text": " am Samstag"
+      },
+      {
+        "alternatives": [" zu", " zum"],
+        "text": " zu"
+      },
+      {
+        "text": " Mittag."
+      }
+    ],
+    "id": "nik-de-16",
+    "location": "Türkenschanzspark",
+    "names": ["Türkenschanzpark"],
+    "near": "vienna",
+    "other": "Picnic, mit, Anna, I'm Turkenschanspark, um, Sam stuck to me back.",
+    "said": "Picknick mit Anna im Türkenschanzpark am Samstag zu Mittag",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-16.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Zug vom Westbahnhof am Montag um"
+      },
+      {
+        "alternatives": [" 8:15", " 7:15", " 6:15", " 4:15", " 5:15"],
+        "text": " 8:15"
+      },
+      {
+        "text": " Uhr."
+      }
+    ],
+    "id": "nik-de-17",
+    "location": "Westbahnhof",
+    "names": ["Westbahnhof", "Wien Westbahnhof"],
+    "near": "vienna",
+    "other": "Took from vespenhof and monde kum fietelne hart.",
+    "said": "Zug vom Westbahnhof am Montag um Viertel nach acht",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-17.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Thomas"
+      },
+      {
+        "alternatives": [" Karpfmeder", " Kapfmeder", " Kpfmeder"],
+        "text": " Karpfmeder"
+      },
+      {
+        "text": " am Hauptbahnhof"
+      },
+      {
+        "alternatives": [" abholen Donnerstag", " abholen. Donnerstag", " abholen, Donnerstag"],
+        "text": " abholen Donnerstag"
+      },
+      {
+        "text": " um sechs."
+      }
+    ],
+    "id": "nik-de-18",
+    "location": "Hauptbahnhof",
+    "names": ["Wien Hauptbahnhof", "Hauptbahnhof"],
+    "near": "vienna",
+    "other": "Thomas Kapmida, I'm hopping of Aporn. Donastak, um, 6.",
+    "said": "Thomas Karpfeneder am Hauptbahnhof abholen, Donnerstag um sechs",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-18.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Mittagspause"
+      },
+      {
+        "alternatives": [" im", " in"],
+        "text": " im"
+      },
+      {
+        "alternatives": [" Burggarten morgen", " Burggarten, morgen"],
+        "text": " Burggarten morgen"
+      },
+      {
+        "text": " um"
+      },
+      {
+        "alternatives": [" 12:30", " 10:30"],
+        "text": " 12:30"
+      },
+      {
+        "text": " Uhr."
+      }
+    ],
+    "id": "nik-de-19",
+    "location": "Burggarten",
+    "names": ["Burggarten"],
+    "near": "vienna",
+    "other": "Meet explosing book at Margham Herbans.",
+    "said": "Mittagspause im Burggarten morgen um halb eins",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-19.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Treffen mit"
+      },
+      {
+        "alternatives": [" Emily Carter", " Emil Carter", " Emy Carter", " Emilely Carter"],
+        "text": " Emily Carter"
+      },
+      {
+        "text": " im Volksgarten am Sonntag um"
+      },
+      {
+        "alternatives": [" drei.", " drei"],
+        "text": " drei."
+      }
+    ],
+    "id": "nik-de-20",
+    "location": "Volksgarten",
+    "names": ["Volksgarten"],
+    "near": "vienna",
+    "other": "Drev mit emericata in folksgartnem sontek umdre.",
+    "said": "Treffen mit Emily Carter im Volksgarten am Sonntag um drei",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-20.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Ausstellung mit"
+      },
+      {
+        "alternatives": [" Stefan im", " Stefanan im", " Ste im"],
+        "text": " Stefan im"
+      },
+      {
+        "text": " Museumsquartier"
+      },
+      {
+        "alternatives": [" am Samstag", " Samstag"],
+        "text": " am Samstag"
+      },
+      {
+        "text": " um"
+      },
+      {
+        "alternatives": [" elf.", " elf"],
+        "text": " elf."
+      }
+    ],
+    "id": "nik-de-21",
+    "location": "Museumsquartier",
+    "names": ["MuseumsQuartier"],
+    "near": "vienna",
+    "other": "Auschtelling wicht Stefen, i musimskot tiem samstegommelf.",
+    "said": "Ausstellung mit Stefan im MuseumsQuartier am Samstag um elf",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-21.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Rad auf", "Raddorf"],
+        "text": "Rad auf"
+      },
+      {
+        "text": " der"
+      },
+      {
+        "alternatives": [" Doninsel nächsten", " Toninsel nächsten", " Doninsel, nächsten"],
+        "text": " Doninsel nächsten"
+      },
+      {
+        "text": " Sonntag um"
+      },
+      {
+        "alternatives": [" zehn.", " zehn"],
+        "text": " zehn."
+      }
+    ],
+    "id": "nik-de-22",
+    "location": "Doninsel",
+    "names": ["Donauinsel"],
+    "near": "vienna",
+    "other": "Rat of the Donan, Linux, and Santa Contain.",
+    "said": "Radtour auf der Donauinsel nächsten Sonntag um zehn",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-22.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Wanderung auf den"
+      },
+      {
+        "alternatives": [" Kahlenberg", " Kahlberg"],
+        "text": " Kahlenberg"
+      },
+      {
+        "text": " mit"
+      },
+      {
+        "alternatives": [" Katharina", " Katharine"],
+        "text": " Katharina"
+      },
+      {
+        "text": " Gruber am"
+      },
+      {
+        "alternatives": [" Samstagvormittag.", " Samstagvormittag?"],
+        "text": " Samstagvormittag."
+      }
+    ],
+    "id": "nik-de-23",
+    "location": "Kahlenberg",
+    "names": ["Kahlenberg"],
+    "near": "vienna",
+    "other": "Wandong of den Keinberg, mit Katrina Gruber, um, Samstek Formitek.",
+    "said": "Wanderung auf den Kahlenberg mit Katharina Gruber am Samstagvormittag",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-23.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Abendessen"
+      },
+      {
+        "alternatives": [" mit", " ist mit"],
+        "text": " mit"
+      },
+      {
+        "text": " Tom Becker"
+      },
+      {
+        "alternatives": [" beim", " bei"],
+        "text": " beim"
+      },
+      {
+        "alternatives": [" Mayer", " Meier"],
+        "text": " Mayer"
+      },
+      {
+        "text": " am Fahrplatz nächsten Freitag um sieben."
+      }
+    ],
+    "id": "nik-de-24",
+    "location": "Mayer am Fahrplatz",
+    "names": ["Mayer am Pfarrplatz"],
+    "near": "vienna",
+    "other": "I'm destiny Tom Baker, a mayor. I'm Poplot, Nixon Fatec Museum.",
+    "said": "Abendessen mit Tom Baker beim Mayer am Pfarrplatz nächsten Freitag um sieben",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-24.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Bier mit Max im"
+      },
+      {
+        "alternatives": [
+          " Schweizerhaus",
+          " Schweizer Haus",
+          " Schweizhaus",
+          " Schweihaus",
+          " Schwei Haus"
+        ],
+        "text": " Schweizerhaus"
+      },
+      {
+        "text": " am Donnerstag um sechs."
+      }
+    ],
+    "id": "nik-de-25",
+    "location": "Schweizerhaus",
+    "names": ["Schweizerhaus"],
+    "near": "vienna",
+    "other": "Be imit max im schwetz or some don circum six.",
+    "said": "Bier mit Max im Schweizerhaus am Donnerstag um sechs",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-25.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Mittagessen mit David im schwarzen"
+      },
+      {
+        "alternatives": [" Kamel am", " Kameel am", " Kam am", " Kel am"],
+        "text": " Kamel am"
+      },
+      {
+        "text": " Mittwoch um"
+      },
+      {
+        "alternatives": [" eins.", " eins"],
+        "text": " eins."
+      }
+    ],
+    "id": "nik-de-26",
+    "location": "schwarzen Kamel",
+    "names": ["Zum Schwarzen Kameel"],
+    "near": "vienna",
+    "other": "Miteges mit David. Im Schwarzenkamelen mitvok umad.",
+    "said": "Mittagessen mit David im Schwarzen Kameel am Mittwoch um eins",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-26.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Abendessen mit Jörg Hofstädter in"
+      },
+      {
+        "alternatives": [" Bachuta", " Bachutta", " Plauta", " Blauta", " Blautta"],
+        "text": " Bachuta"
+      },
+      {
+        "text": " am Samstag um acht."
+      }
+    ],
+    "id": "nik-de-27",
+    "location": "Bachuta",
+    "names": ["Plachutta"],
+    "near": "vienna",
+    "other": "I'm desmit your kovstetter, imprejutam samstekomacht.",
+    "said": "Abendessen mit Jörg Hofstätter im Plachutta am Samstag um acht",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-27.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Abendessen"
+      },
+      {
+        "alternatives": [" mit Salem", " mitalem"],
+        "text": " mit Salem"
+      },
+      {
+        "alternatives": [" Steirreik am", " Steierk am", " Steirk am", " Steir am"],
+        "text": " Steirreik am"
+      },
+      {
+        "text": " 5. Dezember um sieben."
+      }
+    ],
+    "id": "nik-de-28",
+    "location": "Steirreik",
+    "names": ["Steirereck"],
+    "near": "vienna",
+    "other": "I'm desmitsalem Sterek, I'm filthin dit zembom siem.",
+    "said": "Abendessen mit Sarah im Steirereck am fünften Dezember um sieben",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-28.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Treffen mit James Wright am Schottendor"
+      },
+      {
+        "alternatives": [" morgen", " Morgen"],
+        "text": " morgen"
+      },
+      {
+        "text": " um"
+      },
+      {
+        "alternatives": [" 8:45", " 4:45", " 7:45", " 6:45"],
+        "text": " 8:45"
+      },
+      {
+        "text": " Uhr."
+      }
+    ],
+    "id": "nik-de-29",
+    "location": "Schottendor",
+    "names": ["Schottentor"],
+    "near": "vienna",
+    "other": "Drave me James Wright, I'm shortened on Wagum Fiedel for nine.",
+    "said": "Treffen mit James Wright am Schottentor morgen um Viertel vor neun",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-29.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Grießkindlmarkt", "Griekindlmarkt", "Gkindlmarkt"],
+        "text": "Grießkindlmarkt"
+      },
+      {
+        "text": " am"
+      },
+      {
+        "alternatives": [" Rathausplatz", " Rathaus Platz", " Ratersplatz"],
+        "text": " Rathausplatz"
+      },
+      {
+        "text": " am Freitag um fünf."
+      }
+    ],
+    "id": "nik-de-30",
+    "location": "Rathausplatz",
+    "names": ["Rathausplatz"],
+    "near": "vienna",
+    "other": "Giskindel mark dem ratus blatz, um fräte gumfund.",
+    "said": "Christkindlmarkt am Rathausplatz am Freitag um fünf",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-30.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Zug nach"
+      },
+      {
+        "alternatives": [" München am", " München, am", " München Am", " München. am"],
+        "text": " München am"
+      },
+      {
+        "text": " Montag um"
+      },
+      {
+        "alternatives": [" sieben.", " sieben"],
+        "text": " sieben."
+      }
+    ],
+    "id": "nik-de-31",
+    "location": "München",
+    "names": ["Munich", "München"],
+    "near": "vienna",
+    "other": "Zugna, münch, nie monde, gum sieben.",
+    "said": "Zug nach München am Montag um sieben",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-31.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Flug nach"
+      },
+      {
+        "alternatives": [" Zürich, nächsten", " Zürich nächsten"],
+        "text": " Zürich, nächsten"
+      },
+      {
+        "text": " Mittwoch um"
+      },
+      {
+        "alternatives": [" 6:30 Uhr.", " 9:30 Uhr.", " 6:30:30 Uhr."],
+        "text": " 6:30 Uhr."
+      }
+    ],
+    "id": "nik-de-32",
+    "location": "Zürich",
+    "names": ["Zürich", "Zurich"],
+    "near": "vienna",
+    "other": "Flugner Zürich nichten mittvok um Heipzi.",
+    "said": "Flug nach Zürich nächsten Mittwoch um halb sieben",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-32.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Wochenende", "Am Wochenende"],
+        "text": "Wochenende"
+      },
+      {
+        "text": " in"
+      },
+      {
+        "alternatives": [" Salzburg mit", " Salzburg, mit"],
+        "text": " Salzburg mit"
+      },
+      {
+        "alternatives": [" Anna", " An"],
+        "text": " Anna"
+      },
+      {
+        "alternatives": [" von", " vom"],
+        "text": " von"
+      },
+      {
+        "text": " Freitag bis Sonntag."
+      }
+    ],
+    "id": "nik-de-33",
+    "location": "Salzburg",
+    "names": ["Salzburg"],
+    "near": "vienna",
+    "other": "Walking in the inside, spoken with Anna von Friedek, sontok.",
+    "said": "Wochenende in Salzburg mit Anna von Freitag bis Sonntag",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-33.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Besuch bei"
+      },
+      {
+        "alternatives": [
+          " Stefan Müller",
+          " Stephan Müller",
+          " Ste Müller",
+          " Stefanan Müller",
+          " Stean Müller"
+        ],
+        "text": " Stefan Müller"
+      },
+      {
+        "text": " in Klosterneuburg am Sonntag um zwei."
+      }
+    ],
+    "id": "nik-de-34",
+    "location": "Klosterneuburg",
+    "names": ["Klosterneuburg"],
+    "near": "vienna",
+    "other": "Besuch besstefer Müller. In klusten eubergam sonte komte.",
+    "said": "Besuch bei Stefan Müller in Klosterneuburg am Sonntag um zwei",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-34.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": [
+          "Besprechung Sankt",
+          "Besprechung in Sankt",
+          "Besprechung, Sankt",
+          "Die Besprechung Sankt"
+        ],
+        "text": "Besprechung Sankt"
+      },
+      {
+        "text": " Pölten am Dienstag um"
+      },
+      {
+        "alternatives": [" zehn.", " zehn"],
+        "text": " zehn."
+      }
+    ],
+    "id": "nik-de-35",
+    "location": "Sankt Pölten",
+    "names": ["St. Pölten", "Sankt Pölten"],
+    "near": "vienna",
+    "other": "Bisprejung sen Berten, and deenste gundstein.",
+    "said": "Besprechung in St. Pölten am Dienstag um zehn",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-35.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Skifahren in"
+      },
+      {
+        "alternatives": [
+          " Kitzbühel nächsten",
+          " Kitzbühel, nächsten",
+          " Kittbühel nächsten",
+          " Kitzbühel. nächsten",
+          " Kittbühel, nächsten"
+        ],
+        "text": " Kitzbühel nächsten"
+      },
+      {
+        "text": " Samstag."
+      }
+    ],
+    "id": "nik-de-36",
+    "location": "Kitzbühel",
+    "names": ["Kitzbühel"],
+    "near": "vienna",
+    "other": "Shifern in Kitzbuhl, Nixon Sandstock.",
+    "said": "Skifahren in Kitzbühel nächsten Samstag",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-36.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Arzt in der"
+      },
+      {
+        "alternatives": [
+          " Wollzeile fünf",
+          " Wollzeile 5",
+          " Woll Zeile fünf",
+          " Wollzeile, fünf",
+          " Woll Zeile 5"
+        ],
+        "text": " Wollzeile fünf"
+      },
+      {
+        "text": " morgen um neun."
+      }
+    ],
+    "id": "nik-de-37",
+    "location": "Wollzeile fünf",
+    "names": ["Wollzeile 5"],
+    "near": "vienna",
+    "other": "Ads in the void cell, Fund, Moagnum, Noin.",
+    "said": "Arzt in der Wollzeile 5 morgen um neun",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-37.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Friseur in der"
+      },
+      {
+        "alternatives": [" Neubaugasse", " Neubau Gasse", " Neubauasse"],
+        "text": " Neubaugasse"
+      },
+      {
+        "alternatives": [" 12 am", " zwölf am", " 12, am"],
+        "text": " 12 am"
+      },
+      {
+        "text": " Donnerstag um vier."
+      }
+    ],
+    "id": "nik-de-38",
+    "location": "Neubaugasse 12",
+    "names": ["Neubaugasse 12"],
+    "near": "vienna",
+    "other": "For sir, in the norbocas, it's worth, I'm done a second fear.",
+    "said": "Friseur in der Neubaugasse 12 am Donnerstag um vier",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-38.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Abendessen mit Emily"
+      },
+      {
+        "alternatives": [
+          " Carter Wehringer Straße",
+          " Carter, Wehringer Straße",
+          " Carter, Wehringerstraße",
+          " Carter Winger Straße",
+          " Carter, Winger Straße"
+        ],
+        "text": " Carter Wehringer Straße"
+      },
+      {
+        "text": " 46 am Samstag um sieben."
+      }
+    ],
+    "id": "nik-de-39",
+    "location": "Wehringer Straße 46",
+    "names": ["Währinger Straße 46"],
+    "near": "vienna",
+    "other": "Andersen with Emily Carter. The Engenstrasse, Sex and Fietzig. I'm Samstekum sieben.",
+    "said": "Abendessen bei Emily Carter, Währinger Straße 46, am Samstag um sieben",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-39.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Workshop in der"
+      },
+      {
+        "alternatives": [" Praterstraße", " Prater Straße"],
+        "text": " Praterstraße"
+      },
+      {
+        "text": " 1 nächsten Montag von"
+      },
+      {
+        "alternatives": [" 9-12.", " neun-12.", " neun bis12.", " 9-12"],
+        "text": " 9-12."
+      }
+    ],
+    "id": "nik-de-40",
+    "location": "Praterstraße 1",
+    "names": ["Praterstraße 1"],
+    "near": "vienna",
+    "other": "Workshop in the bradstrasse ans, nisten muntek, for Neimbitzwurf.",
+    "said": "Workshop in der Praterstraße 1 nächsten Montag von neun bis zwölf",
+    "voice": "Nik (iPhone, Voice Memos; audio/places/place-de-40.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": [
+          "Et cafémic.",
+          "Et café mic.",
+          "Et cafémique.",
+          "At cafémic.",
+          "Et café mique."
+        ],
+        "text": "Et cafémic."
+      }
+    ],
+    "id": "nik-turn-01",
+    "location": "cafémic",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "other": "Ed Cafemick.",
+    "said": "at Kaffemik",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-01.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "It's in"
+      },
+      {
+        "alternatives": [" Vienna.", " Vienna,", " Vienna?", " Vienna"],
+        "text": " Vienna."
+      }
+    ],
+    "id": "nik-turn-02",
+    "location": "Vienna",
+    "names": ["Vienna", "Wien"],
+    "near": "vienna",
+    "other": "It's in Vienna.",
+    "said": "it's in Vienna",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-02.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "At"
+      },
+      {
+        "alternatives": [" Cafish PL", " Cafish BL", " Kafish PL", " Kafish BL", " Kafishpiel"],
+        "text": " Cafish PL"
+      },
+      {
+        "text": " instead."
+      }
+    ],
+    "id": "nik-turn-05",
+    "location": "Cafish PL",
+    "names": ["Café Sperl"],
+    "near": "vienna",
+    "other": "Edgar Sperlins, Dad.",
+    "said": "at Café Sperl instead",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-05.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["In", "in"],
+        "text": "In"
+      },
+      {
+        "text": " the"
+      },
+      {
+        "alternatives": [" all", " old", " All"],
+        "text": " all"
+      },
+      {
+        "alternatives": [" garden.", " Garden."],
+        "text": " garden."
+      }
+    ],
+    "id": "nik-turn-08",
+    "location": "all garden",
+    "names": ["Augarten"],
+    "near": "vienna",
+    "other": "In die Augarten.",
+    "said": "in the Augarten",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-08.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Move it to"
+      },
+      {
+        "alternatives": [" Plejuta.", " Plajuta.", " Blejuta.", " plajuta.", " plejuta."],
+        "text": " Plejuta."
+      }
+    ],
+    "id": "nik-turn-10",
+    "location": "Plejuta",
+    "names": ["Plachutta"],
+    "near": "vienna",
+    "other": "Move it to Blahutta.",
+    "said": "move it to Plachutta",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-10.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "At the"
+      },
+      {
+        "alternatives": [" schmetzer", " Schmetzer", " smetzer"],
+        "text": " schmetzer"
+      },
+      {
+        "alternatives": [" house.", " House."],
+        "text": " house."
+      }
+    ],
+    "id": "nik-turn-12",
+    "location": "schmetzer house",
+    "names": ["Schweizerhaus"],
+    "near": "vienna",
+    "other": "Altes Schweizer Haus.",
+    "said": "at the Schweizerhaus",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-12.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "It's on my"
+      },
+      {
+        "alternatives": [
+          " Hilferstrasse.",
+          " Hilverstrasse.",
+          " hilverstrasse.",
+          " hilferstrasse."
+        ],
+        "text": " Hilferstrasse."
+      }
+    ],
+    "id": "nik-turn-15",
+    "location": "my Hilferstrasse",
+    "names": ["Mariahilfer Straße", "Mariahilfer Strasse"],
+    "near": "vienna",
+    "other": "Itzon Marie Hilfer Straße.",
+    "said": "it's on Mariahilfer Straße",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-15.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Im"
+      },
+      {
+        "alternatives": [
+          " Cafébrückel.",
+          " Café Brückel.",
+          " Cafébrückl.",
+          " Cafébrücke.",
+          " Café Brückl."
+        ],
+        "text": " Cafébrückel."
+      }
+    ],
+    "id": "nik-turn-17",
+    "location": "Cafébrückel",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "other": "In café, bro.",
+    "said": "im Café Prückel",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-17.m4a)"
+  },
+  {
+    "heard": [
+      {
+        "text": "Am"
+      },
+      {
+        "alternatives": [
+          " Schwedenplatz.",
+          " Schweden Platz.",
+          " Schwedenplatz",
+          " schwedenplatz.",
+          " Schweden Platz"
+        ],
+        "text": " Schwedenplatz."
+      }
+    ],
+    "id": "nik-turn-22",
+    "location": "Schwedenplatz",
+    "names": ["Schwedenplatz"],
+    "near": "vienna",
+    "other": "I'm Srivin Bloods.",
+    "said": "am Schwedenplatz",
+    "voice": "Nik (iPhone, Voice Memos; audio/turns/turn-22.m4a)"
   }
 ]

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { alternativesFor, heardFromSegments } from '@calendar/ai';
+import { alternativesFor, heardFromSegments, readingsFor } from '@calendar/ai';
 import {
   Account,
   CalendarInfo,
@@ -216,8 +216,11 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('place bench', () => {
       const reports: Array<PlaceCaseReport> = [];
       try {
         for (const each of cases) {
-          const heard = heardFromSegments(each.heard);
-          const alternatives = heard === undefined ? [] : alternativesFor(heard, each.location);
+          // PLACE_BENCH_OTHER=off: the recogniser's own readings alone, without the other language's.
+          const both = process.env['PLACE_BENCH_OTHER'] !== 'off';
+          const heard = heardFromSegments(each.heard, both ? each.other : undefined);
+          const alternatives =
+            heard === undefined ? [] : (both ? readingsFor : alternativesFor)(heard, each.location);
           const ask = async (
             arm: string,
             payload: Parameters<typeof locationHandlers.placeCandidates>[0],

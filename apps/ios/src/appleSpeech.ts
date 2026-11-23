@@ -53,7 +53,7 @@ export const appleSpeech: SpeechToText = {
     }
     active.remove();
     const result = await native.finish(active.session);
-    return result ? heardFromSegments(result.segments) : undefined;
+    return result ? heardFromSegments(result.segments, result.other) : undefined;
   },
   isSupported: async () => loadSpeechModule() !== undefined,
   prepare: async () => {

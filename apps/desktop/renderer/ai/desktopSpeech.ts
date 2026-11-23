@@ -82,7 +82,7 @@ export const desktopSpeech: SpeechToText = {
     active.flush();
     close(active);
     const result = await window.calendarBridge.modelSpeechFinish(active.session);
-    return heardFromSegments(result.segments);
+    return heardFromSegments(result.segments, result.other);
   },
 
   isSupported: async () => {

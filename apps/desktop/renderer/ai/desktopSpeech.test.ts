@@ -81,6 +81,8 @@ const bridge = () => {
   const losers = new Set<(lost: { session: number }) => void>();
   let sessions = 0;
   let segments: ReadonlyArray<{ text: string }> = [{ text: 'Lunch with Anna' }];
+  /** The phrase as the helper's other-language recogniser wrote it, when it has one. */
+  let other: string | undefined;
   /** Set: the next start waits until the test lets it answer. */
   let held: Promise<void> | undefined;
   vi.stubGlobal('window', {
@@ -93,7 +95,7 @@ const bridge = () => {
       },
       modelSpeechFinish: async (session: number) => {
         finished.push(session);
-        return { segments };
+        return other === undefined ? { segments } : { other, segments };
       },
       modelSpeechStart: async () => {
         sessions += 1;
@@ -119,6 +121,9 @@ const bridge = () => {
     finished,
     hearNothing: () => {
       segments = [];
+    },
+    hearOther: (text: string) => {
+      other = text;
     },
     /** Main dropped this phrase: its helper went away. */
     lose: (session: number) => {
@@ -303,6 +308,20 @@ describe('desktopSpeech streaming', () => {
     // The worklet sent 32 blocks of 128: 768 samples were left over.
     expect(main.audio.at(-1)?.bytes).toBe((32 * 128 - 2 * 1664) * 2);
     expect(main.finished).toEqual([1]);
+  });
+
+  it('keeps the other language’s reading of the phrase beside it', async () => {
+    const main = bridge();
+    main.hearOther('Lunch mit Anna');
+    const speech = await loadSpeech();
+    const start = speech.start({ onWords: noWords });
+    grants[0]?.(fakeStream());
+    await start;
+    expect(await speech.finish()).toEqual({
+      other: 'Lunch mit Anna',
+      segments: [{ text: 'Lunch with Anna' }],
+      text: 'Lunch with Anna',
+    });
   });
 
   it('passes on its own phrase’s words only', async () => {

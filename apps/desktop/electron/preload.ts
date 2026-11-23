@@ -41,7 +41,7 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.invoke('model:recognize-text', imageBase64),
   /** Drops the phrase being listened to. */
   modelSpeechCancel: (session: number) => ipcRenderer.invoke('model:speech-cancel', session),
-  /** Stops listening and reads the phrase whole: its segments. */
+  /** Stops listening and reads the phrase whole: its segments, and the phrase as the other language reads it. */
   modelSpeechFinish: (session: number) => ipcRenderer.invoke('model:speech-finish', session),
   /** One block of the microphone (16 kHz mono Int16), in the order it was recorded. */
   modelSpeechAudio: (session: number, pcm: Uint8Array) =>

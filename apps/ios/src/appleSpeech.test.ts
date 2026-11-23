@@ -15,7 +15,10 @@ const native = vi.hoisted(() => {
   const state = {
     calls: [] as Array<string>,
     finishes: undefined as
-      | { segments: ReadonlyArray<{ alternatives: ReadonlyArray<string>; text: string }> }
+      | {
+          other?: string;
+          segments: ReadonlyArray<{ alternatives: ReadonlyArray<string>; text: string }>;
+        }
       | null
       | undefined,
     installed: true,
@@ -145,6 +148,20 @@ describe('appleSpeech', () => {
     expect(heard).toEqual(['quick: Lunch', 'accurate: Lunch with']);
     expect(native.calls).toEqual(['start 1 processed', 'finish 1']);
     expect(native.listeners.size).toBe(0);
+  });
+
+  it('keeps the other language’s reading of the phrase beside it', async () => {
+    native.finishes = {
+      other: 'Mit Tom at the Naschmarkt',
+      segments: [{ alternatives: [], text: 'Meet Tom at the Nashmacht' }],
+    };
+    const speech = await loadSpeech();
+    await speech.start({ onWords: noWords });
+    await expect(speech.finish()).resolves.toEqual({
+      other: 'Mit Tom at the Naschmarkt',
+      segments: [{ alternatives: [], text: 'Meet Tom at the Nashmacht' }],
+      text: 'Meet Tom at the Nashmacht',
+    });
   });
 
   it('reads a phrase the module no longer holds as nothing', async () => {
