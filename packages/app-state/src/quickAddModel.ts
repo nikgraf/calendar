@@ -245,7 +245,8 @@ export const useQuickAddModel = ({
     arming.current = true;
     setHeard(false);
     try {
-      if (!prepared.current) {
+      // A language picked in Settings since is prepared again, in view.
+      if (!prepared.current || speech.isPrepared?.() === false) {
         setVoice('preparing');
         try {
           // Prepare first: asking for the microphone before knowing dictation

@@ -219,9 +219,12 @@ describe('desktopSpeech languages', () => {
       await start;
     };
     await listen();
-    // Picked in Settings while the editor stayed open: the phrase prepares them first.
+    // Picked in Settings while the editor stayed open: the editor sees it
+    // needs preparing, and a phrase prepares them first in any case.
+    expect(speech.isPrepared?.()).toBe(true);
     stored.set('dictation.language', 'de-AT');
     stored.set('dictation.secondLanguage', 'off');
+    expect(speech.isPrepared?.()).toBe(false);
     await listen();
     await listen();
     // An unreadable choice is automatic.

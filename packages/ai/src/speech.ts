@@ -54,6 +54,12 @@ export interface SpeechToText {
    */
   readonly finish: () => Promise<Heard | undefined>;
   /**
+   * Whether the languages dictation listens in now (Settings › Dictation)
+   * are the ones last prepared: one picked since needs `prepare` again,
+   * which may download it. Absent where the languages never change.
+   */
+  readonly isPrepared?: () => boolean;
+  /**
    * Whether transcription is worth offering at all — the native module is
    * present. Deliberately not "ready to run": the platform reports
    * unavailable until the locale's assets are installed, and installing

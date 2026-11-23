@@ -271,7 +271,10 @@ describe('appleSpeech', () => {
     await speech.prepare();
     await speech.start({ onWords: noWords });
     // Settings › Dictation, the editor still open: no prepare from it.
+    expect(speech.isPrepared?.()).toBe(true);
     (await import('./dictationLanguages.ts')).secondLanguage.set('fr-FR');
+    // The editor asks, and shows it preparing.
+    expect(speech.isPrepared?.()).toBe(false);
     await speech.start({ onWords: noWords });
     await speech.start({ onWords: noWords });
     expect(native.calls).toEqual([

@@ -100,6 +100,14 @@ export const appleSpeech: SpeechToText = {
     const result = await native.finish(active.session);
     return result ? heardFromSegments(result.segments, result.other) : undefined;
   },
+  isPrepared: () => {
+    const native = loadSpeechModule();
+    if (!native) {
+      return true;
+    }
+    const { locale, second } = languagesFor(native);
+    return preparedFor === `${locale} ${second ?? ''}`;
+  },
   isSupported: async () => loadSpeechModule() !== undefined,
   prepare: async () => {
     const native = loadSpeechModule();

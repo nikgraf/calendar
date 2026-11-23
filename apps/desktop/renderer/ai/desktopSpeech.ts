@@ -103,6 +103,8 @@ export const desktopSpeech: SpeechToText = {
     return heardFromSegments(result.segments, result.other);
   },
 
+  isPrepared: () => preparedFor === `${dictationLocale()} ${secondLanguage.get()}`,
+
   isSupported: async () => {
     // Same reasoning as iOS: readiness flags are false before first use;
     // the helper's own status tells us whether its stack exists at all —
