@@ -5,7 +5,7 @@ import {
   SpeechUnsupportedError,
   type SpeechToText,
 } from '@calendar/ai';
-import { dictationLocale, noiseReduction } from './dictationSettings.ts';
+import { dictationLocale, noiseReduction, secondLanguage } from './dictationSettings.ts';
 import { toPcm16 } from './pcm16.ts';
 
 /** What the helper's recognisers take: 16 kHz mono. */
@@ -102,7 +102,10 @@ export const desktopSpeech: SpeechToText = {
   },
 
   prepare: async () => {
-    const result = await window.calendarBridge.modelPrepareSpeech(dictationLocale());
+    const result = await window.calendarBridge.modelPrepareSpeech(
+      dictationLocale(),
+      secondLanguage.get(),
+    );
     if (result.denied) {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
@@ -138,7 +141,10 @@ export const desktopSpeech: SpeechToText = {
         // Given up while the worklet loaded: starting a session now would
         // drop a newer caller's in the helper.
         if (!signal?.aborted) {
-          started = await window.calendarBridge.modelSpeechStart(dictationLocale());
+          started = await window.calendarBridge.modelSpeechStart(
+            dictationLocale(),
+            secondLanguage.get(),
+          );
         }
       }
     } catch (error) {

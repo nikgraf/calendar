@@ -99,14 +99,38 @@ beforeEach(async () => {
 describe('dictation in main', () => {
   it('starts a phrase on the helper and gives the window its session', async () => {
     const window = sender();
-    await expect(call('model:speech-start', window, 'en-US')).resolves.toEqual({
+    await expect(call('model:speech-start', window, 'en-US', 'auto')).resolves.toEqual({
       session: 1,
       sources: ['accurate', 'quick'],
     });
     expect(main.calls).toEqual([
-      { method: 'speech.start', params: { locale: 'en-US', session: 1 } },
+      { method: 'speech.start', params: { locale: 'en-US', other: 'auto', session: 1 } },
     ]);
-    await expect(call('model:speech-start', window, 'not a locale!')).rejects.toThrow(
+    await expect(call('model:speech-start', window, 'not a locale!', 'auto')).rejects.toThrow(
+      'invalid locale',
+    );
+  });
+
+  it('passes the second language Settings › Dictation chose, and refuses anything else', async () => {
+    const window = sender();
+    await call('model:speech-start', window, 'en-US', 'off');
+    await call('model:speech-start', window, 'en-US', 'de-AT');
+    expect(main.calls.map((entry) => (entry.params as { other?: unknown }).other)).toEqual([
+      'off',
+      'de-AT',
+    ]);
+    await expect(call('model:speech-start', window, 'en-US', 'de; rm')).rejects.toThrow(
+      'invalid second language',
+    );
+    await expect(call('model:speech-start', window, 'en-US')).rejects.toThrow(
+      'invalid second language',
+    );
+  });
+
+  it('asks the helper for the languages it has', async () => {
+    await call('model:speech-languages', sender(), 'en-US');
+    expect(main.calls).toEqual([{ method: 'speech.languages', params: { locale: 'en-US' } }]);
+    await expect(call('model:speech-languages', sender(), 'nope!')).rejects.toThrow(
       'invalid locale',
     );
   });
@@ -114,7 +138,7 @@ describe('dictation in main', () => {
   it('passes the window’s audio on, as base64, and nobody else’s', async () => {
     const window = sender();
     const other = sender();
-    await call('model:speech-start', window, 'en-US');
+    await call('model:speech-start', window, 'en-US', 'auto');
     main.calls.length = 0;
     call('model:speech-audio', window, 1, new Uint8Array([1, 0, 255, 127]));
     call('model:speech-audio', other, 1, new Uint8Array([1, 0]));
@@ -128,7 +152,7 @@ describe('dictation in main', () => {
 
   it('pushes the phrase’s words to the window listening, until it is finished', async () => {
     const window = sender();
-    await call('model:speech-start', window, 'en-US');
+    await call('model:speech-start', window, 'en-US', 'auto');
     helperSays({ session: 1, source: 'quick', text: 'Lunch' });
     helperSays({ session: 9, source: 'quick', text: 'an older phrase' });
     helperSays({ session: 1, source: 'nobody', text: 'not a recogniser' });
@@ -144,8 +168,8 @@ describe('dictation in main', () => {
   it('a newer phrase takes the words over; a cancel drops only its own', async () => {
     const first = sender();
     const second = sender();
-    await call('model:speech-start', first, 'en-US');
-    await call('model:speech-start', second, 'en-US');
+    await call('model:speech-start', first, 'en-US', 'auto');
+    await call('model:speech-start', second, 'en-US', 'auto');
     await call('model:speech-cancel', first, 1);
     helperSays({ session: 2, source: 'quick', text: 'Dinner' });
     expect(first.sent).toEqual([]);
@@ -155,7 +179,7 @@ describe('dictation in main', () => {
 
   it('drops the phrase of a window closed mid-phrase', async () => {
     const window = sender();
-    await call('model:speech-start', window, 'en-US');
+    await call('model:speech-start', window, 'en-US', 'auto');
     window.destroy();
     expect(main.calls.at(-1)).toEqual({ method: 'speech.cancel', params: { session: 1 } });
     helperSays({ session: 1, source: 'quick', text: 'Lunch' });
@@ -165,7 +189,7 @@ describe('dictation in main', () => {
   it('lets only the window listening end its phrase', async () => {
     const window = sender();
     const other = sender();
-    await call('model:speech-start', window, 'en-US');
+    await call('model:speech-start', window, 'en-US', 'auto');
     await expect(call('model:speech-finish', other, 1)).rejects.toThrow('invalid session');
     await expect(call('model:speech-cancel', other, 1)).rejects.toThrow('invalid session');
     helperSays({ session: 1, source: 'quick', text: 'Lunch' });
@@ -175,7 +199,7 @@ describe('dictation in main', () => {
 
   it('tells the window its phrase was lost when the helper exits', async () => {
     const window = sender();
-    await call('model:speech-start', window, 'en-US');
+    await call('model:speech-start', window, 'en-US', 'auto');
     for (const exit of main.exits) {
       exit();
     }

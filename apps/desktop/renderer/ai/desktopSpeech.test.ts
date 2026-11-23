@@ -83,10 +83,17 @@ const bridge = () => {
   let segments: ReadonlyArray<{ text: string }> = [{ text: 'Lunch with Anna' }];
   /** The phrase as the helper's other-language recogniser wrote it, when it has one. */
   let other: string | undefined;
+  /** What prepare and start were asked to listen in: "<locale> <second language>". */
+  const prepared: Array<string> = [];
+  const startedWith: Array<string> = [];
   /** Set: the next start waits until the test lets it answer. */
   let held: Promise<void> | undefined;
   vi.stubGlobal('window', {
     calendarBridge: {
+      modelPrepareSpeech: async (locale: string, second: string) => {
+        prepared.push(`${locale} ${second}`);
+        return { prepared: true };
+      },
       modelSpeechAudio: (session: number, pcm: Uint8Array) => {
         audio.push({ bytes: pcm.byteLength, session });
       },
@@ -97,7 +104,8 @@ const bridge = () => {
         finished.push(session);
         return other === undefined ? { segments } : { other, segments };
       },
-      modelSpeechStart: async () => {
+      modelSpeechStart: async (locale: string, second: string) => {
+        startedWith.push(`${locale} ${second}`);
         sessions += 1;
         const session = sessions;
         await held;
@@ -125,6 +133,8 @@ const bridge = () => {
     hearOther: (text: string) => {
       other = text;
     },
+    prepared,
+    startedWith,
     /** Main dropped this phrase: its helper went away. */
     lose: (session: number) => {
       for (const listener of losers) {
@@ -179,6 +189,33 @@ describe('desktopSpeech microphone', () => {
       [true, true, true],
       [false, false, false],
     ]);
+  });
+});
+
+describe('desktopSpeech languages', () => {
+  it('listens in the Mac’s language and Automatic’s second until Settings › Dictation picks', async () => {
+    const main = bridge();
+    const stored = new Map<string, string>();
+    Object.assign(window, { localStorage: { getItem: (key: string) => stored.get(key) ?? null } });
+    Object.assign(navigator, { language: 'en-US' });
+    const speech = await loadSpeech();
+    const listen = async () => {
+      const start = speech.start({ onWords: noWords });
+      grants.at(-1)?.(fakeStream());
+      await start;
+    };
+    await speech.prepare();
+    await listen();
+    stored.set('dictation.language', 'de-AT');
+    stored.set('dictation.secondLanguage', 'off');
+    await speech.prepare();
+    await listen();
+    // An unreadable choice is automatic.
+    stored.set('dictation.language', 'de; rm');
+    stored.set('dictation.secondLanguage', 'en-GB');
+    await listen();
+    expect(main.prepared).toEqual(['en-US auto', 'de-AT off']);
+    expect(main.startedWith).toEqual(['en-US auto', 'de-AT off', 'en-US en-GB']);
   });
 });
 

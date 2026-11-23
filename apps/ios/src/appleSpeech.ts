@@ -1,20 +1,26 @@
 import {
   heardFromSegments,
+  listenedLocale,
   MicrophoneDeniedError,
   SpeechUnsupportedError,
   type SpeechToText,
 } from '@calendar/ai';
 import { loadSpeechModule } from '../modules/solunivo-speech/index.ts';
+import { dictationLanguage, secondLanguage } from './dictationLanguages.ts';
 import { voiceProcessing } from './voiceProcessing.ts';
 
-/** Locale for recognition, so dictating German transcribes German. Settings › Dictation names it. */
-export const dictationLocale = (): string => {
+/** The iPhone's own language: what dictation listens in unless Settings › Dictation picks another. */
+export const deviceLocale = (): string => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
   } catch {
     return 'en-US';
   }
 };
+
+/** Locale for recognition, so dictating German transcribes German: Settings › Dictation › Language. */
+export const dictationLocale = (): string =>
+  listenedLocale(dictationLanguage.get(), deviceLocale());
 
 const unsupported = () =>
   new SpeechUnsupportedError({ message: 'Speech recognition is not built into this app.' });
@@ -63,7 +69,7 @@ export const appleSpeech: SpeechToText = {
     }
     try {
       // Installs the locale's models; a no-op once present.
-      await native.prepare(dictationLocale());
+      await native.prepare(dictationLocale(), secondLanguage.get());
     } catch (error) {
       // Distinguish "this device or locale never will" from "that attempt
       // failed" — installing models needs the network, and a download
@@ -99,7 +105,12 @@ export const appleSpeech: SpeechToText = {
     };
     let sources: ReadonlyArray<'accurate' | 'quick'>;
     try {
-      ({ sources } = await native.start(session, dictationLocale(), voiceProcessing.get()));
+      ({ sources } = await native.start(
+        session,
+        dictationLocale(),
+        voiceProcessing.get(),
+        secondLanguage.get(),
+      ));
     } catch (error) {
       remove();
       throw error;

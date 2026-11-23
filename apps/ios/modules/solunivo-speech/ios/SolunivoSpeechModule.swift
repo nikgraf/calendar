@@ -27,10 +27,10 @@ public class SolunivoSpeechModule: Module {
       SpeechSessions.shared.cancelAll { Microphone.shared.close() }
     }
 
-    AsyncFunction("prepare") { (locale: String, promise: Promise) in
+    AsyncFunction("prepare") { (locale: String, other: String, promise: Promise) in
       Task {
         do {
-          try await SpeechAssets.prepare(locale: locale)
+          try await SpeechAssets.prepare(locale: locale, other: other)
           promise.resolve(nil)
         } catch {
           promise.reject("SpeechError", Self.message(error))
@@ -63,15 +63,28 @@ public class SolunivoSpeechModule: Module {
     // `session`: the caller's id for the phrase, which its words and the
     // calls about it carry. `voiceProcessing`: the microphone's echo
     // cancellation and noise suppression (Settings › Dictation).
+    // The languages dictation may listen in, and the second language
+    // Automatic comes to for `locale` (Settings › Dictation).
+    AsyncFunction("languages") { (locale: String, promise: Promise) in
+      Task {
+        let (available, automatic) = await SpeechAssets.languages(for: locale)
+        var result: [String: Any] = ["available": available]
+        if let automatic { result["automatic"] = automatic }
+        promise.resolve(result)
+      }
+    }
+
     AsyncFunction("start") {
-      [alive] (session: Int, locale: String, voiceProcessing: Bool, promise: Promise) in
+      [alive] (
+        session: Int, locale: String, voiceProcessing: Bool, other: String, promise: Promise
+      ) in
       guard alive.value else {
         promise.reject("SpeechError", SpeechBridgeError.failed("torn down").message)
         return
       }
       let module = WeakModule(self)
       let task = SpeechSessions.shared.start(
-        id: session, locale: locale,
+        id: session, locale: locale, other: other,
         onWords: { source, text in
           module.value?.sendEvent(
             "onWords", ["session": session, "source": source, "text": text])

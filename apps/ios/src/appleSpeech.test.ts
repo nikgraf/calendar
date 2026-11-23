@@ -21,6 +21,8 @@ const native = vi.hoisted(() => {
         }
       | null
       | undefined,
+    /** The iPhone's own language, as the adapter reads it: calls name another locale only. */
+    device: '',
     installed: true,
     listeners: new Set<(event: Words) => void>(),
     microphone: true,
@@ -48,15 +50,17 @@ vi.mock('expo', () => ({
         native.calls.push(`finish ${session}`);
         return native.finishes;
       },
-      prepare: async (locale: string) => {
-        native.calls.push(`prepare ${locale}`);
+      prepare: async (locale: string, other: string) => {
+        native.calls.push(`prepare ${locale} ${other}`);
         if (native.prepareError) {
           throw native.prepareError;
         }
       },
       requestMicrophone: async () => native.microphone,
-      start: async (session: number, _locale: string, voiceProcessing: boolean) => {
-        native.calls.push(`start ${session} ${voiceProcessing ? 'processed' : 'plain'}`);
+      start: async (session: number, locale: string, voiceProcessing: boolean, other: string) => {
+        native.calls.push(
+          `start ${session} ${voiceProcessing ? 'processed' : 'plain'}${locale === native.device ? '' : ` ${locale}`}${other === 'auto' ? '' : ` second ${other}`}`,
+        );
         await native.held;
         return { sources: ['accurate'] };
       },
@@ -64,16 +68,22 @@ vi.mock('expo', () => ({
   },
 }));
 
-/** Reduce Background Noise's note on this iPhone: none until it is switched. */
-const note = vi.hoisted(() => ({ text: undefined as string | undefined }));
+/** This iPhone's notes, by file: none until a setting is switched. */
+const notes = vi.hoisted(() => new Map<string, string>());
+const VOICE = 'voice-processing.json';
+const LANGUAGES = 'dictation-languages.json';
 
 vi.mock('expo-file-system', () => ({
   File: class {
+    constructor(
+      _directory: string,
+      private readonly name: string,
+    ) {}
     get exists() {
-      return note.text !== undefined;
+      return notes.has(this.name);
     }
     textSync() {
-      return note.text ?? '';
+      return notes.get(this.name) ?? '';
     }
   },
   Paths: { document: '/documents' },
@@ -99,13 +109,14 @@ const denied = { _tag: 'MicrophoneDeniedError' };
 
 beforeEach(() => {
   native.calls.length = 0;
+  native.device = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
   native.finishes = { segments: [{ alternatives: ['Lunch with Sara'], text: 'Lunch with Sarah' }] };
   native.held = undefined;
   native.installed = true;
   native.listeners.clear();
   native.microphone = true;
   native.prepareError = undefined;
-  note.text = undefined;
+  notes.clear();
 });
 
 describe('appleSpeech without the native module', () => {
@@ -210,16 +221,37 @@ describe('appleSpeech', () => {
   });
 
   it('records through voice processing unless this iPhone switched it off', async () => {
-    note.text = JSON.stringify({ on: false });
+    notes.set(VOICE, JSON.stringify({ on: false }));
     const plain = await loadSpeech();
     await plain.start({ onWords: noWords });
-    note.text = 'not json';
+    notes.set(VOICE, 'not json');
     const unreadable = await loadSpeech();
     await unreadable.start({ onWords: noWords });
-    note.text = JSON.stringify({ on: true });
+    notes.set(VOICE, JSON.stringify({ on: true }));
     const processed = await loadSpeech();
     await processed.start({ onWords: noWords });
     expect(native.calls).toEqual(['start 1 plain', 'start 1 processed', 'start 1 processed']);
+  });
+
+  it('listens in the language and second language Settings › Dictation picked', async () => {
+    notes.set(LANGUAGES, JSON.stringify({ language: 'de-AT', second: 'off' }));
+    const picked = await loadSpeech();
+    await picked.prepare();
+    await picked.start({ onWords: noWords });
+    notes.set(LANGUAGES, JSON.stringify({ language: 'auto', second: 'fr-FR' }));
+    const second = await loadSpeech();
+    await second.start({ onWords: noWords });
+    notes.set(LANGUAGES, '{"language": "not a language"}');
+    const unreadable = await loadSpeech();
+    await unreadable.prepare();
+    await unreadable.start({ onWords: noWords });
+    expect(native.calls).toEqual([
+      'prepare de-AT off',
+      'start 1 processed de-AT second off',
+      'start 1 processed second fr-FR',
+      `prepare ${native.device} auto`,
+      'start 1 processed',
+    ]);
   });
 
   it('tells a locale that never will from a download that failed', async () => {

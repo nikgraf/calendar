@@ -118,3 +118,15 @@ export const fixtureListening = {
     listening = { onWords, session, shown: 0, toneBlocks: 0 };
   },
 };
+
+/**
+ * The languages the fixture's "recogniser" has, as the helper answers
+ * `speech.languages`: Automatic's second language is German for any other
+ * language, English for German.
+ */
+export const fixtureLanguages = (
+  locale: string,
+): { readonly automatic: string; readonly available: ReadonlyArray<string> } => ({
+  automatic: locale.toLowerCase().startsWith('de') ? 'en-US' : 'de-AT',
+  available: ['de-AT', 'de-DE', 'en-GB', 'en-US', 'fr-FR'],
+});

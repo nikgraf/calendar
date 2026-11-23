@@ -32,7 +32,8 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   /** The Swift helper's own status: what dictation and text recognition depend on. */
   modelHelperStatus: () => ipcRenderer.invoke('model:helper-status'),
   modelInfo: () => ipcRenderer.invoke('model:info'),
-  modelPrepareSpeech: (locale: string) => ipcRenderer.invoke('model:prepare-speech', locale),
+  modelPrepareSpeech: (locale: string, other: string) =>
+    ipcRenderer.invoke('model:prepare-speech', locale, other),
   /** The model provider (Settings › AI Model): the view, changes, and a probe of unsaved settings. */
   modelProviderGet: () => ipcRenderer.invoke('model:provider-get'),
   modelProviderSet: (changes: unknown) => ipcRenderer.invoke('model:provider-set', changes),
@@ -47,7 +48,10 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   modelSpeechAudio: (session: number, pcm: Uint8Array) =>
     ipcRenderer.send('model:speech-audio', session, pcm),
   /** Starts listening to one phrase: its session, which the other calls and the words name. */
-  modelSpeechStart: (locale: string) => ipcRenderer.invoke('model:speech-start', locale),
+  /** The languages dictation may listen in, and the second language Automatic comes to. */
+  modelSpeechLanguages: (locale: string) => ipcRenderer.invoke('model:speech-languages', locale),
+  modelSpeechStart: (locale: string, other: string) =>
+    ipcRenderer.invoke('model:speech-start', locale, other),
   modelStatus: () => ipcRenderer.invoke('model:status'),
   onAgentsChanged: (listener: () => void) => {
     const wrapped = () => listener();
