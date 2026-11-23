@@ -583,7 +583,8 @@ export const eventChangesOf = (
   }
   const set: Record<string, unknown> = {};
   const cleared: Array<string> = [];
-  for (const key of [...changed].toSorted()) {
+  // Hermes has no toSorted: sort the copy.
+  for (const key of [...changed].sort()) {
     if (payload[key] === undefined || payload[key] === null) {
       cleared.push(key);
     } else {

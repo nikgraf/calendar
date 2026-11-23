@@ -2564,7 +2564,8 @@ const make: Effect.Effect<
       // This event's own way here: the calendars its queued moves took it
       // through, followed back from where it is.
       const own = new Set([calendarId]);
-      for (const op of moves.toReversed()) {
+      // Hermes has no toReversed: reverse a copy.
+      for (const op of [...moves].reverse()) {
         if (own.has(op.targetCalendarId ?? '')) {
           own.add(op.calendarId);
         }

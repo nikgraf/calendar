@@ -428,21 +428,24 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       const copy = parseJson(row.copy_payload ?? null);
       const exception =
         typeof copy === 'object' && copy !== null ? (copy as Record<string, unknown>) : undefined;
-      return [
-        ...chainOf(row.event_id).map((entry) => ({
-          at: entry.at,
-          changes: eventChangesFrom(entry.changes),
-          id: entry.id,
-        })),
-        ...chainOf(exception?.['recurringEventId']).map((entry) => ({
-          at: entry.at,
-          changes: exception ? carriedChangesOf(entry, exception) : undefined,
-          id: entry.id,
-        })),
-      ]
-        .filter((entry) => entry.at < own.at && entry.id !== without)
-        .toSorted((left, right) => left.at - right.at)
-        .flatMap((entry) => (entry.changes ? [entry.changes] : []));
+      return (
+        [
+          ...chainOf(row.event_id).map((entry) => ({
+            at: entry.at,
+            changes: eventChangesFrom(entry.changes),
+            id: entry.id,
+          })),
+          ...chainOf(exception?.['recurringEventId']).map((entry) => ({
+            at: entry.at,
+            changes: exception ? carriedChangesOf(entry, exception) : undefined,
+            id: entry.id,
+          })),
+        ]
+          .filter((entry) => entry.at < own.at && entry.id !== without)
+          // A fresh array already (Hermes has no toSorted).
+          .sort((left, right) => left.at - right.at)
+          .flatMap((entry) => (entry.changes ? [entry.changes] : []))
+      );
     };
     const noChains: Chains = new Map();
     /** Rows of an unknown op kind are skipped: nothing could apply them. */
