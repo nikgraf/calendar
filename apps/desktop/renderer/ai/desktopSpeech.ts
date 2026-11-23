@@ -5,7 +5,7 @@ import {
   SpeechUnsupportedError,
   type SpeechToText,
 } from '@calendar/ai';
-import { dictationLocale, noiseReduction } from './dictationSettings.ts';
+import { dictationLocale, noiseReduction, secondLanguage } from './dictationSettings.ts';
 import { toPcm16 } from './pcm16.ts';
 
 /** What the helper's recognisers take: 16 kHz mono. */
@@ -64,6 +64,24 @@ const join = (chunks: ReadonlyArray<Float32Array>, length: number): Float32Array
   return joined;
 };
 
+/**
+ * The languages last prepared: a phrase in others (picked in Settings
+ * while an editor stayed open) prepares them first, since only preparing
+ * installs a language's assets.
+ */
+let preparedFor: string | undefined;
+
+const prepareIn = async (locale: string, second: string) => {
+  const result = await window.calendarBridge.modelPrepareSpeech(locale, second);
+  if (result.denied) {
+    throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
+  }
+  if (!result.prepared) {
+    throw new SpeechUnsupportedError({ message: 'Dictation assets are unavailable.' });
+  }
+  preparedFor = `${locale} ${second}`;
+};
+
 export const desktopSpeech: SpeechToText = {
   cancel: async () => {
     const active = listening;
@@ -92,6 +110,8 @@ export const desktopSpeech: SpeechToText = {
     return heardFromSegments(result.segments, result.other);
   },
 
+  isPrepared: () => preparedFor === `${dictationLocale()} ${secondLanguage.get()}`,
+
   isSupported: async () => {
     // Same reasoning as iOS: readiness flags are false before first use;
     // the helper's own status tells us whether its stack exists at all —
@@ -108,15 +128,7 @@ export const desktopSpeech: SpeechToText = {
     }
   },
 
-  prepare: async () => {
-    const result = await window.calendarBridge.modelPrepareSpeech(dictationLocale());
-    if (result.denied) {
-      throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
-    }
-    if (!result.prepared) {
-      throw new SpeechUnsupportedError({ message: 'Dictation assets are unavailable.' });
-    }
-  },
+  prepare: () => prepareIn(dictationLocale(), secondLanguage.get()),
 
   read: async () => {
     const active = listening;
@@ -133,6 +145,16 @@ export const desktopSpeech: SpeechToText = {
   },
 
   start: async ({ onLost, onWords, signal }) => {
+    const locale = dictationLocale();
+    const second = secondLanguage.get();
+    // Before the microphone opens: a language picked meanwhile may take a
+    // download, and a start given up during it must leave nothing on.
+    if (preparedFor !== `${locale} ${second}`) {
+      await prepareIn(locale, second);
+    }
+    if (signal?.aborted) {
+      return undefined;
+    }
     let stream: MediaStream;
     // Chromium's own voice processing, as Settings › Dictation asks.
     const processed = noiseReduction.get();
@@ -159,7 +181,7 @@ export const desktopSpeech: SpeechToText = {
         // Given up while the worklet loaded: starting a session now would
         // drop a newer caller's in the helper.
         if (!signal?.aborted) {
-          started = await window.calendarBridge.modelSpeechStart(dictationLocale());
+          started = await window.calendarBridge.modelSpeechStart(locale, second);
         }
       }
     } catch (error) {

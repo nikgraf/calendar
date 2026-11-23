@@ -6,7 +6,7 @@ import {
   onHelperExit,
   registerHelperLifecycle,
 } from './helperProcess.ts';
-import { fixtureListening, microphoneFixture } from './microphoneFixture.ts';
+import { fixtureLanguages, fixtureListening, microphoneFixture } from './microphoneFixture.ts';
 import {
   getModelProvider,
   providerGenerate,
@@ -39,6 +39,9 @@ const MAX_AUDIO_BLOCK_BYTES = 32_000;
 /** ~18 MB of image: a full Retina screenshot as PNG is a few. */
 const MAX_IMAGE_BASE64_CHARS = 24_000_000;
 const LOCALE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
+/** A second language as Settings › Dictation chose it: worked out, none, or a language. */
+const isSecondLanguage = (value: unknown): value is string =>
+  typeof value === 'string' && (value === 'auto' || value === 'off' || LOCALE.test(value));
 
 /**
  * CALENDAR_MODEL=fixture (the e2e harness): the deterministic model and
@@ -105,9 +108,12 @@ export const registerModelHelper = (): void => {
     }
     return callHelper('generateJson', { prompt, schema });
   });
-  ipcMain.handle('model:prepare-speech', async (_event, locale: unknown) => {
+  ipcMain.handle('model:prepare-speech', async (_event, locale: unknown, other: unknown) => {
     if (typeof locale !== 'string' || !LOCALE.test(locale)) {
       return invalid('locale');
+    }
+    if (!isSecondLanguage(other)) {
+      return invalid('second language');
     }
     // The fixture's microphone is a file: nothing to ask, nothing to install.
     if (microphoneFixture) {
@@ -119,7 +125,7 @@ export const registerModelHelper = (): void => {
     if (!granted) {
       return { denied: true };
     }
-    return callHelper('prepareSpeech', { locale });
+    return callHelper('prepareSpeech', { locale, other });
   });
   registerSpeech();
   // Bytes only: the renderer never names a path, so the helper reads
@@ -215,9 +221,22 @@ const registerSpeech = () => {
       sendWords(session, source, text);
     }
   });
-  ipcMain.handle('model:speech-start', async (event, locale: unknown) => {
+  ipcMain.handle('model:speech-languages', async (_event, locale: unknown) => {
     if (typeof locale !== 'string' || !LOCALE.test(locale)) {
       return invalid('locale');
+    }
+    // No recogniser under the fixture: a short list, as the helper's looks.
+    if (microphoneFixture) {
+      return fixtureLanguages(locale);
+    }
+    return callHelper('speech.languages', { locale });
+  });
+  ipcMain.handle('model:speech-start', async (event, locale: unknown, other: unknown) => {
+    if (typeof locale !== 'string' || !LOCALE.test(locale)) {
+      return invalid('locale');
+    }
+    if (!isSecondLanguage(other)) {
+      return invalid('second language');
     }
     sessions += 1;
     const session = sessions;
@@ -232,7 +251,7 @@ const registerSpeech = () => {
       fixtureListening.start(session, (source, text) => sendWords(session, source, text));
       return { session, sources: ['accurate', 'quick'] };
     }
-    const started = (await callHelper('speech.start', { locale, session })) as {
+    const started = (await callHelper('speech.start', { locale, other, session })) as {
       readonly sources?: unknown;
     };
     const sources = Array.isArray(started.sources)

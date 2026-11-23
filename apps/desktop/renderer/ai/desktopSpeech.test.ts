@@ -30,7 +30,11 @@ let addModule: () => Promise<void> = async () => undefined;
 
 const loadSpeech = async () => {
   vi.resetModules();
-  return (await import('./desktopSpeech.ts')).desktopSpeech;
+  const speech = (await import('./desktopSpeech.ts')).desktopSpeech;
+  // Prepared, as the editor does before its first phrase: a start then goes
+  // straight to the microphone. Without a bridge there is nothing to prepare.
+  await speech.prepare().catch(() => undefined);
+  return speech;
 };
 
 beforeEach(() => {
@@ -87,10 +91,20 @@ const bridge = () => {
   let segments: ReadonlyArray<{ text: string }> = [{ text: 'Lunch with Anna' }];
   /** The phrase as the helper's other-language recogniser wrote it, when it has one. */
   let other: string | undefined;
+  /** Set: the next prepares wait until the test lets them answer (a download). */
+  let preparing: Promise<void> | undefined;
+  /** What prepare and start were asked to listen in: "<locale> <second language>". */
+  const prepared: Array<string> = [];
+  const startedWith: Array<string> = [];
   /** Set: the next start waits until the test lets it answer. */
   let held: Promise<void> | undefined;
   vi.stubGlobal('window', {
     calendarBridge: {
+      modelPrepareSpeech: async (locale: string, second: string) => {
+        prepared.push(`${locale} ${second}`);
+        await preparing;
+        return { prepared: true };
+      },
       modelSpeechAudio: (session: number, pcm: Uint8Array) => {
         audio.push({ bytes: pcm.byteLength, session });
       },
@@ -108,7 +122,8 @@ const bridge = () => {
         read.push(session);
         return readAnswersMark ? { mark: 16_000 * read.length, segments } : { segments: [] };
       },
-      modelSpeechStart: async () => {
+      modelSpeechStart: async (locale: string, second: string) => {
+        startedWith.push(`${locale} ${second}`);
         sessions += 1;
         const session = sessions;
         await held;
@@ -141,7 +156,12 @@ const bridge = () => {
     hearOther: (text: string) => {
       other = text;
     },
+    holdPrepare: (until: Promise<void>) => {
+      preparing = until;
+    },
+    prepared,
     read,
+    startedWith,
     /** Main dropped this phrase: its helper went away. */
     lose: (session: number) => {
       for (const listener of losers) {
@@ -196,6 +216,64 @@ describe('desktopSpeech microphone', () => {
       [true, true, true],
       [false, false, false],
     ]);
+  });
+});
+
+describe('desktopSpeech languages', () => {
+  it('listens in the Mac’s language and Automatic’s second until Settings › Dictation picks', async () => {
+    const main = bridge();
+    const stored = new Map<string, string>();
+    Object.assign(window, { localStorage: { getItem: (key: string) => stored.get(key) ?? null } });
+    Object.assign(navigator, { language: 'en-US' });
+    const speech = await loadSpeech();
+    const listen = async () => {
+      const asked = grants.length;
+      const start = speech.start({ onWords: noWords });
+      // A language picked meanwhile is prepared before the microphone is asked for.
+      await settle();
+      expect(grants.length).toBe(asked + 1);
+      grants.at(-1)?.(fakeStream());
+      await start;
+    };
+    await listen();
+    // Picked in Settings while the editor stayed open: the editor sees it
+    // needs preparing, and a phrase prepares them first in any case.
+    expect(speech.isPrepared?.()).toBe(true);
+    stored.set('dictation.language', 'de-AT');
+    stored.set('dictation.secondLanguage', 'off');
+    expect(speech.isPrepared?.()).toBe(false);
+    await listen();
+    await listen();
+    // An unreadable choice is automatic.
+    stored.set('dictation.language', 'de; rm');
+    stored.set('dictation.secondLanguage', 'en-GB');
+    await listen();
+    expect(main.prepared).toEqual(['en-US auto', 'de-AT off', 'en-US en-GB']);
+    expect(main.startedWith).toEqual(['en-US auto', 'de-AT off', 'de-AT off', 'en-US en-GB']);
+  });
+});
+
+describe('desktopSpeech preparing a newly picked language', () => {
+  it('opens no microphone for a start given up while the language downloads', async () => {
+    const main = bridge();
+    const stored = new Map<string, string>();
+    Object.assign(window, { localStorage: { getItem: (key: string) => stored.get(key) ?? null } });
+    const speech = await loadSpeech();
+    let downloaded: (() => void) | undefined;
+    main.holdPrepare(
+      new Promise<void>((resolve) => {
+        downloaded = resolve;
+      }),
+    );
+    stored.set('dictation.language', 'fr-FR');
+    const closed = new AbortController();
+    const start = speech.start({ onWords: noWords, signal: closed.signal });
+    await settle();
+    closed.abort();
+    await speech.cancel();
+    downloaded?.();
+    await expect(start).resolves.toBeUndefined();
+    expect(grants.length).toBe(0);
   });
 });
 
