@@ -363,7 +363,7 @@ describe('otherLanguageReading', () => {
 });
 
 describe('readingsFor', () => {
-  it('puts the other language’s reading before the recogniser’s own', () => {
+  it('puts the other language’s reading right after the recogniser’s likeliest', () => {
     const read = heardFromSegments(
       [
         { text: 'Meet Tom at the' },
@@ -371,7 +371,12 @@ describe('readingsFor', () => {
       ],
       'Mit Tom at the Naschmarkt',
     );
-    expect(read && readingsFor(read, 'Nashmacht')).toEqual(['Naschmarkt', 'Nash market']);
+    expect(read && readingsFor(read, 'Nashmacht')).toEqual(['Nash market', 'Naschmarkt']);
+    const alone = heardFromSegments(
+      [{ text: 'Meet Tom at the Nashmacht' }],
+      'Mit Tom at the Naschmarkt',
+    );
+    expect(alone && readingsFor(alone, 'Nashmacht')).toEqual(['Naschmarkt']);
   });
 
   it('is the recogniser’s own readings without another language', () => {

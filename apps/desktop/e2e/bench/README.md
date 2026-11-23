@@ -355,8 +355,8 @@ far away. `placeBench.e2e.ts` asks MapKit (the helper's) for each case
 of `places.json` through the app's own lookup (`placeCandidates`), with
 the user's two past events in the case's city: once for the place as
 written, once with dictation's other readings of it (`readingsFor`:
-the other language's reading where the case has one, `other`, then the
-recogniser's own), as a dictated turn asks. `PLACE_BENCH_OTHER=off`
+the recogniser's own and, where the case has one, the other language's
+reading, `other`), as a dictated turn asks. `PLACE_BENCH_OTHER=off`
 leaves the other language out, to tell what it adds. It scores whether the
 place meant was taken unasked, offered (its place in the list) and, in
 the second arm, through which reading.

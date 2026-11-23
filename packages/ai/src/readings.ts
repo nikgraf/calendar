@@ -415,7 +415,7 @@ const keysOf = (reading: string): string =>
  * stays. Undefined without another reading, when the words are not among
  * what was heard or stand in it more than once, when the other reading
  * has nothing certain there (`wordsAt`), far more letters than were
- * said or half the phrase's words at most (a language written without
+ * said or fewer than half the phrase's words (a language written without
  * spaces is one long word), or when it
  * reads them the same, or as `text` already has them.
  */
@@ -431,7 +431,7 @@ export const otherLanguageReading = (heard: Heard, text: string): string | undef
     return undefined;
   }
   const other = wordsOf(heard.other);
-  // Half the words or fewer: not a reading word for word (no spaces between them).
+  // Fewer than half the words: not a reading word for word (no spaces between them).
   if (other.length * 2 < phrase.length) {
     return undefined;
   }
@@ -454,9 +454,13 @@ export const otherLanguageReading = (heard: Heard, text: string): string | undef
 };
 
 /**
- * Every other reading of `text` worth a search, the likeliest first: the
- * other language's (`otherLanguageReading`: a name said that language's
- * way is a word of it), then the recogniser's own (`alternativesFor`).
+ * Every other reading of `text` worth a search: the recogniser's own
+ * (`alternativesFor`), with the other language's (`otherLanguageReading`:
+ * a name said that language's way is a word of it) right after the
+ * likeliest of them. Second, not first: read by the wrong language's
+ * recogniser a phrase is mostly noise (a German phrase's English
+ * reading), and the recogniser's own best guess must not wait behind
+ * that; second is still among the few the lookup has time to search.
  */
 export const readingsFor = (
   heard: Heard,
@@ -467,5 +471,8 @@ export const readingsFor = (
   const rest = alternativesFor(heard, text, limit).filter(
     (reading) => other === undefined || keysOf(reading) !== keysOf(other),
   );
-  return (other === undefined ? rest : [other, ...rest]).slice(0, limit);
+  return (other === undefined ? rest : [...rest.slice(0, 1), other, ...rest.slice(1)]).slice(
+    0,
+    limit,
+  );
 };

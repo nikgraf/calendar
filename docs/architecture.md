@@ -2138,12 +2138,13 @@ gateway carries all of it. Details, limits and the threat model:
   hits that do not resemble the text and one far namesake follow as
   `search`, offered and never taken, and any other far hit is left out),
   best first and uncached. A dictated turn's place goes with
-  dictation's other readings of it (ai `readingsFor`). First the other
+  dictation's other readings of it (ai `readingsFor`: the recogniser's
+  own, the other language's right after the likeliest of them). The other
   language's (`otherLanguageReading`): the whole phrase as that
   recogniser wrote it is lined up word by word with the phrase, and the
   words it has where the place's stood take their place ("Nashmacht" →
   "Naschmarkt"); none when the place's words were said twice, or when
-  what it has there is uncertain at an edge. Then the recogniser's own
+  what it has there is uncertain at an edge. The recogniser's own
   (`alternativesFor`): its words are
   found among the phrase's (local alignment over words, each pair scored
   by edit distance over letters, so a place the model spelled its own

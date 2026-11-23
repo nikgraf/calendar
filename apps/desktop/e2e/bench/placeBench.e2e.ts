@@ -36,7 +36,8 @@ import { connectHelper, findHelper, gitSha, type HelperClient } from './provider
  * as a recogniser read it, with the other readings it weighed — through
  * the app's own place lookup (`placeCandidates`) against MapKit, the
  * helper's: the place as written, then with dictation's other readings
- * of it (`alternativesFor`), as a dictated turn asks. The user's two past
+ * of it (`readingsFor`; the recogniser's own alone, `alternativesFor`,
+ * under PLACE_BENCH_OTHER=off), as a dictated turn asks. The user's two past
  * events are in the case's city, so nearby is where they are. Measured,
  * never gated: it prints a table, writes a report under
  * output/bench/places/ and passes.
