@@ -229,7 +229,6 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
     : undefined;
 };
 
-/** Words shorter than this say nothing of where: "IN", "de", "le" are words of names as often. */
 /** Letters to change, add or drop to turn one text into the other. */
 const editDistance = (a: string, b: string): number => {
   let row = Array.from({ length: b.length + 1 }, (_, index) => index);
@@ -270,11 +269,16 @@ const BESIDE = 0.25;
  * the name's leading words: four in five in place. A short first or last
  * word may stand beside the name ("the Burggarten", "Cap Kallenberg":
  * what the other reading had next to it); a number must be the name's
- * own. Looser than `placeMatch`, so only for a place that is offered.
+ * own. The words that only say where the place is are set aside, as
+ * `placeMatch` sets them aside: "Schottenor, Vienna" is Schottentor in
+ * Vienna, and "Vienna" alone no place that stands in it. Looser than
+ * `placeMatch`, so only for a place that is offered.
  */
 export const spelledAlike = (text: string, place: PlaceLike): boolean => {
-  const said = lettersOf(text);
   const name = lettersOf(place.name ?? '');
+  const { named, where } = readAddress(place, wordsOf(text));
+  const around = where.flat().filter((word) => !(named && name.includes(word)));
+  const said = lettersOf(text).filter((word) => !around.includes(word));
   if (said.length === 0 || name.length === 0) {
     return false;
   }
@@ -299,6 +303,7 @@ export const spelledAlike = (text: string, place: PlaceLike): boolean => {
   );
 };
 
+/** Words shorter than this say nothing of where: "IN", "de", "le" are words of names as often. */
 const WHERE_MIN = 3;
 
 /** A state's, province's or country's code as an address writes it: capitals, two or three ("CA", "NSW", "QC"). */

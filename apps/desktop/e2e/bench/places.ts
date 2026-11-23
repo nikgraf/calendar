@@ -8,8 +8,8 @@ import { foldSearchText, type PlaceCandidate, preselectedPlace } from '@calendar
  * for each, the place a model reads in it (the words as written), and
  * the place meant. The bench asks MapKit, through the app's own lookup
  * (`placeCandidates`), for the place as written and then with the
- * readings (`readingsFor`: the other language's, where the case has
- * one, then the recogniser's own), and scores whether the place meant
+ * readings (`readingsFor`: the recogniser's likeliest own, then the
+ * other language's where the case has one, then the rest), and scores whether the place meant
  * was taken, offered, and through which reading.
  */
 export interface PlaceCase {

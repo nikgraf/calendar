@@ -362,6 +362,14 @@ describe('spelledAlike', () => {
     expect(spelledAlike('Speer am Markt', { name: 'Sperl' })).toBe(false);
   });
 
+  it('sets the words that say where the place is aside, and is nothing for them alone', () => {
+    const schottentor = { address: 'Vienna, Austria', name: 'Schottentor' };
+    expect(spelledAlike('Schottenor, Vienna', schottentor)).toBe(true);
+    const opera = { address: 'Opernring 2, 1010 Vienna, Austria', name: 'Vienna State Opera' };
+    expect(spelledAlike('Vienna', opera)).toBe(false);
+    expect(spelledAlike('in Vienna', opera)).toBe(false);
+  });
+
   it('keeps a number as it is', () => {
     expect(spelledAlike('Neubergasse 12', { name: 'Neubaugasse 12' })).toBe(true);
     expect(spelledAlike('Neubergasse 12', { name: 'Neubaugasse 120' })).toBe(false);
