@@ -17,7 +17,9 @@ interface SpeechLanguages {
  * Automatic comes to for `locale`, as the native module answers; nothing
  * until it has, and nothing on a binary built before it could.
  */
-export const useSpeechLanguages = (locale: string): SpeechLanguages | undefined => {
+export const useSpeechLanguages = (
+  locale: string,
+): (SpeechLanguages & { readonly settled: boolean }) | undefined => {
   const [answer, setAnswer] = useState<
     { readonly languages: SpeechLanguages; readonly locale: string } | undefined
   >();
@@ -35,7 +37,14 @@ export const useSpeechLanguages = (locale: string): SpeechLanguages | undefined 
       gone = true;
     };
   }, [locale]);
-  return answer?.locale === locale ? answer.languages : undefined;
+  if (answer === undefined) {
+    return undefined;
+  }
+  // The list is the recogniser's whatever the language; Automatic's second
+  // is known only for the language it was asked about.
+  return answer.locale === locale
+    ? { ...answer.languages, settled: true }
+    : { available: answer.languages.available, settled: false };
 };
 
 /** A language as the app names it: "German (Austria)". */
@@ -112,7 +121,7 @@ export function SecondLanguagePage() {
           checked={chosen === AUTOMATIC}
           onPress={() => secondLanguage.set(AUTOMATIC)}
           subtitle={
-            languages === undefined
+            languages?.settled !== true
               ? undefined
               : automatic === undefined
                 ? 'None on this iPhone'

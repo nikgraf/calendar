@@ -114,7 +114,7 @@ export function DictationPage() {
             href="/settings/dictation-second-language"
             testID="dictation-second-language"
             title="Second Language"
-            value={secondValue(chosenSecond, second, languages !== undefined)}
+            value={secondValue(chosenSecond, second, languages?.settled === true)}
             valueTestID="dictation-second-language-value"
           />
         </Section>

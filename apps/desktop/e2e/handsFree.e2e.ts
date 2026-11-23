@@ -177,9 +177,14 @@ describe('Hands-free dictation', () => {
       localStorage.removeItem('dictation.language');
       localStorage.removeItem('dictation.secondLanguage');
     });
-    // The fixture's recogniser lists five languages (`fixtureLanguages`).
-    await settings.waitUntil(($, select: string) => $.all(`${select} option`).length > 2, second);
-    expect(await settings.evaluate(($, select: string) => $.value(select), language)).toBe('auto');
+    // Both read Automatic once the Settings window has heard of it, and the
+    // fixture's recogniser lists five languages (`fixtureLanguages`).
+    await settings.waitUntil(
+      ($, selects: ReadonlyArray<string>) =>
+        selects.every((select) => $.value(select) === 'auto') &&
+        $.all(`${selects[1]!} option`).length > 2,
+      [language, second],
+    );
     const secondChoices = () =>
       settings.evaluate(
         ($, select: string) =>

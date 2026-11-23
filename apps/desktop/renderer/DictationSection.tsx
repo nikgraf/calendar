@@ -20,7 +20,9 @@ interface SpeechLanguages {
  * Automatic comes to for `locale`, as the helper answers; nothing until
  * it has, or when it cannot (no helper).
  */
-const useSpeechLanguages = (locale: string): SpeechLanguages | undefined => {
+const useSpeechLanguages = (
+  locale: string,
+): (SpeechLanguages & { readonly settled: boolean }) | undefined => {
   const [answer, setAnswer] = useState<
     { readonly languages: SpeechLanguages; readonly locale: string } | undefined
   >();
@@ -38,7 +40,14 @@ const useSpeechLanguages = (locale: string): SpeechLanguages | undefined => {
       gone = true;
     };
   }, [locale]);
-  return answer?.locale === locale ? answer.languages : undefined;
+  if (answer === undefined) {
+    return undefined;
+  }
+  // The list is the recogniser's whatever the language; Automatic's second
+  // is known only for the language it was asked about.
+  return answer.locale === locale
+    ? { ...answer.languages, settled: true }
+    : { available: answer.languages.available, settled: false };
 };
 
 /**
@@ -113,7 +122,7 @@ export function DictationSection() {
             value={chosenSecond}
           >
             <option value={AUTOMATIC}>
-              {languages === undefined
+              {languages?.settled !== true
                 ? 'Automatic'
                 : `Automatic — ${automatic === undefined ? 'none on this Mac' : languageName(automatic)}`}
             </option>

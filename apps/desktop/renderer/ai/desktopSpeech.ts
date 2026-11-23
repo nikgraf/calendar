@@ -124,6 +124,14 @@ export const desktopSpeech: SpeechToText = {
   start: async ({ onLost, onWords, signal }) => {
     const locale = dictationLocale();
     const second = secondLanguage.get();
+    // Before the microphone opens: a language picked meanwhile may take a
+    // download, and a start given up during it must leave nothing on.
+    if (preparedFor !== `${locale} ${second}`) {
+      await prepareIn(locale, second);
+    }
+    if (signal?.aborted) {
+      return undefined;
+    }
     let stream: MediaStream;
     // Chromium's own voice processing, as Settings › Dictation asks.
     const processed = noiseReduction.get();
@@ -149,9 +157,6 @@ export const desktopSpeech: SpeechToText = {
         await context.audioWorklet.addModule(WORKLET_URL);
         // Given up while the worklet loaded: starting a session now would
         // drop a newer caller's in the helper.
-        if (!signal?.aborted && preparedFor !== `${locale} ${second}`) {
-          await prepareIn(locale, second);
-        }
         if (!signal?.aborted) {
           started = await window.calendarBridge.modelSpeechStart(locale, second);
         }
