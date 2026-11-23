@@ -769,7 +769,8 @@ export class AppBackendRpcs extends RpcGroup.make(
    * one best guess. Empty when the text is not a place or nothing
    * resembles it; without a bridge the past places alone.
    * `alternatives`: the text as dictation's other readings of the words
-   * have it, the likeliest first (`alternativesFor`). Asked only when the
+   * have it, the likeliest first (`readingsFor`: the recogniser's
+   * likeliest own, then the other language's, then the rest). Asked only when the
    * text itself names nothing nearby, the places they name come first,
    * each marked with its reading and never taken unasked.
    */

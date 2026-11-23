@@ -8,8 +8,9 @@ import { foldSearchText, type PlaceCandidate, preselectedPlace } from '@calendar
  * for each, the place a model reads in it (the words as written), and
  * the place meant. The bench asks MapKit, through the app's own lookup
  * (`placeCandidates`), for the place as written and then with the
- * readings (`alternativesFor`), and scores whether the place meant was
- * taken, offered, and through which reading.
+ * readings (`readingsFor`: the recogniser's likeliest own, then the
+ * other language's where the case has one, then the rest), and scores whether the place meant
+ * was taken, offered, and through which reading.
  */
 export interface PlaceCase {
   /** The words as heard, segment by segment: the recogniser's final reading. */
@@ -21,6 +22,8 @@ export interface PlaceCase {
   readonly names: ReadonlyArray<string>;
   /** Where the user's places are: a city of `CITIES`. */
   readonly near: string;
+  /** The whole phrase as the other language's recogniser wrote it, for a recording read in both. */
+  readonly other?: string | undefined;
   /** What was said. */
   readonly said: string;
   /** Who said it: a `say` voice, or a person on a device. */
@@ -56,7 +59,7 @@ const readCase = (value: unknown, at: number): PlaceCase => {
   if (typeof value !== 'object' || value === null) {
     return fail('not an object');
   }
-  const { heard, id, location, names, near, said, voice } = value as Record<string, unknown>;
+  const { heard, id, location, names, near, other, said, voice } = value as Record<string, unknown>;
   if (!isText(id) || !isText(location) || !isText(said) || !isText(voice)) {
     return fail('id, location, said and voice are texts');
   }
@@ -69,7 +72,19 @@ const readCase = (value: unknown, at: number): PlaceCase => {
   if (!isText(near) || CITIES[near] === undefined) {
     return fail(`${id}: near is one of ${Object.keys(CITIES).join(', ')}`);
   }
-  return { heard, id, location, names, near, said, voice };
+  if (other !== undefined && !isText(other)) {
+    return fail(`${id}: other is a text`);
+  }
+  return {
+    heard,
+    id,
+    location,
+    names,
+    near,
+    ...(other === undefined ? {} : { other }),
+    said,
+    voice,
+  };
 };
 
 export const loadPlaceCases = (path: string): ReadonlyArray<PlaceCase> => {

@@ -22,6 +22,8 @@ export interface SolunivoSpeechNative {
    * is not the current one (dropped, or replaced by a newer start).
    */
   readonly finish: (session: number) => Promise<{
+    /** The phrase as the user's other language reads it; absent without one, and on a binary built before it. */
+    readonly other?: string;
     readonly segments: ReadonlyArray<{
       readonly alternatives: ReadonlyArray<string>;
       readonly text: string;

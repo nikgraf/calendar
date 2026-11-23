@@ -354,8 +354,10 @@ A dictated name the recogniser mishears finds nothing, or a namesake
 far away. `placeBench.e2e.ts` asks MapKit (the helper's) for each case
 of `places.json` through the app's own lookup (`placeCandidates`), with
 the user's two past events in the case's city: once for the place as
-written, once with dictation's other readings of it
-(`alternativesFor`), as a dictated turn asks. It scores whether the
+written, once with dictation's other readings of it (`readingsFor`:
+the recogniser's own and, where the case has one, the other language's
+reading, `other`), as a dictated turn asks. `PLACE_BENCH_OTHER=off`
+leaves the other language out, to tell what it adds. It scores whether the
 place meant was taken unasked, offered (its place in the list) and, in
 the second arm, through which reading.
 
@@ -394,10 +396,16 @@ is it):
 }
 ```
 
-The cases so far are five macOS voices saying six Vienna places, read
+Two kinds of cases. Five macOS voices saying six Vienna places, read
 by macOS 27.2's SpeechTranscriber as the app's final reading reads
 (alternatives on, 2026-11-15): synthetic speech, so a measure of the
-lookup, not of how often a person is misheard. `places.test.ts` checks
+lookup, not of how often a person is misheard. And Nik's recordings
+(`nik-…`, 2026-11-23, `audio/README.md`): forty places said in an
+English and in a German sentence and nine short turns, each read by the
+recogniser of its own language (`heard`) and by the other's (`other`),
+through the helper's `transcribe`. Their `location` is the words that
+stand where the place was said, picked by hand: what a model that reads
+the phrase well would take. `places.test.ts` checks
 in the gate that every case's place is among its words. A recording's
 readings belong here as the recogniser wrote them, `voice` naming who
 said it on what.

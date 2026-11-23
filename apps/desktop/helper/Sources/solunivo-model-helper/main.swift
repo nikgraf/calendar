@@ -280,8 +280,8 @@ func handleSpeechFinish(_ id: Int, _ params: [String: JSONValue]) {
   let task = SpeechSessions.shared.finish(id: session)
   Task.detached {
     do {
-      let segments = try await task.value ?? []
-      emitResult(id, ["segments": segments.map(\.json)])
+      let reading = try await task.value ?? SpeechReading(other: nil, segments: [])
+      emitResult(id, reading.json)
     } catch {
       emitError(id, "transcription failed: \(error.localizedDescription)")
     }
@@ -325,6 +325,7 @@ func handleTranscribe(_ id: Int, _ params: [String: JSONValue]) async {
       var collected: [[String: Sendable]] = []
       for try await result in transcriber.results where result.isFinal {
         collected.append([
+          "alternatives": result.alternatives.map { String($0.characters) },
           "endSecond": CMTimeGetSeconds(CMTimeRangeGetEnd(result.range)),
           "startSecond": CMTimeGetSeconds(result.range.start),
           "text": String(result.text.characters),

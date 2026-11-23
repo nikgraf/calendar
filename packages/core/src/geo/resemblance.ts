@@ -229,6 +229,80 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
     : undefined;
 };
 
+/** Letters to change, add or drop to turn one text into the other. */
+const editDistance = (a: string, b: string): number => {
+  let row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      next[j] = Math.min(
+        row[j]! + 1,
+        next[j - 1]! + 1,
+        row[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    row = next;
+  }
+  return row[b.length]!;
+};
+
+/** A text's words as spelled: folded, and no short forms ("Straße" stays its letters). */
+const lettersOf = (text: string): ReadonlyArray<string> =>
+  foldSearchText(text)
+    .replaceAll('ß', 'ss')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word !== '');
+
+/** At least this share of the letters in place, and two texts are spelled alike. */
+const ALIKE = 0.8;
+/** Fewer letters than this are alike by chance. */
+const ALIKE_LETTERS = 6;
+/** A first or last word holding at most this share of the letters may be beside the name. */
+const BESIDE = 0.25;
+
+/**
+ * Whether a text is the place's name but for a letter or two: the name
+ * as another recogniser wrote it ("Schottenor" for Schottentor,
+ * "Marhilfestraße" for Mariahilfer Straße), which neither begins the
+ * name's words nor sounds exactly like them (`placeMatch`) though the
+ * search knew what was meant. The text's letters, spaces aside, against
+ * the name's leading words: four in five in place. A short first or last
+ * word may stand beside the name ("the Burggarten", "Cap Kallenberg":
+ * what the other reading had next to it); a number must be the name's
+ * own. The words that only say where the place is are set aside, as
+ * `placeMatch` sets them aside: "Schottenor, Vienna" is Schottentor in
+ * Vienna, and "Vienna" alone no place that stands in it. Looser than
+ * `placeMatch`, so only for a place that is offered.
+ */
+export const spelledAlike = (text: string, place: PlaceLike): boolean => {
+  const name = lettersOf(place.name ?? '');
+  const { named, where } = readAddress(place, wordsOf(text));
+  const around = where.flat().filter((word) => !(named && name.includes(word)));
+  const said = lettersOf(text).filter((word) => !around.includes(word));
+  if (said.length === 0 || name.length === 0) {
+    return false;
+  }
+  if (!said.filter((word) => NUMBERED.test(word)).every((number) => name.includes(number))) {
+    return false;
+  }
+  const letters = said.join('').length;
+  const beside = (word: string | undefined) =>
+    said.length > 1 && word !== undefined && word.length <= BESIDE * letters;
+  const runs = [
+    said,
+    ...(beside(said[0]) ? [said.slice(1)] : []),
+    ...(beside(said.at(-1)) ? [said.slice(0, -1)] : []),
+  ].map((run) => run.join(''));
+  const names = name.map((_, index) => name.slice(0, index + 1).join(''));
+  return runs.some(
+    (run) =>
+      run.length >= ALIKE_LETTERS &&
+      names.some(
+        (each) => 1 - editDistance(run, each) / Math.max(run.length, each.length) >= ALIKE,
+      ),
+  );
+};
+
 /** Words shorter than this say nothing of where: "IN", "de", "le" are words of names as often. */
 const WHERE_MIN = 3;
 

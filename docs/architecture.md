@@ -152,8 +152,14 @@ finishing reads the phrase once more, whole, with plain
 SpeechTranscriber, alternatives kept: each segment of the reading comes
 with the readings the recogniser weighed for it (the first is the
 segment itself), and the dictated phrase goes to the thread with them
-(`Heard`), for the place lookup below. The audio stays in memory and
-goes with the phrase. The phrase ends on its words, not its loudness:
+(`Heard`), for the place lookup below. Beside it the phrase is read in
+the user's other language (`SpeechAssets.other`: the first language
+that is not the one listened in among the device's languages, its
+keyboards on iOS, and its region's own, so German on an English iPhone
+in Austria; its assets installed with the first language's, and the
+pass left out without them), and that reading goes along as
+`Heard.other`: never the phrase sent, only searched for the place. The
+audio stays in memory and goes with the phrase. The phrase ends on its words, not its loudness:
 `listenForPhrase` (`packages/ai/src/phraseEnd.ts`) ends it when the
 quick words have stood still for 900 ms, or, while the accurate ones
 are ahead of them, when those have for 1,200 ms; until then the words
@@ -2132,7 +2138,14 @@ gateway carries all of it. Details, limits and the threat model:
   hits that do not resemble the text and one far namesake follow as
   `search`, offered and never taken, and any other far hit is left out),
   best first and uncached. A dictated turn's place goes with
-  dictation's other readings of it (ai `alternativesFor`): its words are
+  dictation's other readings of it (ai `readingsFor`: the recogniser's
+  own, the other language's right after the likeliest of them). The other
+  language's (`otherLanguageReading`): the whole phrase as that
+  recogniser wrote it is lined up word by word with the phrase, and the
+  words it has where the place's stood take their place ("Nashmacht" →
+  "Naschmarkt"); none when the place's words were said twice, or when
+  what it has there is uncertain at an edge. The recogniser's own
+  (`alternativesFor`): its words are
   found among the phrase's (local alignment over words, each pair scored
   by edit distance over letters, so a place the model spelled its own
   way word by word or began in an earlier turn still finds the words

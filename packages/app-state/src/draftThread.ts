@@ -1,5 +1,4 @@
 import {
-  alternativesFor,
   isFinderPhrase,
   type FinderReader,
   type Heard,
@@ -9,6 +8,7 @@ import {
   proposeSlots,
   type QuickAddPrefill,
   readExtras,
+  readingsFor,
   type ReminderChange,
   type TurnDraft,
 } from '@calendar/ai';
@@ -1512,7 +1512,7 @@ export interface PhraseOptions {
   /**
    * The phrase as dictation read it, with the other readings it weighed:
    * a place it names that finds nothing is looked for as they read it too
-   * (`alternativesFor`). None for words typed.
+   * (`readingsFor`). None for words typed.
    */
   readonly heard?: Heard | undefined;
   readonly read?: ReadForm | undefined;
@@ -1650,7 +1650,7 @@ export const useDraftThread = ({
     if (location === undefined || location.trim() === '') {
       return undefined;
     }
-    const alternatives = heard === undefined ? [] : alternativesFor(heard, location);
+    const alternatives = heard === undefined ? [] : readingsFor(heard, location);
     const candidates = await Effect.runPromise(
       backend
         .placeCandidates({ ...(alternatives.length > 0 ? { alternatives } : {}), location })

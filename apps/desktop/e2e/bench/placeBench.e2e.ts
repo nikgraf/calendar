@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { alternativesFor, heardFromSegments } from '@calendar/ai';
+import { alternativesFor, heardFromSegments, readingsFor } from '@calendar/ai';
 import {
   Account,
   CalendarInfo,
@@ -36,7 +36,8 @@ import { connectHelper, findHelper, gitSha, type HelperClient } from './provider
  * as a recogniser read it, with the other readings it weighed — through
  * the app's own place lookup (`placeCandidates`) against MapKit, the
  * helper's: the place as written, then with dictation's other readings
- * of it (`alternativesFor`), as a dictated turn asks. The user's two past
+ * of it (`readingsFor`; the recogniser's own alone, `alternativesFor`,
+ * under PLACE_BENCH_OTHER=off), as a dictated turn asks. The user's two past
  * events are in the case's city, so nearby is where they are. Measured,
  * never gated: it prints a table, writes a report under
  * output/bench/places/ and passes.
@@ -216,8 +217,11 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('place bench', () => {
       const reports: Array<PlaceCaseReport> = [];
       try {
         for (const each of cases) {
-          const heard = heardFromSegments(each.heard);
-          const alternatives = heard === undefined ? [] : alternativesFor(heard, each.location);
+          // PLACE_BENCH_OTHER=off: the recogniser's own readings alone, without the other language's.
+          const both = process.env['PLACE_BENCH_OTHER'] !== 'off';
+          const heard = heardFromSegments(each.heard, both ? each.other : undefined);
+          const alternatives =
+            heard === undefined ? [] : (both ? readingsFor : alternativesFor)(heard, each.location);
           const ask = async (
             arm: string,
             payload: Parameters<typeof locationHandlers.placeCandidates>[0],

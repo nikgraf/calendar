@@ -103,6 +103,7 @@ declare global {
       modelSpeechAudio: (session: number, pcm: Uint8Array) => void;
       modelSpeechCancel: (session: number) => Promise<unknown>;
       modelSpeechFinish: (session: number) => Promise<{
+        other?: string;
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
       modelSpeechStart: (

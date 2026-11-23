@@ -1039,7 +1039,17 @@ was cut (pruned 2026-11-17).
   taken unasked. Place bench, 34 `say` cases of six Vienna places: offered
   5 → 7 (Figlmüller twice), Kaffemik in none. Rejected: asking the readings
   always or through the completer (MapKit's budget), a word list. Open:
-  the readings for the model, real recordings, MapKit's structured fields.
+  the readings for the model, MapKit's structured fields.
+- **A dictated place is read in the user's other language too**
+  (2026-11-23, #375) — a finished phrase is read again by the recogniser
+  of the other language (the device's languages, its keyboards on iOS,
+  its region's own), and the words it has where the place stood are
+  searched after the recogniser's likeliest own; the phrase sent stays
+  the first language's. A hit spelled a letter or two off such a reading
+  counts. Place bench, Nik's forty English sentences: offered 2 → 20.
+  Rejected: an own speech model for now, a setting for the language, the
+  second reading for the model. Open: names neither language has as a
+  word, street addresses, the lookup's time budget, an iPhone check.
 - **Places on a map** (2026-11-16, #334) — "which place?" shows its
   places on one map, numbered like the rows; a pin takes its place. The map
   fits the places within 150 km of each other: pins that would cover
