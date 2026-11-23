@@ -136,6 +136,8 @@ export interface PendingOpRepoShape {
    * (`markDiscarded`; not a move): that change is kept after all and sent
    * again. What it left on screen is what the user just built on, and
    * taken back once Google answered, the new change had nothing to stand on.
+   * An occurrence's id is its series' id, `_` and a date: a series split
+   * off in Google's own UI (`<id>_R…`) is no occurrence of its source.
    */
   readonly keepGivenUp: (event: {
     readonly accountId: string;
@@ -746,7 +748,9 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             sql`UPDATE pending_ops SET discarded = 0, last_error = NULL
               WHERE discarded = 1 AND kind IN ('delete', 'rsvp', 'update')
                 AND account_id = ${accountId} AND calendar_id = ${calendarId}
-                AND (event_id = ${eventId} OR substr(${eventId}, 1, length(event_id) + 1) = event_id || '_')`,
+                AND (event_id = ${eventId}
+                  OR (substr(${eventId}, 1, length(event_id) + 1) = event_id || '_'
+                    AND substr(${eventId}, length(event_id) + 2, 1) GLOB '[0-9]'))`,
           ),
         ),
       listDue: (now) =>

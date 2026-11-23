@@ -23,6 +23,7 @@ import {
   mergeAttendees,
   meetingUrl,
   type MoveEventParams,
+  expandRecurringEvent,
   moveLoss,
   NO_SERIES_EDIT_LOSS,
   type MoveTaskParams,
@@ -177,6 +178,29 @@ const inheritedPark = (
   return parked?.conflictAt === undefined
     ? {}
     : { conflictAt: parked.conflictAt, lastError: parked.lastError ?? 'changed on Google' };
+};
+
+/**
+ * Whether the edited series resets this exception to a plain occurrence:
+ * it no longer draws the exception's slot, and still draws that day (in
+ * the series' zone). An exception whose day is gone goes with the edit.
+ */
+const resetBy = (edited: EventRecord, exception: EventRecord): boolean => {
+  const slot = exception.originalStartUtc;
+  if (slot === undefined || !edited.recurrence || drawsSlot(edited, exception)) {
+    return false;
+  }
+  const day = toZonedDateTime(
+    slot,
+    edited.isAllDay ? 'UTC' : (edited.startTimeZone ?? 'UTC'),
+  ).startOfDay();
+  return (
+    expandRecurringEvent(
+      recurrenceMasterOf(edited),
+      day.epochMilliseconds,
+      day.add({ days: 1 }).epochMilliseconds,
+    ).length > 0
+  );
 };
 
 /** How `previewSeriesEdit` leaves its transaction: with the answer, and nothing written. */
@@ -1155,21 +1179,35 @@ const make: Effect.Effect<
           }),
           Effect.catchCause(() => Effect.succeed(undefined)),
         );
-      if (answer === undefined && (op.kind === 'delete' || op.dropsFrom !== undefined)) {
-        return yield* pendingOpRepo.markDiscarded(opId, 'given up; asking Google what it has');
+      const now = yield* Clock.currentTimeMillis;
+      // The answer took a while, and only the drain waits for it: the user
+      // may have built on what the change left meanwhile, which keeps it
+      // (`keepGivenUp`) or puts another in its place. Read again, with
+      // what is done about it in one transaction: acted on as it was read
+      // before the answer, a change kept after all was taken back, and
+      // what it held was put on screen beside what replaced it.
+      const settled = yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const current = yield* pendingOpRepo.getById(opId);
+          if (!current || current.discarded !== true) {
+            return undefined;
+          }
+          if (answer !== undefined) {
+            yield* takeTheirs(current, answer.item, now);
+            yield* dropUndrawn(current);
+            return current;
+          }
+          if (current.kind === 'delete' || current.dropsFrom !== undefined) {
+            yield* pendingOpRepo.markDiscarded(opId, 'given up; asking Google what it has');
+            return undefined;
+          }
+          yield* discard(opId);
+          return current;
+        }),
+      );
+      if (settled) {
+        yield* wake(settled);
       }
-      if (answer === undefined) {
-        yield* discard(opId);
-      } else {
-        const now = yield* Clock.currentTimeMillis;
-        yield* sql.withTransaction(
-          Effect.gen(function* () {
-            yield* takeTheirs(op, answer.item, now);
-            yield* dropUndrawn(op);
-          }),
-        );
-      }
-      yield* wake(op);
     });
 
   /**
@@ -2376,23 +2414,42 @@ const make: Effect.Effect<
     eventId: string,
   ) => pendingOpRepo.keepGivenUp({ accountId, calendarId, eventId });
 
+  /**
+   * The Google event mutations as every path runs them, the conversions
+   * and the copy-then-delete moves included: each keeps a change of the
+   * event (or of its series) the user had given up and that still waits
+   * for Google's word (`kept`), then makes its own.
+   */
+  const standing = {
+    deleteEvent: (params: Parameters<EventMutationsShape['deleteEvent']>[0]) =>
+      Effect.andThen(kept(params, params.eventId), shape.deleteEvent(params)),
+    deleteRecurring: (params: Parameters<EventMutationsShape['deleteRecurring']>[0]) =>
+      Effect.andThen(kept(params, params.masterId), shape.deleteRecurring(params)),
+    respondToEvent: (params: Parameters<EventMutationsShape['respondToEvent']>[0]) =>
+      Effect.andThen(kept(params, params.eventId), shape.respondToEvent(params)),
+    updateEvent: (params: Parameters<EventMutationsShape['updateEvent']>[0]) =>
+      Effect.andThen(kept(params, params.eventId), shape.updateEvent(params)),
+    updateRecurring: (params: Parameters<EventMutationsShape['updateRecurring']>[0]) =>
+      Effect.andThen(kept(params, params.masterId), shape.updateRecurring(params)),
+  };
+
   // Every queue-backed method runs inside one transaction (see
   // `transactional`); the EventKit paths (Reminders, Apple Calendar)
   // write the local store synchronously and need none.
   const google = {
     createEvent: (draft: EventDraft) => transactional(shape.createEvent(draft)),
     deleteEvent: (params: Parameters<EventMutationsShape['deleteEvent']>[0]) =>
-      transactional(Effect.andThen(kept(params, params.eventId), shape.deleteEvent(params))),
+      transactional(standing.deleteEvent(params)),
     deleteRecurring: (params: Parameters<EventMutationsShape['deleteRecurring']>[0]) =>
-      transactional(Effect.andThen(kept(params, params.masterId), shape.deleteRecurring(params))),
+      transactional(standing.deleteRecurring(params)),
     respondToEvent: (params: Parameters<EventMutationsShape['respondToEvent']>[0]) =>
-      transactional(Effect.andThen(kept(params, params.eventId), shape.respondToEvent(params))),
+      transactional(standing.respondToEvent(params)),
     setCalendarColor: (params: Parameters<EventMutationsShape['setCalendarColor']>[0]) =>
       transactional(shape.setCalendarColor(params)),
     updateEvent: (params: Parameters<EventMutationsShape['updateEvent']>[0]) =>
-      transactional(Effect.andThen(kept(params, params.eventId), shape.updateEvent(params))),
+      transactional(standing.updateEvent(params)),
     updateRecurring: (params: Parameters<EventMutationsShape['updateRecurring']>[0]) =>
-      transactional(Effect.andThen(kept(params, params.masterId), shape.updateRecurring(params))),
+      transactional(standing.updateRecurring(params)),
   };
   const apple = makeAppleEventMutations({
     accountRepo,
@@ -2670,14 +2727,14 @@ const make: Effect.Effect<
 
   const deleteFrom = (provider: 'apple' | 'google', params: EventRef, master: EventRecord) =>
     master.recurrence
-      ? (provider === 'apple' ? apple : shape).deleteRecurring({
+      ? (provider === 'apple' ? apple : standing).deleteRecurring({
           accountId: params.accountId,
           calendarId: params.calendarId,
           masterId: params.eventId,
           originalStartUtc: master.startUtc,
           scope: 'series',
         })
-      : (provider === 'apple' ? apple : shape).deleteEvent({
+      : (provider === 'apple' ? apple : standing).deleteEvent({
           accountId: params.accountId,
           calendarId: params.calendarId,
           eventId: params.eventId,
@@ -2701,7 +2758,7 @@ const make: Effect.Effect<
           masterId: params.eventId,
           originalStartUtc,
         })
-      : shape.deleteRecurring({
+      : standing.deleteRecurring({
           accountId: params.accountId,
           calendarId: params.calendarId,
           masterId: params.eventId,
@@ -2756,10 +2813,16 @@ const make: Effect.Effect<
   /**
    * What a series edit would take from the occurrences changed on their
    * own, read off the edit itself: it runs in a transaction that is
-   * rolled back, and the exceptions' rows are counted before and after.
-   * So the answer is the save's own, with what is queued and what Google
-   * holds as the save will find them. An edit the save would refuse
-   * takes nothing: the save says why.
+   * rolled back, and the series it leaves says which exceptions go. So
+   * the answer is the save's own, with what is queued and what Google
+   * holds as the save will find them. Counted: an exception whose slot
+   * the edited series no longer draws while it still draws that day —
+   * a changed one shows as the plain occurrence again, a deleted one
+   * comes back (one deleted here and not synced yet too: its delete
+   * meets a slot Google has no more). Not counted: one whose day the
+   * series draws no more (a shorter series, other weekdays), which goes
+   * as the edit says. An edit the save would refuse takes nothing: the
+   * save says why.
    */
   const previewSeriesEdit: EventMutationsShape['previewSeriesEdit'] = (params) =>
     Effect.gen(function* () {
@@ -2773,19 +2836,18 @@ const make: Effect.Effect<
       ) {
         return NO_SERIES_EDIT_LOSS;
       }
-      const exceptions = eventRepo.listOverrides(accountId, calendarId, masterId);
       return yield* sql
         .withTransaction(
           Effect.gen(function* () {
-            const before = yield* exceptions;
+            const before = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
             yield* shape.updateRecurring(params);
-            const after = new Set((yield* exceptions).map((row) => row.id));
-            const gone = before.filter((row) => !after.has(row.id));
+            const edited = yield* eventRepo.getById(accountId, calendarId, masterId);
+            const reset = edited ? before.filter((row) => resetBy(edited, row)) : [];
             return yield* Effect.fail(
               new PreviewedSeriesEdit({
                 loss: {
-                  changed: gone.filter((row) => row.status !== 'cancelled').length,
-                  deleted: gone.filter((row) => row.status === 'cancelled').length,
+                  changed: reset.filter((row) => row.status !== 'cancelled').length,
+                  deleted: reset.filter((row) => row.status === 'cancelled').length,
                 },
               }),
             );

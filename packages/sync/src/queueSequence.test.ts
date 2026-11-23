@@ -3527,6 +3527,44 @@ describe('pending-op queue: a held task and Google’s copy of it', () => {
     );
   });
 
+  it.effect('a lost create does not take over a to-do whose delete still waits here', () => {
+    // Review (Opus): a to-do made and landed, deleted offline, and another
+    // of the same name and day made after it. The second create, tried
+    // and refused, took the first one's task for its own lost attempt
+    // (same fields, changed since the stamp, no row here): the waiting
+    // delete then removed it, and the second to-do was gone on both sides.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const milk = { accountId: ACCOUNT_ID, taskListId: 'list-1', title: 'Milk' };
+        yield* mutations.createTask(milk);
+        yield* drainAll(mutations);
+        const first = google.tasksIn('list-1').find((task) => task.title === 'Milk')!;
+        network.down = true;
+        yield* mutations.deleteTask({
+          accountId: ACCOUNT_ID,
+          taskId: first.id,
+          taskListId: 'list-1',
+        });
+        yield* mutations.createTask(milk);
+        yield* mutations.processPendingOps();
+        network.down = false;
+        yield* (yield* SyncEngine).syncAll();
+        yield* drainAll(mutations);
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        const theirs = google.tasksIn('list-1').filter((task) => task.title === 'Milk');
+        expect(theirs.map((task) => task.id === first.id)).toEqual([false]);
+        expect(yield* (yield* SqlClient)`SELECT id FROM tasks WHERE title = 'Milk'`).toEqual([
+          { id: theirs[0]?.id },
+        ]);
+      }),
+    );
+  });
+
   it.effect('a pull shows Google’s newer copy under a queued edit, and a discard leaves it', () => {
     // The gap the event rows still have (below), closed for tasks: the
     // pull used to skip a row a queued op held, its watermark moved past
@@ -6626,6 +6664,54 @@ describe('pending-op queue: discarding a change that was tried before', () => {
       }),
     );
   });
+
+  it.effect(
+    'an occurrence made a to-do on what a waiting discard left keeps the change too',
+    () => {
+      // Review (Opus): the conversion deletes the occurrence by a path of
+      // its own, which did not keep the given-up times: once Google said it
+      // never got them they were taken back, and the occurrence showed
+      // again at its old time beside the new to-do.
+      const google = newFake();
+      const network = { down: true };
+      google.fault = (call) =>
+        network.down && call.url.includes('/events/r1') ? 'refused' : undefined;
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const ops = yield* PendingOpRepo;
+          yield* mutations.updateRecurring({
+            ...R1,
+            changes: { endUtc: R1_START + 2 * HOUR, startUtc: R1_START + HOUR },
+            originalStartUtc: R1_START,
+            scope: 'series',
+          });
+          yield* mutations.processPendingOps();
+          yield* discardAll(mutations);
+          expect((yield* ops.listAll()).map((op) => op.discarded)).toEqual([true]);
+          yield* mutations.convertEventToTask({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            draft: { dueDate: due(3).slice(0, 10), title: 'As a to-do' },
+            eventId: 'r1',
+            occurrence: { originalStartUtc: R1_START + DAY + HOUR },
+            target: { accountId: ACCOUNT_ID, taskListId: 'list-1' },
+          });
+          expect((yield* ops.listAll()).some((op) => op.discarded === true)).toBe(false);
+          network.down = false;
+          yield* drainAll(mutations);
+          expect(yield* ops.listAll()).toEqual([]);
+          // The series at the new times, less the day that became a to-do.
+          const drawn = drawnOnGoogle(google, 'cal-1', 'r1');
+          expect(drawn[0]).toBe(R1_START + HOUR);
+          expect(drawn).not.toContain(R1_START + DAY + HOUR);
+          expect(drawn).not.toContain(R1_START + DAY);
+          expect(google.tasksIn('list-1').some((task) => task.title === 'As a to-do')).toBe(true);
+        }),
+      );
+    },
+  );
 
   it.effect('with Google out of reach an edit goes back as never sent, as before', () => {
     // Nothing is taken away where it lands: had it landed, the next pull

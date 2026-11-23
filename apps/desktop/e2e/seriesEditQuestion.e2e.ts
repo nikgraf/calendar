@@ -96,6 +96,22 @@ describe('The question before a save for all events drops changed occurrences', 
     await cdp.clickButtonWithText('Save');
   };
 
+  it('asks nothing when the save keeps every occurrence', async () => {
+    const { cdp } = app;
+    await cdp.openEditor('[title^="Daily sync"]:not([title^="Daily sync with Ada"])');
+    await cdp.clickButtonWithText('All events');
+    await cdp.evaluate(
+      ($, value: string) => $.setValue('input[placeholder="Location (optional)"]', value),
+      'Room 1',
+    );
+    await cdp.clickButtonWithText('Save');
+    // No question: the editor closes, and the changed occurrence is still its own.
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+    const events = await readEvents(app.userDataDir);
+    expect(events.find((event) => event.id === series.id)?.location).toBe('Room 1');
+    expect(events.find((event) => event.id === moved.id)?.title).toBe('Daily sync with Ada');
+  });
+
   it('names what goes, and "Keep editing" writes nothing', async () => {
     const { cdp } = app;
     await retimeAllEvents();
@@ -123,19 +139,5 @@ describe('The question before a save for all events drops changed occurrences', 
       series.startUtc + HOUR_MS,
     );
     expect(events.filter((event) => event.recurringEventId === series.id)).toEqual([]);
-  });
-
-  it('asks nothing when the save keeps every occurrence', async () => {
-    const { cdp } = app;
-    await cdp.openEditor('[title^="Daily sync"]');
-    await cdp.clickButtonWithText('All events');
-    await cdp.evaluate(
-      ($, value: string) => $.setValue('input[placeholder="Title"]', value),
-      'Daily standup',
-    );
-    await cdp.clickButtonWithText('Save');
-    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
-    const events = await readEvents(app.userDataDir);
-    expect(events.find((event) => event.id === series.id)?.title).toBe('Daily standup');
   });
 });

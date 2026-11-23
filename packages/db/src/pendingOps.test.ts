@@ -640,6 +640,37 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('keepGivenUp keeps a given-up change of the event or of its series, and no other', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      for (const queued of [
+        op('own', { discarded: true, eventId: 'm1', kind: 'update' }),
+        op('elsewhere', { calendarId: 'cal-2', discarded: true, eventId: 'm1', kind: 'update' }),
+        op('other', { discarded: true, eventId: 'm10', kind: 'delete' }),
+        // A sent move the user gave up asks Google where the event is.
+        op('move', { discarded: true, eventId: 'm1', kind: 'move', targetCalendarId: 'cal-2' }),
+      ]) {
+        yield* repo.enqueue(queued);
+      }
+      const givenUp = Effect.map(repo.listAll(), (ops) =>
+        ops.filter((queued) => queued.discarded === true).map((queued) => queued.id),
+      );
+      // A series split off in Google's own UI is no occurrence of its source.
+      yield* repo.keepGivenUp({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: 'm1_R20260704T090000',
+      });
+      expect(yield* givenUp).toEqual(['own', 'elsewhere', 'other', 'move']);
+      yield* repo.keepGivenUp({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: 'm1_20260704T090000Z',
+      });
+      expect(yield* givenUp).toEqual(['elsewhere', 'other', 'move']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('listDeletes: the queued deletes of one calendar', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

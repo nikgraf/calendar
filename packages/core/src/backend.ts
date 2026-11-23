@@ -157,8 +157,9 @@ export const PendingOpSummary = Schema.Struct({
    */
   diff: Schema.optional(Schema.Array(PendingOpDiffLine)),
   /**
-   * A move the user gave up after it was sent, waiting for Google to say
-   * whether it landed (`PendingOp.discarded`).
+   * A change the user gave up after it was tried, waiting for Google to
+   * say whether it had landed: a move, or a delete or a redraw of a
+   * series discarded with Google out of reach (`PendingOp.discarded`).
    */
   discarded: Schema.optional(Schema.Boolean),
   eventId: Schema.String,

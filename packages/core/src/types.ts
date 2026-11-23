@@ -474,9 +474,13 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * put it, until Google says where the item is: there, the move landed
    * and stays; not there, everything goes back; what is changed
    * meanwhile waits behind it and follows the item either way. An
-   * event's update, delete or answer carries it only until its discard
-   * has asked Google, right after (the drain finishes that if the app
-   * stopped in between).
+   * event's update, delete or answer carries it until its discard has
+   * asked Google: right after when Google answers (the drain finishes
+   * that if the app stopped in between), and for as long as Google is
+   * out of reach where the change takes something away (a delete; a cut,
+   * a new rule or new times). A change made meanwhile to what it left on
+   * screen clears it: the given-up change is sent after all
+   * (`PendingOpRepo.keepGivenUp`).
    */
   discarded: Schema.optional(Schema.Boolean),
   /**

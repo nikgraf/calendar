@@ -6,7 +6,9 @@ import { Schema } from 'effect';
  * Google cancel every exception whose slot the series no longer draws
  * (verified live): a moved or renamed occurrence loses its change, and a
  * day deleted on its own is drawn again. Nothing for an edit that keeps
- * the slots (a title, a place, the end time alone).
+ * the slots (a title, a place, the end time alone), and nothing for an
+ * occurrence whose day the edited series draws no more (a shorter
+ * series, other weekdays): that one goes as the edit says.
  */
 export const SeriesEditLoss = Schema.Struct({
   /** Occurrences edited on their own that go back to the series' plain ones. */

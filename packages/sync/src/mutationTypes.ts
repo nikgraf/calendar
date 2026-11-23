@@ -361,15 +361,15 @@ export interface EventMutationsShape {
   ) => Effect.Effect<EventToTaskPreview, MoveError>;
   /** What moveEvent with these params would drop (see core moveLoss). */
   readonly previewMove: (params: MoveEventParams) => Effect.Effect<MoveLoss, MoveError>;
+  /** What moveTask with this source and target would drop (see core taskMoveLoss). */
   readonly previewMoveTask: (
     params: PreviewMoveTaskParams,
   ) => Effect.Effect<TaskMoveLoss, SqlError | TaskNotFoundError>;
-  /** What moveTask with this source and target would drop (see core taskMoveLoss). */
   /**
    * What the same `updateRecurring` would take from the occurrences
    * changed on their own; writes nothing. None where the edit keeps
-   * their slots, for one occurrence, and for a split later in the series
-   * (which replaces what follows by its nature).
+   * their slots or takes their day away, for one occurrence, and for a
+   * split later in the series (which replaces what follows by its nature).
    */
   readonly previewSeriesEdit: (
     params: UpdateRecurringParams,

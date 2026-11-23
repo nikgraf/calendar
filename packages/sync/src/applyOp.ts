@@ -2689,6 +2689,21 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     });
 
   /**
+   * Whether this device knows the task already: Google's copy of it is
+   * held here, or a change of it waits. Such a task is no create's lost
+   * attempt, whatever its fields: a to-do deleted here and made again
+   * with the same title and day had its second create take the first
+   * one's task, and the waiting delete then removed it.
+   */
+  const knownHere = (accountId: string, taskId: string) =>
+    Effect.gen(function* () {
+      return (
+        (yield* taskRepo.findCopy(accountId, taskId)) !== undefined ||
+        (yield* pendingOpRepo.listForTask(accountId, taskId)).length > 0
+      );
+    });
+
+  /**
    * Whether a match is the task this create's lost attempt made, as far
    * as Google can tell: what is adopted for a delete is deleted next, so a
    * twin of the user's must not pass. Open as Google made it (an insert
@@ -2820,7 +2835,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         const deleted = (yield* deletesBehind(op.accountId, taskListId, op.eventId)).length > 0;
         const matches: Array<GcalTask> = [];
         for (const match of yield* findLanded(op, taskListId, op.dispatchedAt)) {
-          if (!deleted || (yield* madeBy(op, op.dispatchedAt, taskListId, match))) {
+          if (
+            !(yield* knownHere(op.accountId, match.id)) &&
+            (!deleted || (yield* madeBy(op, op.dispatchedAt, taskListId, match)))
+          ) {
             matches.push(match);
           }
         }
@@ -3321,8 +3339,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * the task's row here. Written beside the temporary row first, the
    * to-do showed twice until that retry, each open to changes of its own:
    * one keyed to a list the other had left met a 404. Only a task this
-   * device has no row of, changed since the create was sent, and the
-   * only such match in the page; with a delete queued behind the create,
+   * device has no row of, no copy of and no change waiting for
+   * (`knownHere`), changed since the create was sent, and the only such
+   * match in the page; with a delete queued behind the create,
    * only one the create itself made (`madeBy`).
    */
   const acknowledgeTasks = (
@@ -3357,6 +3376,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
               sameAsSent(op, item) &&
               updated >= stamp - 60_000 &&
               (yield* taskRepo.get(accountId, taskListId, item.id)) === undefined &&
+              !(yield* knownHere(accountId, item.id)) &&
               (!deleted || (yield* madeBy(op, stamp, taskListId, item)))
             ) {
               matches.push(item);

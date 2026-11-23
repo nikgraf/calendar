@@ -29,7 +29,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer, Scheduler } from 'effect';
+import { Deferred, Effect, Fiber, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vite-plus/test';
@@ -914,6 +914,46 @@ describe('what a save for all events takes from the changed occurrences', () => 
     }).pipe(noYield, Effect.provide(testLayer)),
   );
 
+  it.effect('a shorter series or other weekdays take them for good, which is no question', () =>
+    // Review (Opus): the count was every exception the save removed, so
+    // "ends after 3" said a day deleted past the new end "comes back".
+    Effect.gen(function* () {
+      yield* seeded;
+      const mutations = yield* EventMutations;
+      for (const recurrence of [
+        // July 4 and 6 lie past the third occurrence.
+        ['RRULE:FREQ=DAILY;COUNT=3'],
+        // July 4 2026 is a Saturday, July 6 a Monday: Sundays draw neither.
+        ['RRULE:FREQ=WEEKLY;BYDAY=SU;COUNT=10'],
+      ]) {
+        expect(
+          yield* mutations.previewSeriesEdit({
+            ...target,
+            changes: { recurrence },
+            scope: 'series',
+          }),
+        ).toEqual({ changed: 0, deleted: 0 });
+      }
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('an occurrence deleted here and not synced yet counts as coming back', () =>
+    // Its delete waits for a slot the new times take away on Google: the
+    // day shows again, and the delete finds nothing left to remove.
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+      expect(
+        yield* mutations.previewSeriesEdit({
+          ...target,
+          changes: { endUtc: occurrence + 2 * HOUR, startUtc: occurrence + HOUR },
+          scope: 'series',
+        }),
+      ).toEqual({ changed: 0, deleted: 1 });
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
   it.effect('one occurrence, or a split later in the series, is not asked about', () =>
     Effect.gen(function* () {
       yield* seeded;
@@ -926,6 +966,76 @@ describe('what a save for all events takes from the changed occurrences', () => 
         });
       }
     }).pipe(noYield, Effect.provide(testLayer)),
+  );
+});
+
+describe('a discard that asks Google while the user goes on', () => {
+  const HOUR = 3_600_000;
+  const moved = new EventRecord({
+    ...master,
+    etag: '"o-1"',
+    id: instanceId,
+    originalStartUtc: occurrence,
+    recurrence: undefined,
+    recurringEventId: 'master1',
+    startUtc: occurrence + 2 * HOUR,
+    title: 'Daily (moved)',
+  });
+
+  it.effect('a change built on meanwhile is kept, not taken back by the late answer', () =>
+    Effect.gen(function* () {
+      const asked = yield* Deferred.make<void>();
+      const answer = yield* Deferred.make<void>();
+      // Google never got the new times: its answer is the series as it was.
+      const client: GoogleCalendarClientShape = {
+        ...stubClient,
+        getEvent: () =>
+          Effect.andThen(
+            Deferred.succeed(asked, undefined),
+            Effect.as(Deferred.await(answer), {
+              end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
+              etag: '"m-1"',
+              id: 'master1',
+              recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+              start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
+              status: 'confirmed' as const,
+              summary: master.title,
+            }),
+          ),
+      };
+      return yield* Effect.gen(function* () {
+        yield* seedMaster;
+        yield* (yield* EventRepo).upsertMany([moved]);
+        const mutations = yield* EventMutations;
+        const series = { ...target, originalStartUtc: master.startUtc, scope: 'series' as const };
+        yield* mutations.updateRecurring({
+          ...series,
+          changes: { endUtc: master.endUtc + HOUR, startUtc: master.startUtc + HOUR },
+        });
+        yield* mutations.processPendingOps();
+        const [retime] = yield* listOps;
+        expect(retime?.attempts).toBeGreaterThan(0);
+        const discard = yield* Effect.forkChild(mutations.discardPendingOp(retime!.id));
+        yield* Deferred.await(asked);
+        // The series still shows the new times, and the user renames it there.
+        yield* mutations.updateRecurring({
+          ...series,
+          changes: { title: 'Renamed' },
+          originalStartUtc: master.startUtc + HOUR,
+        });
+        yield* Deferred.succeed(answer, undefined);
+        yield* Fiber.join(discard);
+        const ops = yield* listOps;
+        expect(ops.map((op) => [op.kind, op.discarded, op.payload?.title])).toEqual([
+          ['update', undefined, 'Renamed'],
+        ]);
+        // Still the series the user sees: at the new times, renamed, and
+        // without the occurrence the new times drop.
+        const row = yield* rowOf('master1');
+        expect([row?.title, row?.startUtc]).toEqual(['Renamed', master.startUtc + HOUR]);
+        expect(yield* rowOf(instanceId)).toBeNull();
+      }).pipe(Effect.provide(testLayerWith(client)));
+    }),
   );
 });
 

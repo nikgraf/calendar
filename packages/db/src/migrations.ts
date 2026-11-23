@@ -137,8 +137,8 @@ const baseline = Effect.gen(function* () {
   //   whether it asks Google for that series before it goes.
   // - source_gone: on a move, that a pull found the event gone from the
   //   calendar it leaves (PendingOp.sourceGone).
-  // - discarded: on a move that was sent, that the user gave it up before
-  //   Google could be asked whether it landed (PendingOp.discarded).
+  // - discarded: the user gave the change up after it was tried, before
+  //   Google could be asked whether it had landed (PendingOp.discarded).
   // - copy_source: on the create a move or a conversion queued toward
   //   Google, what it was copied from (PendingOp.copySource) — the
   //   source's deletes it holds back, or an Apple source as it was.

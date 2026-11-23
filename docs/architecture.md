@@ -695,8 +695,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   landed, the next pull brings it and what was made on top is laid over
   that. A change the user makes meanwhile to what a waiting discard left
   on screen keeps the given-up change (`PendingOpRepo.keepGivenUp`,
-  called by every Google event mutation): it is sent after all, since
-  the new change stands on it. A move in that state waits the same way,
+  called by every Google event mutation, the conversions' and the
+  copy-then-delete moves' included: `standing` in mutations.ts): it is
+  sent after all, since the new change stands on it. The discard reads
+  the change again once Google has answered, in one transaction with
+  what it does: the answer can take a while, and only the drain waits. A move in that state waits the same way,
   since a change made meanwhile would go to the wrong calendar. A full
   list forgets no copy of an event whose create is still queued: Google
   lists it nowhere yet, and its copy is what the create sends.
