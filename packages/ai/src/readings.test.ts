@@ -339,6 +339,23 @@ describe('otherLanguageReading', () => {
     expect(one && otherLanguageReading(one, 'Kaffemik')).toBeUndefined();
   });
 
+  it('takes no word only the other reading has at the start or the end of the phrase', () => {
+    const end = both('Lunch at Nashmacht', 'Lunch am Naschmarkt bitte schön');
+    expect(otherLanguageReading(end, 'Nashmacht')).toBeUndefined();
+    const start = both('Nashmacht at 10', 'Am Naschmarkt um zehn');
+    expect(otherLanguageReading(start, 'Nashmacht')).toBeUndefined();
+  });
+
+  it('is nothing when the other reading is one long word of a language without spaces', () => {
+    const heard = both('Meet Tom tomorrow at Shinjuku', '明日新宿でトムに会う予定があります');
+    expect(otherLanguageReading(heard, 'Shinjuku')).toBeUndefined();
+  });
+
+  it('is nothing when it reads the words as the model already spelled them', () => {
+    const heard = both('Coffee at Cafe Pruckle tomorrow', 'Kaffee at Café Prückel morgen');
+    expect(otherLanguageReading(heard, 'Café Prückel')).toBeUndefined();
+  });
+
   it('is nothing for words said twice: which place is meant is not its to say', () => {
     const heard = both('From Nashmacht to Nashmacht', 'From Naschmarkt to Naschmarkt');
     expect(otherLanguageReading(heard, 'Nashmacht')).toBeUndefined();

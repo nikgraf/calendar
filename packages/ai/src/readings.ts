@@ -231,9 +231,15 @@ const inside = (step: Step | undefined, [from, to]: readonly [number, number]): 
 export const wordsAt = (
   steps: ReadonlyArray<Step>,
   run: readonly [number, number],
+  /**
+   * The words lined up are a whole phrase, not one segment of it: a word
+   * only the alternative has before the first or after the last one is
+   * as uncertain as one beside a changed word.
+   */
+  whole = false,
 ): ReadonlyArray<number> | undefined => {
   const taken: Array<number> = [];
-  const same = (other: Step | undefined) => other === undefined || other.kind === 'same';
+  const same = (other: Step | undefined) => (other === undefined ? !whole : other.kind === 'same');
   for (const [at, step] of steps.entries()) {
     if (step.kind === 'added') {
       const before = steps.slice(0, at).findLast((each) => each.kind !== 'added');
@@ -386,6 +392,19 @@ export const alternativesFor = (
   return readings;
 };
 
+/** More letters than this many times the words said, and the other reading is not of them. */
+const OTHER_LETTERS = 3;
+
+/** The letters and digits of some words. */
+const letters = (list: ReadonlyArray<Word>): number =>
+  list.reduce((sum, word) => sum + word.key.length, 0);
+
+/** A reading as compared: its words' keys. */
+const keysOf = (reading: string): string =>
+  wordsOf(reading)
+    .map((word) => word.key)
+    .join(' ');
+
 /**
  * `text` as the recogniser of the user's other language wrote its words
  * (`Heard.other`): "Nashmacht" → "Naschmarkt", from "Meet Tom at the
@@ -395,7 +414,10 @@ export const alternativesFor = (
  * words it has where they stood take their place, the rest of `text`
  * stays. Undefined without another reading, when the words are not among
  * what was heard or stand in it more than once, when the other reading
- * has nothing certain there (`wordsAt`), or when it reads them the same.
+ * has nothing certain there (`wordsAt`), far more letters than were
+ * said or half the phrase's words at most (a language written without
+ * spaces is one long word), or when it
+ * reads them the same, or as `text` already has them.
  */
 export const otherLanguageReading = (heard: Heard, text: string): string | undefined => {
   if (heard.other === undefined) {
@@ -409,25 +431,27 @@ export const otherLanguageReading = (heard: Heard, text: string): string | undef
     return undefined;
   }
   const other = wordsOf(heard.other);
-  const taken = wordsAt(alignWords(phrase, other), run.heard);
+  // Half the words or fewer: not a reading word for word (no spaces between them).
+  if (other.length * 2 < phrase.length) {
+    return undefined;
+  }
+  const taken = wordsAt(alignWords(phrase, other), run.heard, true);
   if (taken === undefined || taken.length === 0) {
     return undefined;
   }
   const words = taken.map((at) => other[at]!);
   const said = phrase.slice(run.heard[0], run.heard[1]);
-  if (words.map((word) => word.key).join(' ') === said.map((word) => word.key).join(' ')) {
+  if (
+    letters(words) > OTHER_LETTERS * letters(said) ||
+    words.map((word) => word.key).join(' ') === said.map((word) => word.key).join(' ')
+  ) {
     return undefined;
   }
   const before = text.slice(0, own[run.words[0]]!.start);
   const after = text.slice(own[run.words[1] - 1]!.end);
-  return `${before}${words.map((word) => word.text).join(' ')}${after}`;
+  const reading = `${before}${words.map((word) => word.text).join(' ')}${after}`;
+  return keysOf(reading) === keysOf(text) ? undefined : reading;
 };
-
-/** A reading as compared: its words' keys. */
-const keysOf = (reading: string): string =>
-  wordsOf(reading)
-    .map((word) => word.key)
-    .join(' ');
 
 /**
  * Every other reading of `text` worth a search, the likeliest first: the

@@ -114,9 +114,10 @@ enum SpeechAssets {
 
   /// Installs the locale's assets; a no-op once present. The accurate
   /// recogniser is required; the quick one is installed when the locale
-  /// has it, and listening goes without it otherwise. So is the other
-  /// language's recogniser: without its assets the phrase is read in one
-  /// language, as before.
+  /// has it, and listening goes without it otherwise. The other
+  /// language's recogniser is fetched on the side and never waited for:
+  /// until its assets are here the phrase is read in one language, as
+  /// before, and dictation starts no later for it.
   static func prepare(locale identifier: String) async throws {
     guard let locale = await locale(identifier) else {
       throw SpeechBridgeError.unsupported("locale not supported: \(identifier)")
@@ -125,8 +126,10 @@ enum SpeechAssets {
     if let quickLocale = await DictationTranscriber.supportedLocale(equivalentTo: locale) {
       try? await install([quick(quickLocale)], required: false)
     }
-    if let other = await other(than: locale) {
-      try? await install([accurate(other, live: false)], required: false)
+    Task.detached(priority: .utility) {
+      if let other = await other(than: locale) {
+        try? await install([accurate(other, live: false)], required: false)
+      }
     }
   }
 
