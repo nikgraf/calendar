@@ -251,7 +251,8 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
     warnings = 0;
     set({ notice: undefined, report: undefined });
     deps.keepAwake(true);
-    const watch = memoryWatch(deps.memory);
+    // Started once a model left from before is gone: its memory is not this run's.
+    let watch: ReturnType<typeof memoryWatch> | undefined;
     try {
       const uris = await fetchClips(files);
       if (uris === undefined) {
@@ -261,6 +262,7 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
       // A model an earlier run, or the Assistant, left loaded goes first: the
       // reading before is a baseline, and "alone" means alone.
       await deps.assistant?.release();
+      watch = memoryWatch(deps.memory);
       const before = watch.sample()?.footprint;
       let afterAssistant: number | undefined;
       if (options.beside) {
@@ -270,6 +272,10 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
         }
         await deps.assistant.load();
         afterAssistant = watch.sample()?.footprint;
+      }
+      // Cut while the Assistant's model loaded: no minutes of Parakeet for a run that is over.
+      if (cut !== undefined) {
+        throw new Error(cut);
       }
       set({ step: { fraction: 0, kind: 'loading' } });
       const { loadMs } = await parakeet.load(
@@ -307,7 +313,7 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
       // Cut while a step ran: the step's failure is the cut's doing, and the cut says why.
       set({ notice: cut ?? messageOf(error) });
     } finally {
-      watch.stop();
+      watch?.stop();
       fetching = undefined;
       await parakeet.release().catch(() => undefined);
       deps.keepAwake(false);
@@ -343,10 +349,14 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
         return;
       }
       const stamp = report.when.replaceAll(/[-:]/gu, '').slice(0, 15);
-      await deps.files.share(
-        `speech-spike-${report.options.version}-${stamp}.json`,
-        `${JSON.stringify(report, null, 2)}\n`,
-      );
+      try {
+        await deps.files.share(
+          `speech-spike-${report.options.version}-${stamp}.json`,
+          `${JSON.stringify(report, null, 2)}\n`,
+        );
+      } catch (error) {
+        set({ notice: `Sharing failed: ${messageOf(error)}` });
+      }
     },
     subscribe: (listener: () => void): (() => void) => {
       listeners.add(listener);

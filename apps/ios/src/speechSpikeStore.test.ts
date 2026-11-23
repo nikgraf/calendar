@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SpikeClip } from './speechSpikeClips.ts';
 import {
   createSpeechSpikeStore,
@@ -231,6 +231,64 @@ describe('createSpeechSpikeStore', () => {
     });
     await store.run();
     expect(store.getState().notice).toBe('The app left the screen.');
+  });
+
+  it('reads no memory of a model it let go before the run', async () => {
+    vi.useFakeTimers();
+    try {
+      // The Assistant's model is in memory when Run is tapped, and the recordings take seconds to fetch.
+      let footprint = 1000;
+      const { store } = setup({
+        assistant: {
+          load: async () => {},
+          release: async () => {
+            footprint = 100;
+          },
+        },
+        files: {
+          fetch: async (clip) => {
+            vi.advanceTimersByTime(600);
+            return `file:///${clip.path}`;
+          },
+          share: async () => {},
+        },
+        memory: () => ({ available: 3000 - footprint, footprint, physical: 8000 }),
+      });
+      store.setOptions({ beside: false });
+      await store.run();
+      expect(store.getState().report?.memory.peak).toBe(100);
+      expect(store.getState().report?.memory.leastAvailable).toBe(2900);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('loads no Parakeet once the app left while the Assistant’s model loaded', async () => {
+    const { log, store } = setup({
+      assistant: {
+        load: async () => {
+          store.interrupt();
+        },
+        release: async () => {},
+      },
+    });
+    await store.run();
+    expect(log.some((line) => line.startsWith('load '))).toBe(false);
+    expect(store.getState().notice).toBe('The app left the screen.');
+  });
+
+  it('says why where sharing the report failed', async () => {
+    const made = setup({
+      files: {
+        fetch: async (clip) => `file:///${clip.path}`,
+        share: async () => {
+          throw new Error('The share sheet could not open.');
+        },
+      },
+    });
+    await made.store.run();
+    await made.store.share();
+    expect(made.store.getState().notice).toBe('Sharing failed: The share sheet could not open.');
   });
 
   it('counts the memory warnings iOS sent while it ran', async () => {
