@@ -25,10 +25,11 @@ import type {
   ReorderTaskParams,
   TaskAddressParams,
   TaskDeletePreview,
+  SeriesEditLoss,
   TaskMoveLoss,
   TaskToEventLoss,
 } from '@calendar/core';
-import type { GoogleRequestError } from '@calendar/google';
+import type { GcalTask, GoogleRequestError } from '@calendar/google';
 import type { RemindersError } from '@calendar/reminders';
 import { Data, type Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
@@ -151,6 +152,18 @@ export class NotOrganizerError extends Data.TaggedError('NotOrganizerError')<{
   readonly eventId: string;
 }> {}
 
+/**
+ * The calendar an event is to move to holds an event of the same id
+ * already: Google's ids repeat across calendars (an event with another
+ * calendar of the user's as its guest), and a move would write over that
+ * one here.
+ */
+export class EventAlreadyThereError extends Data.TaggedError('EventAlreadyThereError')<{
+  readonly calendarId: string;
+  readonly eventId: string;
+  readonly message: string;
+}> {}
+
 /** The move target is unknown or read-only. */
 export class CalendarNotWritableError extends Data.TaggedError('CalendarNotWritableError')<{
   readonly calendarId: string;
@@ -158,6 +171,7 @@ export class CalendarNotWritableError extends Data.TaggedError('CalendarNotWrita
 
 type MoveError =
   | CalendarNotWritableError
+  | EventAlreadyThereError
   | EventNotFoundError
   | EventProviderError
   | NotOrganizerError
@@ -292,6 +306,27 @@ export interface EventMutationsShape {
    */
   readonly discardPendingOp: (opId: string) => Effect.Effect<void, SqlError>;
   /**
+   * A pull's page proved these queued writes landed, their answers lost:
+   * it brought the event a queued create inserts, or an event in the
+   * calendar a queued move takes it to. Each is settled with that record
+   * as its answer and leaves the queue, so a discard made later has
+   * nothing left to take back. Run inside `whileQueueHeld`, as the pull
+   * is: no request is out.
+   */
+  readonly landedInPull: (
+    landed: ReadonlyArray<{ readonly opId: string; readonly record: EventRecord }>,
+  ) => Effect.Effect<void>;
+  /**
+   * The same for to-dos, before a list's page is written: a task in it
+   * that a sent create of that list made settles the create, so the page
+   * finds the task's row here instead of writing a second one.
+   */
+  readonly landedTasksInPull: (
+    accountId: string,
+    taskListId: string,
+    items: ReadonlyArray<GcalTask>,
+  ) => Effect.Effect<void>;
+  /**
    * Moves an event (the whole series for a recurring one) to another
    * calendar: a server move inside one Google account, EventKit's own
    * calendar change between Apple calendars, otherwise a copy into the
@@ -330,6 +365,15 @@ export interface EventMutationsShape {
   readonly previewMoveTask: (
     params: PreviewMoveTaskParams,
   ) => Effect.Effect<TaskMoveLoss, SqlError | TaskNotFoundError>;
+  /**
+   * What the same `updateRecurring` would take from the occurrences
+   * changed on their own; writes nothing. None where the edit keeps
+   * their slots or takes their day away, for one occurrence, and for a
+   * split later in the series (which replaces what follows by its nature).
+   */
+  readonly previewSeriesEdit: (
+    params: UpdateRecurringParams,
+  ) => Effect.Effect<SeriesEditLoss, SqlError>;
   /** What convertTaskToEvent would drop, from the stored task (see core taskToEventLoss). */
   readonly previewTaskToEvent: (
     params: TaskAddressParams,
@@ -398,7 +442,7 @@ export interface EventMutationsShape {
     readonly changes: TaskWriteChanges;
     readonly taskId: string;
     readonly taskListId: string;
-  }) => Effect.Effect<void, SqlError | TaskProviderError>;
+  }) => Effect.Effect<void, SqlError | TaskNotFoundError | TaskProviderError>;
   /**
    * Runs `effect` while no drain can push: a task list's pull, which a
    * move landing while its request is out would make stale (Google sends

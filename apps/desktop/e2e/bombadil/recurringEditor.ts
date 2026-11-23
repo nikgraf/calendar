@@ -394,8 +394,9 @@ const saveBlocked = (probe: Probe, session: Session): string | null => {
     session.form.startTime !== clockOf(opened.slotUtc) &&
     (probe.exceptions[opened.masterId] ?? []).length > 0
   ) {
-    // A stored exception keeps its slot through a series retime
-    // (docs/architecture.md → Recurring events): unverified on Google.
+    // A new start drops the series' exceptions, as Google does
+    // (docs/google-sync-and-testing.md, verified live 2026-11-22). The
+    // spec's model does not replay that drop yet, so it stays out.
     return 'a series with edited occurrences keeps its times';
   }
   return null;

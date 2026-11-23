@@ -624,9 +624,26 @@ describe('The draft thread', () => {
       // event opens where Plank went (Work, not the default Yoga)…
       await settings.evaluate(setSelect, PICKER, 'lastUsed');
       await expect.poll(stored, { timeout: 10_000 }).toEqual({ calendar: 'lastUsed' });
-      await cdp.evaluate(commandN);
-      await cdp.waitUntil(headingIs, 'New event');
-      expect(await cdp.evaluate(valueOf, CALENDAR)).toBe('acc-e2e:cal-e2e');
+      // The calendar window hears of the setting a moment after the store
+      // has it (it is written from the Settings window): an editor opened
+      // before that still starts in the old default, so it is opened
+      // again until this window knows. On CI that moment was long enough
+      // to fail the first open (#374).
+      await expect
+        .poll(
+          async () => {
+            await cdp.evaluate(commandN);
+            await cdp.waitUntil(headingIs, 'New event');
+            const calendar = await cdp.evaluate(valueOf, CALENDAR);
+            if (calendar !== 'acc-e2e:cal-e2e') {
+              await cdp.escapeOrDiscard();
+              await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+            }
+            return calendar;
+          },
+          { timeout: 10_000 },
+        )
+        .toBe('acc-e2e:cal-e2e');
       // …and after one saved in Yoga, the next starts in Yoga, though Work sorts first.
       await cdp.say('Lunge | +1 | 09:00-09:30');
       await cdp.waitUntil(titleIs, TITLE, 'Lunge');

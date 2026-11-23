@@ -153,6 +153,10 @@ const storedTime = (time: unknown): GcalEvent['start'] =>
         ),
       );
 
+/** What each echoed event holds so far: a PATCH names only what it changes. */
+const echoed = new Map<string, { end?: unknown; start?: unknown; summary?: string | undefined }>();
+
+/** Google's event after an insert or a PATCH of `event`: the body laid over what it had. */
 const echo = (
   event: {
     readonly end?: unknown;
@@ -161,14 +165,23 @@ const echo = (
   },
   id: string,
   etag: string,
-): GcalEvent => ({
-  end: storedTime(event.end),
-  etag,
-  id,
-  start: storedTime(event.start),
-  status: 'confirmed',
-  ...(event.summary === undefined ? {} : { summary: event.summary }),
-});
+): GcalEvent => {
+  const had = echoed.get(id) ?? {};
+  const has = {
+    end: event.end ?? had.end,
+    start: event.start ?? had.start,
+    summary: event.summary ?? had.summary,
+  };
+  echoed.set(id, has);
+  return {
+    end: storedTime(has.end),
+    etag,
+    id,
+    start: storedTime(has.start),
+    status: 'confirmed',
+    ...(has.summary === undefined ? {} : { summary: has.summary }),
+  };
+};
 
 /**
  * Google as If-Match sees it: a patch or delete carrying the stale
@@ -628,8 +641,8 @@ describe('EventMutations', () => {
         };
         const { op, record } = yield* parkEdit;
         expect(op.eventId).toBe(record.id);
-        expect(op.serverPayload?.title).toBe('Server title');
-        expect(op.serverPayload?.etag).toBe('"server-2"');
+        expect(op.beforePayload?.title).toBe('Server title');
+        expect(op.beforePayload?.etag).toBe('"server-2"');
       }).pipe(Effect.provide(mutationsLayer(client)));
     });
 
@@ -650,7 +663,8 @@ describe('EventMutations', () => {
       return Effect.gen(function* () {
         const { mutations, op, record } = yield* parkEdit;
         // Google still has the event (the fetch said so when parking).
-        yield* (yield* PendingOpRepo).markConflict(op.id, 1, record);
+        yield* (yield* PendingOpRepo).setBefore(op.id, record);
+        yield* (yield* PendingOpRepo).markConflict(op.id, 1);
         yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
         yield* mutations.processPendingOps();
 
@@ -662,13 +676,12 @@ describe('EventMutations', () => {
       }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
     });
 
-    it.effect('keep mine on an untitled event clears a title Google got meanwhile', () => {
+    it.effect('keep mine on a title the user cleared clears the one Google got meanwhile', () => {
       let server: GcalEvent | undefined;
       const client = stubClient({
         getEvent: () => Effect.succeed(server!),
         insertEvent: ({ event }) => {
-          // Created untitled: Google stores no summary.
-          server = { ...echo({ end: event.end, start: event.start }, event.id ?? 'x', '"v1"') };
+          server = { ...echo(event, event.id ?? 'x', '"v1"') };
           return Effect.succeed(server);
         },
         patchEvent: ({ baseEtag, event, eventId }) =>
@@ -687,14 +700,15 @@ describe('EventMutations', () => {
       return Effect.gen(function* () {
         yield* seedCalendar;
         const mutations = yield* EventMutations;
-        const record = yield* mutations.createEvent({ ...draft, title: '(no title)' });
+        const record = yield* mutations.createEvent({ ...draft, title: 'Draft' });
         yield* mutations.processPendingOps();
-        expect((yield* rowOf(record.id))?.title).toBe('(no title)');
-        // A local time change waits while someone names the event on Google.
+        expect((yield* rowOf(record.id))?.title).toBe('Draft');
+        // The user clears the title while someone renames the event on
+        // Google: both changed the title, so the edit waits for a choice.
         yield* mutations.updateEvent({
           accountId: 'acc-1',
           calendarId: 'cal-1',
-          changes: { endUtc: draft.endUtc + 3_600_000 },
+          changes: { title: '(no title)' },
           eventId: record.id,
         });
         server = { ...server!, etag: '"v2"', summary: 'Lunch' };
@@ -715,7 +729,8 @@ describe('EventMutations', () => {
       const server: { current: GcalEvent | undefined } = { current: undefined };
       return Effect.gen(function* () {
         const { mutations, op, record } = yield* parkEdit;
-        expect(op.serverPayload).toBeUndefined();
+        // Google has it no more: no copy is left.
+        expect(op.beforePayload).toBeNull();
         yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
         yield* mutations.processPendingOps();
 
@@ -783,14 +798,40 @@ describe('EventMutations', () => {
       }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
     });
 
-    it.effect('discarding a queued edit hands its row back to sync', () => {
+    it.effect("discarding a parked edit shows Google's version", () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = {
+        current: {
+          end: { dateTime: '2026-07-03T12:00:00Z' },
+          etag: '"server-2"',
+          id: 'placeholder',
+          start: { dateTime: '2026-07-03T11:00:00Z' },
+          status: 'confirmed',
+          summary: 'Conflicting title',
+        },
+      };
+      return Effect.gen(function* () {
+        const { mutations, op, record } = yield* parkEdit;
+        yield* mutations.discardPendingOp(op.id);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        const row = yield* rowOf(record.id);
+        expect(row?.syncStatus).toBe('synced');
+        expect(row?.title).toBe('Conflicting title');
+        expect(row?.etag).toBe('"server-2"');
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
+
+    it.effect('discarding an edit of an event Google deleted leaves no row', () => {
       const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
       const server: { current: GcalEvent | undefined } = { current: undefined };
       return Effect.gen(function* () {
         const { mutations, op, record } = yield* parkEdit;
         yield* mutations.discardPendingOp(op.id);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        expect((yield* rowOf(record.id))?.syncStatus).toBe('synced');
+        // Put back as it was before the edit, it stayed for good: Google's
+        // list had already told of the delete, or tells it to a row that
+        // is not there.
+        expect(yield* rowOf(record.id)).toBeNull();
       }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
     });
   });
@@ -1868,5 +1909,50 @@ describe('a rejection of an edit replaced while in flight', () => {
       expect(row?.title).toBe('Second');
       expect(row?.syncStatus).toBe('pending');
     }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+});
+
+describe('an edit made while an earlier one of the event is out', () => {
+  it.effect('a rename back to the old title is sent once the rename has landed', () => {
+    // Review (Opus): the second rename replaced the one in flight and was
+    // measured against Google's copy, which still had the old title: it
+    // changed nothing, so nothing was sent, and the title the user had
+    // taken back stayed on Google and on the row.
+    const sent: Array<Record<string, unknown>> = [];
+    let duringFirstPatch: Effect.Effect<unknown, unknown> | undefined;
+    const client = stubClient({
+      insertEvent: ({ event }) => Effect.succeed(echo(event, event.id ?? 'x', '"v1"')),
+      patchEvent: ({ event, eventId }) =>
+        Effect.gen(function* () {
+          sent.push({ ...event });
+          const during = duringFirstPatch;
+          duringFirstPatch = undefined;
+          if (during) {
+            yield* Effect.orDie(during);
+          }
+          return echo(event, eventId, `"v${sent.length + 1}"`);
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent({ ...draft, title: 'Original' });
+      yield* mutations.processPendingOps();
+      const rename = (title: string) =>
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title },
+          eventId: record.id,
+        });
+      yield* rename('Renamed');
+      duringFirstPatch = rename('Original');
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+      expect(sent.map((body) => body['summary'])).toEqual(['Renamed', 'Original']);
+      const final = yield* rowOf(record.id);
+      expect([final?.title, final?.syncStatus]).toEqual(['Original', 'synced']);
+      expect(echoed.get(record.id)?.summary).toBe('Original');
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
   });
 });

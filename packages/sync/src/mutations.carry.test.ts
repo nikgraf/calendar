@@ -12,6 +12,7 @@ import {
   ApiUnavailableError,
   ConflictError,
   type GcalEvent,
+  type GcalEventPatch,
   GoogleApiError,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
@@ -21,10 +22,11 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
+import { makeHeldEvents } from './heldEvents.ts';
 import { EventMutations } from './mutations.ts';
 
 /**
@@ -32,7 +34,12 @@ import { EventMutations } from './mutations.ts';
  * parks it (Google's copy is `server`), a 400 drops it.
  */
 interface Google {
-  patch: 'conflict' | 'offline' | 'reject';
+  /** Answers the next PATCH in place of `patch`, once (a write that lands). */
+  land?: (event: GcalEventPatch) => Effect.Effect<GcalEvent>;
+  /** `reject-once`: the first PATCH is a 400, the ones after it are offline. */
+  patch: 'conflict' | 'offline' | 'reject' | 'reject-once';
+  /** What each PATCH named, answered or not: "<event id>: <fields>". */
+  sent?: Array<string>;
   server?: GcalEvent;
 }
 
@@ -49,12 +56,23 @@ const googleClient = (google: Google): GoogleCalendarClientShape => ({
   listEvents: () => Effect.succeed({ items: [] }),
   moveEvent: () => Effect.die('unexpected move'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
-  patchEvent: ({ eventId }) =>
-    google.patch === 'conflict'
+  patchEvent: ({ event, eventId }) => {
+    google.sent?.push(`${eventId}: ${Object.keys(event).join(',')}`);
+    if (google.land) {
+      const land = google.land;
+      delete google.land;
+      return land(event);
+    }
+    if (google.patch === 'reject-once') {
+      google.patch = 'offline';
+      return Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 }));
+    }
+    return google.patch === 'conflict'
       ? Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }))
       : google.patch === 'reject'
         ? Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 }))
-        : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        : Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+  },
   replaceEvent: () => Effect.die('not used'),
 });
 
@@ -151,6 +169,13 @@ const layer = (google: Google) =>
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, googleClient(google))),
     Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
   );
+
+/**
+ * Keeps the drain a mutation forks from running before the next call: it
+ * would send the first of two changes a test queues before the second.
+ */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 const series = (changes: { location?: string; title?: string }) =>
   Effect.gen(function* () {
@@ -318,13 +343,13 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
         etag: '"m-2"',
         id: 'master1',
-        // A different room too: the same rename alone would be our own
-        // edit already on Google, which needs no choice (applyOp park).
-        location: 'Room 2',
         recurrence: [RULE],
         start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
         status: 'confirmed',
-        summary: 'Standup',
+        // Another rename than ours: the same one would be our own edit
+        // already on Google, and one of another field would simply hold
+        // beside ours; neither needs a choice (applyOp park).
+        summary: 'Daily sync',
       },
     };
     return Effect.gen(function* () {
@@ -332,15 +357,15 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       yield* series({ title: 'Standup' });
       yield* mutations.processPendingOps();
       const [op] = yield* masterOp;
-      // Another device made the same rename, Google carried it onto the
+      // Another device renamed the series, Google carried that onto the
       // exception, and a pull brought that version in while ours waited.
       yield* (yield* EventRepo).upsertMany(
-        [new EventRecord({ ...moved, etag: '"o-3-theirs"', title: 'Standup' })],
+        [new EventRecord({ ...moved, etag: '"o-3-theirs"', title: 'Daily sync' })],
         { mode: 'pull' },
       );
       yield* mutations.resolveConflict({ choice: 'theirs', opId: op!.id });
 
-      expect((yield* text(moved.id)).title).toBe('Standup');
+      expect((yield* text(moved.id)).title).toBe('Daily sync');
       // Not pulled yet: its own text, until Google's copy arrives.
       expect((yield* text(plain.id)).title).toBe('Daily');
     }).pipe(Effect.provide(layer(google)));
@@ -366,6 +391,36 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
     }).pipe(Effect.provide(layer({ patch: 'offline' }))),
   );
 
+  it.effect("Google's own rename, pulled while an edit waits, is not carried again", () =>
+    Effect.gen(function* () {
+      const events = yield* EventRepo;
+      const queue = yield* PendingOpRepo;
+      yield* series({ location: 'Room 1' });
+      // Another device renamed the series, and named this exception itself
+      // after that; a pull brings both while the location edit waits.
+      const theirs = [
+        new EventRecord({ ...master, etag: '"m-2"', title: 'Daily sync' }),
+        new EventRecord({ ...plain, etag: '"o-5-theirs"', title: 'Retro' }),
+      ];
+      const held = makeHeldEvents({ eventRepo: events, pendingOpRepo: queue });
+      yield* events.upsertMany(yield* held.receive('acc-1', 'cal-1', theirs), { mode: 'pull' });
+      expect((yield* row('master1'))?.title).toBe('Daily sync');
+
+      // The next edit changes no title on Google: the exception keeps its own.
+      yield* (yield* EventMutations).updateRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { description: 'Agenda in the doc' },
+        masterId: 'master1',
+        originalStartUtc: master.startUtc,
+        scope: 'series',
+      });
+      expect((yield* text(plain.id)).title).toBe('Retro');
+      const [op] = yield* masterOp;
+      expect(op?.carriedText?.base.title).toBe('Daily sync');
+    }).pipe(Effect.provide(layer({ patch: 'offline' }))),
+  );
+
   it.effect('an exception edited after the carry keeps its newer text', () =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
@@ -378,20 +433,268 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         originalStartUtc: moved.originalStartUtc!,
         scope: 'instance',
       });
-      // Reverting the series is no change on Google: the edited exception
-      // keeps its title there too, the untouched one gets its own back.
-      yield* series({ title: 'Daily' });
-      expect((yield* text(moved.id)).title).toBe('Custom');
-      expect((yield* text(plain.id)).title).toBe('Daily');
+      // The series' next rename takes the first one's place in the queue,
+      // ahead of the exception's edit: Google copies the new title onto
+      // every exception, so the edited one takes it too, in its row and in
+      // what its own change sends.
+      const own = Effect.map(
+        (yield* PendingOpRepo).listAll(),
+        (ops) => ops.find((op) => op.eventId === moved.id)?.payload?.title,
+      );
+      yield* series({ title: 'Weekly' });
+      expect((yield* masterOp).map((op) => op.payload?.title)).toEqual(['Weekly']);
+      expect((yield* text(moved.id)).title).toBe('Weekly');
+      expect(yield* own).toBe('Weekly');
+      expect((yield* text(plain.id)).title).toBe('Weekly');
 
       yield* series({ title: 'Sync' });
+      expect((yield* masterOp).map((op) => op.payload?.title)).toEqual(['Sync']);
       expect((yield* text(moved.id)).title).toBe('Sync');
-      const [op] = yield* masterOp;
-      yield* mutations.discardPendingOp(op!.id);
+      // Discarded, the exceptions show what they did before the renames:
+      // the edited one its own title, which its change sends again.
+      yield* mutations.discardPendingOp((yield* masterOp).at(-1)!.id);
+      expect((yield* text('master1')).title).toBe('Daily');
       expect((yield* text(moved.id)).title).toBe('Custom');
+      expect(yield* own).toBe('Custom');
       expect((yield* text(plain.id)).title).toBe('Daily');
     }).pipe(Effect.provide(layer({ patch: 'offline' }))),
   );
+
+  it.effect("a rename set back gives an exception's queued change its own title back", () => {
+    // The series' rename had won over the exception's own title, in its
+    // row and in what its queued change sends. Set back to the title
+    // Google has, the series no longer changes it there, so nothing is
+    // copied: the row showed the exception's own again, while its change
+    // still sent the rename that was gone.
+    const google: Google = { patch: 'offline', sent: [] };
+    return Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* series({ title: 'Standup' });
+      yield* mutations.updateRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Custom' },
+        masterId: 'master1',
+        originalStartUtc: moved.originalStartUtc!,
+        scope: 'instance',
+      });
+      yield* series({ title: 'Weekly' });
+      const own = Effect.map(
+        (yield* PendingOpRepo).listAll(),
+        (ops) => ops.find((op) => op.eventId === moved.id)?.payload?.title,
+      );
+      expect([yield* own, (yield* text(moved.id)).title]).toEqual(['Weekly', 'Weekly']);
+      yield* series({ title: 'Daily' });
+      expect([yield* own, (yield* text(moved.id)).title]).toEqual(['Custom', 'Custom']);
+    }).pipe(Effect.provide(layer(google)));
+  });
+
+  it.effect(
+    "an exception named like its series by hand keeps that name when the series' rename goes",
+    () => {
+      // Its title equal to the series' read as the series' carry, and the
+      // discard of the series' rename put the exception's old title into
+      // its row and its queued change: the user's own rename was lost.
+      const google: Google = { patch: 'offline', sent: [] };
+      return Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const rename = (title: string) =>
+          mutations.updateRecurring({
+            accountId: 'acc-1',
+            calendarId: 'cal-1',
+            changes: { title },
+            masterId: 'master1',
+            originalStartUtc: moved.originalStartUtc!,
+            scope: 'instance',
+          });
+        yield* series({ title: 'Standup' });
+        yield* rename('Custom');
+        yield* rename('Standup');
+        const [seriesOp] = yield* masterOp;
+        yield* mutations.discardPendingOp(seriesOp!.id);
+        const own = (yield* (yield* PendingOpRepo).listAll()).find((op) => op.eventId === moved.id);
+        expect([own?.payload?.title, (yield* text(moved.id)).title]).toEqual([
+          'Standup',
+          'Standup',
+        ]);
+        // The exception the series' rename alone had reached has its own back.
+        expect((yield* text(plain.id)).title).toBe('Daily');
+      }).pipe(Effect.provide(layer(google)));
+    },
+  );
+
+  it.effect('an exception edited under a queued rename keeps only its own change', () => {
+    // Its change was measured against Google's copy of it, which has its
+    // own title: the carried one counted as the exception's, and went to
+    // Google as that after the rename was discarded.
+    const google: Google = { patch: 'offline', sent: [] };
+    return Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* series({ title: 'Standup' });
+      yield* mutations.updateRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { description: 'Notes' },
+        masterId: 'master1',
+        originalStartUtc: plain.originalStartUtc!,
+        scope: 'instance',
+      });
+      const own = Effect.map((yield* PendingOpRepo).listAll(), (ops) => {
+        const op = ops.find((one) => one.eventId === plain.id);
+        return [op?.changed?.join(','), op?.payload?.title, op?.beforePayload?.title];
+      });
+      // Laid over Google's copy with the rename's title carried onto it.
+      expect(yield* own).toEqual(['description', 'Standup', 'Daily']);
+
+      yield* mutations.discardPendingOp((yield* masterOp)[0]!.id);
+      expect(yield* own).toEqual(['description', 'Daily', 'Daily']);
+      expect((yield* text(plain.id)).title).toBe('Daily');
+      google.sent = [];
+      yield* mutations.processPendingOps();
+      expect(google.sent).toEqual([`${plain.id}: description`]);
+    }).pipe(Effect.provide(layer(google)));
+  });
+
+  it.effect("under two queued edits of its series, an exception's copy holds its own text", () =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      const instance = (id: EventRecord, changes: { description?: string; title?: string }) =>
+        mutations.updateRecurring({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes,
+          masterId: 'master1',
+          originalStartUtc: id.originalStartUtc!,
+          scope: 'instance',
+        });
+      // A place for all, one exception's own title, then a title for all:
+      // one change of the series, ahead of the exception's.
+      yield* series({ location: 'Room 1' });
+      yield* instance(moved, { title: 'Custom' });
+      yield* series({ title: 'Standup' });
+      expect((yield* masterOp).map((op) => op.changed?.join(','))).toEqual(['location,title,geo']);
+      expect(yield* text(plain.id)).toEqual({ location: 'Room 1', title: 'Standup' });
+
+      yield* instance(plain, { description: 'Notes' });
+      const op = (yield* (yield* PendingOpRepo).listAll()).find((one) => one.eventId === plain.id);
+      // Google has neither edit yet: its copy of the exception is as it was.
+      expect([op?.beforePayload?.title, op?.beforePayload?.location]).toEqual(['Daily', undefined]);
+      expect(op?.changed).toEqual(['description']);
+      expect([op?.payload?.title, op?.payload?.location]).toEqual(['Standup', 'Room 1']);
+    }).pipe(Effect.provide(layer({ patch: 'offline' }))),
+  );
+
+  it.effect('a change Google rejects takes the ones made on top of it along', () =>
+    // Review (Codex, round 3): "does not repeat", then new times for the
+    // single event that left, then two changes in the queue. Google turned
+    // the first down for good, the second stayed queued, had the rule back
+    // under it and would have moved every occurrence. They are one change
+    // now, and go together.
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      const at = { accountId: 'acc-1', calendarId: 'cal-1' };
+      yield* mutations.updateRecurring({
+        ...at,
+        changes: { recurrence: null },
+        masterId: 'master1',
+        originalStartUtc: master.startUtc,
+        scope: 'series',
+      });
+      yield* mutations.updateEvent({
+        ...at,
+        changes: { endUtc: master.endUtc + HOUR, startUtc: master.startUtc + HOUR },
+        eventId: 'master1',
+      });
+      expect((yield* masterOp).length).toBe(1);
+      yield* mutations.processPendingOps();
+      expect(yield* masterOp).toEqual([]);
+      const back = yield* row('master1');
+      expect([back?.recurrence, back?.startUtc, back?.syncStatus]).toEqual([
+        [RULE],
+        master.startUtc,
+        'synced',
+      ]);
+    }).pipe(noYield, Effect.provide(layer({ patch: 'reject-once' }))),
+  );
+
+  it.effect('a new rule made while the first rule is on its way is still sent', () => {
+    // Review (Opus, round 5): a rule for all, one occurrence's own place, a
+    // place for all, and, while the rule's PATCH was out, another rule.
+    // (With the place queued as a change of its own, the new rule was
+    // written into the update on its way and left out of the new one as
+    // nothing new; the PATCH landed with the first rule, and the last one
+    // was gone for good.)
+    const second = 'RRULE:FREQ=DAILY;COUNT=6';
+    const google: Google = { patch: 'offline' };
+    return Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'master1' };
+      const forAll = (changes: { location?: string; recurrence?: Array<string> }) =>
+        mutations.updateRecurring({
+          ...at,
+          changes,
+          originalStartUtc: master.startUtc,
+          scope: 'series',
+        });
+      yield* forAll({ recurrence: ['RRULE:FREQ=DAILY;INTERVAL=2;COUNT=10'] });
+      yield* mutations.updateRecurring({
+        ...at,
+        changes: { location: 'Room 2' },
+        originalStartUtc: master.startUtc + 2 * DAY,
+        scope: 'instance',
+      });
+      yield* forAll({ location: 'Room 3' });
+      expect((yield* masterOp).length).toBe(1);
+      // The first rule lands; the second is made while it is out.
+      google.land = (event) =>
+        Effect.as(Effect.orDie(forAll({ recurrence: [second] })), {
+          end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
+          etag: '"m-2"',
+          id: 'master1',
+          recurrence: event.recurrence ?? [RULE],
+          start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
+          status: 'confirmed',
+          summary: 'Daily',
+        });
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      // Google has the first rule; what still waits holds the second over it.
+      const waiting = yield* masterOp;
+      expect(waiting.map((op) => op.basePayload?.recurrence)).toEqual([
+        ['RRULE:FREQ=DAILY;INTERVAL=2;COUNT=10'],
+      ]);
+      expect(waiting.map((op) => [op.payload?.recurrence, op.payload?.location])).toEqual([
+        [[second], 'Room 3'],
+      ]);
+      expect((yield* row('master1'))?.recurrence).toEqual([second]);
+    }).pipe(Effect.provide(layer(google)));
+  });
+
+  it.effect("a cut that takes a series edit's place still sends its reminders", () => {
+    // Review (Opus, round 8): reminders ride on a flag of the op that set
+    // them. The cut took the edit's place without it, sent the new end of
+    // the series alone, and the reminders reverted when it landed.
+    const google: Google = { patch: 'offline', sent: [] };
+    return Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'master1' };
+      yield* mutations.updateRecurring({
+        ...at,
+        changes: { reminders: { overrides: [{ method: 'popup', minutes: 5 }], useDefault: false } },
+        originalStartUtc: master.startUtc,
+        scope: 'series',
+      });
+      yield* mutations.deleteRecurring({
+        ...at,
+        originalStartUtc: master.startUtc + 8 * DAY,
+        scope: 'following',
+      });
+      google.sent = [];
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      expect(google.sent[0]).toBe('master1: recurrence,reminders');
+    }).pipe(Effect.provide(layer(google)));
+  });
 
   it.effect('splitting the series keeps the carry undoable', () =>
     Effect.gen(function* () {

@@ -8,6 +8,8 @@ import { CALLOUT_CLASS } from '../ui/calloutStyles.ts';
  */
 const labels = (request: EditorConfirmRequest): { readonly no: string; readonly yes: string } => {
   switch (request.kind) {
+    case 'allEvents':
+      return { no: 'Keep editing', yes: 'Save anyway' };
     case 'move':
       return { no: 'Keep here', yes: 'Move anyway' };
     case 'convert':

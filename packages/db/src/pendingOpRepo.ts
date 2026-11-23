@@ -1,17 +1,31 @@
-import { type CopySource, type EventRecord, type PendingOp, type TaskRecord } from '@calendar/core';
+import {
+  type CarriedText,
+  type CopySource,
+  type EventRecord,
+  type PendingOp,
+} from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
-import { pendingOpFromRow, type PendingOpRow } from './rows.ts';
 import {
-  carriedTextJson,
-  copySourceJson,
-  eventListJson,
-  eventPayloadJson,
-  taskPayloadJson,
-} from './repoShared.ts';
+  answerChangesOf,
+  carriedChangesOf,
+  CHANGING_KINDS,
+  eventChangesFrom,
+  eventChangesOf,
+  eventFromRow,
+  type EventRow,
+  slotOf,
+  HOLDING_KINDS,
+  namesOf,
+  parseJson,
+  pendingOpFromRow,
+  type PendingOpRow,
+  priorOf,
+} from './rows.ts';
+import { carriedTextJson, copySourceJson, eventPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
   /**
@@ -33,26 +47,14 @@ export interface PendingOpRepoShape {
     options?: { readonly editsOnly?: boolean },
   ) => Effect.Effect<void, SqlError>;
   /**
-   * After an op (`landed`) landed while others of the event were queued:
-   * what Google acknowledged (`synced`) is now what every one of them
-   * replaces — the ones queued after it took their snapshot with its
-   * change in, the ones before it never held that change — so their
-   * snapshots move to it; a discard must not undo the landed change along
-   * with its own. Parked ops are left alone.
+   * Google's copy of the event becomes `synced`: what Google acknowledged
+   * when an op (`landed`) landed while others of the event were queued, or
+   * what a pull's page brought. Every queued op of the event reads it, so
+   * a discard of one never undoes a landed change along with its own.
    */
   readonly advanceBefore: (
     event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
     synced: EventRecord,
-    landed: { readonly id: string },
-  ) => Effect.Effect<void, SqlError>;
-  /**
-   * The task counterpart of `advanceBefore`, for the ops of one task of
-   * one list. Reorders keep theirs: a later one holds the place an earlier
-   * one gives, and Google's order comes back through the list's read-back.
-   */
-  readonly advanceBeforeTask: (
-    task: { readonly accountId: string; readonly listId: string; readonly taskId: string },
-    synced: TaskRecord,
     landed: { readonly id: string },
   ) => Effect.Effect<void, SqlError>;
   /**
@@ -95,24 +97,31 @@ export interface PendingOpRepoShape {
     >,
     SqlError
   >;
-  readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
   /**
-   * A pull confirmed these items deleted upstream (`containerId`: the
-   * calendar or task list): a queued delete of one has nothing left to put
-   * back, so its snapshot goes — a discard would otherwise restore an
-   * event or task the sync token has already seen removed.
+   * Queues the op, at the end. `replaces` names a queued op it takes the
+   * place of instead: that one leaves, and this one stands where it stood
+   * in the queue order (its `createdAt` too), ahead of what was queued
+   * behind it.
+   */
+  readonly enqueue: (op: PendingOp, replaces?: string) => Effect.Effect<void, SqlError>;
+  /**
+   * A pull confirmed these events deleted upstream: Google's copies of
+   * them go, and those of the exceptions a queued delete of one holds, so
+   * nothing is left to put back — a discard would otherwise restore an
+   * event the sync token has already seen removed. (A task's copy:
+   * `TaskRepo.removeCopies`.)
    */
   readonly forgetDeleted: (
     accountId: string,
-    containerId: string,
+    calendarId: string,
     ids: ReadonlyArray<string>,
   ) => Effect.Effect<void, SqlError>;
   /**
    * A series' delete landed (or found it gone): Google deleted its
    * occurrences with it, so a queued edit, answer or delete of one has no
-   * row left to put back. Their snapshots say so (`null`: a discard
-   * removes what the op shows) instead of writing an exception back
-   * without its master. An occurrence id is `<masterId>_` and a digit; a
+   * row left to put back. Their copies go (`null`: a discard removes
+   * what the op shows) instead of writing an exception back without its
+   * master. An occurrence id is `<masterId>_` and a digit; a
    * split made in Google's UI (`<masterId>_R…`) is its own series.
    */
   readonly forgetSeries: (
@@ -121,6 +130,20 @@ export interface PendingOpRepoShape {
     masterId: string,
   ) => Effect.Effect<void, SqlError>;
   readonly getById: (opId: string) => Effect.Effect<PendingOp | undefined, SqlError>;
+  /**
+   * The user changed an event, or an occurrence of a series, whose change
+   * they had given up and which still waits for Google's word
+   * (`markDiscarded`; not a move): that change is kept after all and sent
+   * again. What it left on screen is what the user just built on, and
+   * taken back once Google answered, the new change had nothing to stand on.
+   * An occurrence's id is its series' id, `_` and a date: a series split
+   * off in Google's own UI (`<id>_R…`) is no occurrence of its source.
+   */
+  readonly keepGivenUp: (event: {
+    readonly accountId: string;
+    readonly calendarId: string;
+    readonly eventId: string;
+  }) => Effect.Effect<void, SqlError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   /**
    * The deletes queued in one calendar of one account: few wait at a
@@ -135,24 +158,39 @@ export interface PendingOpRepoShape {
   /**
    * The ops queued for one event of one account, in queue order. Every
    * edit and every ack asks this; filtering in SQL decodes only these ops,
-   * not the whole queue's payloads.
+   * not the whole queue's payloads. `without` is an op on its way out of
+   * the queue: left out, and its changes out of the others' versions.
    */
-  readonly listForEvent: (event: {
-    readonly accountId: string;
-    readonly calendarId: string;
-    readonly eventId: string;
-  }) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  readonly listForEvent: (
+    event: {
+      readonly accountId: string;
+      readonly calendarId: string;
+      readonly eventId: string;
+    },
+    without?: string,
+  ) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  /**
+   * A task's queued ops in every list of the account, in queue order: a
+   * move re-queues what follows it in its destination.
+   */
+  readonly listForTask: (
+    accountId: string,
+    taskId: string,
+  ) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   /** Makes a waiting op due now (what it waited for left the queue); a parked one stays. */
   readonly makeDue: (opId: string) => Effect.Effect<void, SqlError>;
   /**
-   * Parks an op after a 412: the drain skips it until `unpark` or removal.
-   * `serverPayload` is Google's version (undefined = deleted on Google).
+   * Parks an op whose event changed on Google: the drain skips it until
+   * `unpark` or removal. Google's version is the event's copy by then
+   * (`beforePayload`; none means Google deleted the event).
    */
-  readonly markConflict: (
-    opId: string,
-    at: number,
-    serverPayload: PendingOp['serverPayload'],
-  ) => Effect.Effect<void, SqlError>;
+  readonly markConflict: (opId: string, at: number) => Effect.Effect<void, SqlError>;
+  /**
+   * The user gave the change up, and Google has still to say what it has
+   * of the item (`PendingOp.discarded`): it stays queued, due now, never
+   * sent again, and says why.
+   */
+  readonly markDiscarded: (opId: string, reason: string) => Effect.Effect<void, SqlError>;
   /** Persists the pre-network stamp for non-idempotent calls. */
   readonly markDispatched: (opId: string, at: number) => Effect.Effect<void, SqlError>;
   readonly markFailed: (
@@ -162,6 +200,11 @@ export interface PendingOpRepoShape {
     lastError: string,
   ) => Effect.Effect<void, SqlError>;
   /**
+   * A pull found the events these moves take out of a calendar gone from
+   * it: they have nothing to put back there (`PendingOp.sourceGone`).
+   */
+  readonly markSourceGone: (opIds: ReadonlyArray<string>) => Effect.Effect<void, SqlError>;
+  /**
    * The series `masterId` moved from calendar `from` to `to` (or a move of
    * it went back): the creates split off it follow (`splitIn`).
    */
@@ -170,19 +213,6 @@ export interface PendingOpRepoShape {
     masterId: string,
     from: string,
     to: string,
-  ) => Effect.Effect<void, SqlError>;
-  /**
-   * After a pull page: these events (live, not cancelled) came in, and
-   * where one's row is still pending the pull skipped it — the tombstone
-   * an occurrence delete leaves. Google's copy becomes that delete's
-   * snapshot, the one place it lands; a discard would otherwise put back
-   * the exception as it was before Google's change. Where the pull wrote
-   * the row, the row is Google's copy (`isPulledCopy`).
-   */
-  readonly rememberPulled: (
-    accountId: string,
-    calendarId: string,
-    events: ReadonlyArray<EventRecord>,
   ) => Effect.Effect<void, SqlError>;
   readonly remove: (opId: string) => Effect.Effect<void, SqlError>;
   /**
@@ -196,8 +226,8 @@ export interface PendingOpRepoShape {
     eventId: string,
   ) => Effect.Effect<void, SqlError>;
   /**
-   * Writes an op re-keyed to another calendar (its calendar, the event
-   * snapshots and its retry state) in place: a released move's followers
+   * Writes an op re-keyed to another calendar (its calendar, Google's
+   * copy of its event and its retry state) in place: a released move's followers
    * go back keeping their place in the queue, ties on `created_at`
    * included.
    */
@@ -220,26 +250,42 @@ export interface PendingOpRepoShape {
     newEventId: string,
   ) => Effect.Effect<void, SqlError>;
   /**
-   * Replaces one op's event snapshot: a discarded op of the same event
-   * takes its change out of the snapshots the others hold. `null`: there
-   * is nothing to put back (a landed change of the series' rule dropped
-   * the exception it held).
+   * Google's copy of the event moved to `etag` and the queued ops were
+   * laid over it again (heldEvents.ts): the ones not parked send it as
+   * their If-Match now. `null`: they send none (the version came from the
+   * calendar a queued move takes the event out of, and the move gives it
+   * another etag).
+   */
+  readonly setBaseEtag: (
+    event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
+    etag: string | null,
+  ) => Effect.Effect<void, SqlError>;
+  /**
+   * Replaces Google's copy of the op's event, which every queued op of
+   * that event reads as what it replaces (`beforePayload`). `null`: Google
+   * has none (a landed change of the series' rule dropped the exception),
+   * so there is nothing to put back.
    */
   readonly setBefore: (opId: string, before: EventRecord | null) => Effect.Effect<void, SqlError>;
   /**
-   * Replaces the exceptions a series delete holds (`undefined`: none):
-   * Google's copies go into it while the master is gone locally, and out
-   * of it once a pull puts the master back.
+   * Replaces the exceptions a change of a series holds (`undefined`:
+   * none), each kept as Google's copy of that exception: a delete's while
+   * the master is gone locally, and the ones an update drops (a cut, a new
+   * rule, new times) until it lands or is given up. A copy an op of the
+   * exception itself holds stays whatever is passed.
    */
   readonly setBeforeOverrides: (
     opId: string,
     overrides: ReadonlyArray<EventRecord> | undefined,
   ) => Effect.Effect<void, SqlError>;
   /**
-   * Replaces one op's task snapshot: a reorder that will not land hands
-   * the place Google still has to the reorder queued behind it.
+   * Replaces what a series edit records of the text it carried onto its
+   * exceptions (`undefined`: nothing).
    */
-  readonly setBeforeTask: (opId: string, before: TaskRecord) => Effect.Effect<void, SqlError>;
+  readonly setCarriedText: (
+    opId: string,
+    carriedText: CarriedText | undefined,
+  ) => Effect.Effect<void, SqlError>;
   /**
    * Names what the copies a move or a conversion queued were copied from
    * (`undefined`: nothing — an Apple source the move could not delete
@@ -271,24 +317,22 @@ export interface PendingOpRepoShape {
    * overwrites the server copy, and makes the op due immediately.
    */
   readonly unpark: (opId: string, now: number) => Effect.Effect<void, SqlError>;
+  /**
+   * An op of this event (or of its series, or of one of its occurrences)
+   * left the queue: the ones that stood back for it are due now, instead
+   * of waiting out the backoff they collected standing back. How many.
+   */
+  readonly wakeWaiting: (event: {
+    readonly accountId: string;
+    readonly eventId: string;
+  }) => Effect.Effect<number, SqlError>;
 }
+
+/** The op kinds that can take a series' exceptions off the table (`beforeOverrides`). */
+const TAKING_KINDS: ReadonlySet<string> = new Set(['delete', 'update']);
 
 /** Ops one drain pass takes on; a larger backlog continues on the next kick. */
 const DRAIN_PAGE_SIZE = 200;
-
-/**
- * `before_payload` keeps its three states apart: absent → SQL NULL, "no
- * row before" → the JSON text `null`, a record → its JSON (rows.ts reads
- * them back the same way).
- */
-const beforePayloadColumn = (before: PendingOp['beforePayload']): string | null =>
-  before === undefined ? null : before === null ? 'null' : JSON.stringify(eventPayloadJson(before));
-
-/** Rows of an unknown op kind are skipped: nothing could apply them. */
-const decodedOps = (row: PendingOpRow): Array<PendingOp> => {
-  const op = pendingOpFromRow(row);
-  return op ? [op] : [];
-};
 
 const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | SqlClient> =
   Effect.gen(function* () {
@@ -296,6 +340,236 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
     const reactivity = yield* Reactivity;
     const invalidating = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       reactivity.mutation([OPS_KEY], effect);
+
+    /**
+     * Every op with Google's copy of its event joined in: what an event op
+     * replaces (`beforePayload`) is kept once per event in `event_copies`,
+     * so every queued op of an event reads the same one. And the exceptions
+     * a change of a series took off the table (`beforeOverrides`): a
+     * delete's are the copies of its exceptions that no delete of their own
+     * holds; an update that drops exceptions (`drops_from`) holds the ones
+     * that have no row either (an answer may still wait on one).
+     */
+    const selectOps = sql`SELECT p.*, c.payload AS copy_payload,
+        CASE WHEN p.kind = 'delete' THEN (
+          SELECT json_group_array(json(x.payload)) FROM event_copies x
+          WHERE x.account_id = p.account_id AND x.calendar_id = p.calendar_id
+            AND json_extract(x.payload, '$.recurringEventId') = p.event_id
+            AND NOT EXISTS (SELECT 1 FROM pending_ops d
+              WHERE d.account_id = x.account_id AND d.calendar_id = x.calendar_id
+                AND d.event_id = x.id AND d.kind = 'delete')
+        ) WHEN p.kind = 'update' AND p.drops_from IS NOT NULL THEN (
+          SELECT json_group_array(json(x.payload)) FROM event_copies x
+          WHERE x.account_id = p.account_id AND x.calendar_id = p.calendar_id
+            AND json_extract(x.payload, '$.recurringEventId') = p.event_id
+            AND NOT EXISTS (SELECT 1 FROM pending_ops d
+              WHERE d.account_id = x.account_id AND d.calendar_id = x.calendar_id
+                AND d.event_id = x.id AND d.kind = 'delete')
+            AND NOT EXISTS (SELECT 1 FROM events e
+              WHERE e.account_id = x.account_id AND e.calendar_id = x.calendar_id
+                AND e.id = x.id)
+        ) END AS taken_payload
+      FROM pending_ops p
+      LEFT JOIN event_copies c ON c.account_id = p.account_id
+        AND c.calendar_id = p.calendar_id AND c.id = p.event_id`;
+    /**
+     * The row of the series a queued change of an occurrence without a
+     * copy belongs to (`slotOf`): what that change is laid over.
+     */
+    const masterOf = (row: PendingOpRow) =>
+      Effect.gen(function* () {
+        const slot = slotOf(row);
+        if (!slot) {
+          return undefined;
+        }
+        const masters = yield* sql<EventRow>`SELECT * FROM events
+          WHERE account_id = ${row.account_id} AND calendar_id = ${row.calendar_id}
+            AND id = ${slot.masterId}`;
+        return masters[0] ? eventFromRow(masters[0]) : undefined;
+      });
+    /**
+     * The changes of every queued update and answer by event, in queue
+     * order: an op's version of its event is Google's copy with the ones up
+     * to its own laid over it.
+     */
+    const chains = Effect.map(
+      sql<{
+        readonly account_id: string;
+        readonly calendar_id: string;
+        readonly carried_text: string | null;
+        readonly changes: string | null;
+        readonly event_id: string;
+        readonly id: string;
+      }>`SELECT id, account_id, calendar_id, event_id, changes, carried_text FROM pending_ops
+        WHERE kind IN ('rsvp', 'update') ORDER BY created_at, rowid`,
+      (rows) => {
+        const byEvent = new Map<string, Array<(typeof rows)[number] & { readonly at: number }>>();
+        for (const [at, row] of rows.entries()) {
+          const key = JSON.stringify([row.account_id, row.calendar_id, row.event_id]);
+          byEvent.set(key, [...(byEvent.get(key) ?? []), { ...row, at }]);
+        }
+        return byEvent;
+      },
+    );
+    type Chains = Effect.Success<typeof chains>;
+    /**
+     * The changes queued ahead of the row that its own are laid over, in
+     * queue order: the ones of its event, and for an exception the text
+     * the queued edits of its series carried onto it (`carriedChangesOf`).
+     * `without` is an op on its way out.
+     */
+    const earlierOf = (all: Chains, row: PendingOpRow, without?: string) => {
+      const chainOf = (eventId: unknown) =>
+        typeof eventId === 'string'
+          ? (all.get(JSON.stringify([row.account_id, row.calendar_id, eventId])) ?? [])
+          : [];
+      const own = chainOf(row.event_id).find((entry) => entry.id === row.id);
+      if (!own) {
+        return [];
+      }
+      const copy = parseJson(row.copy_payload ?? null);
+      const exception =
+        typeof copy === 'object' && copy !== null ? (copy as Record<string, unknown>) : undefined;
+      return (
+        [
+          ...chainOf(row.event_id).map((entry) => ({
+            at: entry.at,
+            changes: eventChangesFrom(entry.changes),
+            id: entry.id,
+          })),
+          ...chainOf(exception?.['recurringEventId']).map((entry) => ({
+            at: entry.at,
+            changes: exception ? carriedChangesOf(entry, exception) : undefined,
+            id: entry.id,
+          })),
+        ]
+          .filter((entry) => entry.at < own.at && entry.id !== without)
+          // A fresh array already (Hermes has no toSorted).
+          .sort((left, right) => left.at - right.at)
+          .flatMap((entry) => (entry.changes ? [entry.changes] : []))
+      );
+    };
+    const noChains: Chains = new Map();
+    /** Rows of an unknown op kind are skipped: nothing could apply them. */
+    const decoded = (rows: ReadonlyArray<PendingOpRow>, without?: string) =>
+      Effect.gen(function* () {
+        const all = rows.some((row) => CHANGING_KINDS.has(row.kind)) ? yield* chains : noChains;
+        const ops = yield* Effect.forEach(rows, (row) =>
+          Effect.map(masterOf(row), (master) =>
+            pendingOpFromRow(row, master, earlierOf(all, row, without)),
+          ),
+        );
+        return ops.flatMap((op) => (op ? [op] : []));
+      });
+    const putCopy = (accountId: string, calendarId: string, eventId: string, copy: EventRecord) =>
+      sql`INSERT OR REPLACE INTO event_copies (account_id, calendar_id, id, payload)
+        VALUES (${accountId}, ${calendarId}, ${eventId},
+                ${JSON.stringify(eventPayloadJson(copy))})`;
+    const dropCopy = (accountId: string, calendarId: string, eventId: string) =>
+      sql`DELETE FROM event_copies WHERE account_id = ${accountId}
+        AND calendar_id = ${calendarId} AND id = ${eventId}`;
+    /**
+     * The copies a newly queued op holds. What it replaces is Google's copy
+     * of its event, held once: an op queued while another already holds the
+     * event reads the copy that one took, whatever the row shows since. The
+     * exceptions a series delete took are Google's copies too.
+     */
+    const holdCopies = (op: PendingOp) =>
+      Effect.gen(function* () {
+        if (op.beforePayload && HOLDING_KINDS.has(op.kind)) {
+          yield* sql`INSERT OR IGNORE INTO event_copies (account_id, calendar_id, id, payload)
+            VALUES (${op.accountId}, ${op.calendarId}, ${op.eventId},
+                    ${JSON.stringify(eventPayloadJson(op.beforePayload))})`;
+        }
+        for (const taken of TAKING_KINDS.has(op.kind) ? (op.beforeOverrides ?? []) : []) {
+          yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
+        }
+      });
+    /**
+     * The place in the queue of the op another takes over (`enqueue`): its
+     * order and its `created_at`. That op leaves; none when it left already.
+     */
+    const takePlace = (replaces: string | undefined) =>
+      Effect.gen(function* () {
+        if (replaces === undefined) {
+          return undefined;
+        }
+        const [place] = yield* sql<{
+          readonly created_at: number;
+          readonly place: number;
+        }>`SELECT rowid AS place, created_at FROM pending_ops WHERE id = ${replaces}`;
+        if (place) {
+          yield* sql`DELETE FROM pending_ops WHERE id = ${replaces}`;
+        }
+        return place;
+      });
+    /**
+     * A copy is kept only while something holds its event: an op that
+     * names it, or the queued change of its series that took the exception
+     * off the table — its delete, or an update that drops exceptions, while
+     * no row shows the exception. The rest go.
+     */
+    const dropIdleCopies = sql`DELETE FROM event_copies WHERE NOT EXISTS (
+      SELECT 1 FROM pending_ops p WHERE p.account_id = event_copies.account_id
+        AND p.calendar_id = event_copies.calendar_id
+        AND (p.event_id = event_copies.id
+          OR (p.event_id = json_extract(event_copies.payload, '$.recurringEventId')
+            AND (p.kind = 'delete'
+              OR (p.kind = 'update' AND p.drops_from IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM events e
+                  WHERE e.account_id = event_copies.account_id
+                    AND e.calendar_id = event_copies.calendar_id
+                    AND e.id = event_copies.id))))))`;
+    /**
+     * Writes what an update or an answer changes (`EventChanges`): the
+     * fields in which its version differs from what it is laid over as the
+     * two stand now — Google's copy with the changes queued ahead of it —
+     * and the ones it named before or takes over from the update it
+     * replaces (`inherited`), whatever their value. From then on its
+     * version is those over that, whatever the copy becomes. One of an
+     * event Google has no copy of keeps its version.
+     */
+    const writeChanges = (opId: string, inherited: ReadonlyArray<string> = []) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<PendingOpRow>`SELECT p.*, c.payload AS copy_payload
+          FROM pending_ops p LEFT JOIN event_copies c ON c.account_id = p.account_id
+            AND c.calendar_id = p.calendar_id AND c.id = p.event_id
+          WHERE p.id = ${opId}`;
+        const row = rows[0];
+        if (!row || !CHANGING_KINDS.has(row.kind)) {
+          return;
+        }
+        const copy = priorOf(row, yield* masterOf(row), earlierOf(yield* chains, row));
+        const payload = parseJson(row.payload);
+        const changes =
+          typeof copy === 'object' &&
+          copy !== null &&
+          typeof payload === 'object' &&
+          payload !== null
+            ? row.kind === 'rsvp'
+              ? answerChangesOf(
+                  copy as Record<string, unknown>,
+                  payload as Record<string, unknown>,
+                  [...Object.keys(eventChangesFrom(row.changes)?.answers ?? {}), ...inherited],
+                )
+              : eventChangesOf(
+                  copy as Record<string, unknown>,
+                  payload as Record<string, unknown>,
+                  row.attendees_changed === 1,
+                  [...namesOf(eventChangesFrom(row.changes)), ...inherited],
+                )
+            : null;
+        yield* sql`UPDATE pending_ops SET changes = ${changes ? JSON.stringify(changes) : null}
+          WHERE id = ${opId}`;
+      });
+    /** The copies of a series' exceptions that no op of their own holds. */
+    const dropTaken = (accountId: string, calendarId: string, masterId: string) =>
+      sql`DELETE FROM event_copies WHERE account_id = ${accountId}
+        AND calendar_id = ${calendarId}
+        AND json_extract(payload, '$.recurringEventId') = ${masterId}
+        AND NOT EXISTS (SELECT 1 FROM pending_ops p
+          WHERE p.account_id = event_copies.account_id
+            AND p.calendar_id = event_copies.calendar_id AND p.event_id = event_copies.id)`;
 
     return {
       countFor: (accountId, sources) => {
@@ -366,60 +640,63 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               ...(row.task_parent === null ? {} : { taskParent: row.task_parent }),
             })),
         ),
-      enqueue: (op) =>
+      enqueue: (op, replaces) =>
         invalidating(
-          Effect.asVoid(sql`
-          INSERT INTO pending_ops (id, account_id, calendar_id, kind, event_id,
+          Effect.gen(function* () {
+            const place = yield* takePlace(replaces);
+            yield* sql`
+          INSERT INTO pending_ops (rowid, id, account_id, calendar_id, kind, event_id,
                                    payload, base_etag, attempts, next_attempt_at,
                                    last_error, created_at, color_hex,
                                    task_list_id, task_status,
                                    task_title, task_notes, task_due, dispatched_at,
                                    attendees_changed, geo_cleared, target_calendar_id,
-                                   reminders_changed, conflict_at, server_payload,
-                                   carried_text, recurrence_cleared, before_payload,
-                                   before_overrides, before_task, before_color_hex,
+                                   reminders_changed, conflict_at,
+                                   carried_text, recurrence_cleared,
+                                   before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
                                    task_previous, drops_from, split_of, split_in,
-                                   split_at, split_check, copy_source)
-          VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
+                                   split_at, split_check, copy_source, source_gone,
+                                   discarded)
+          VALUES (${place?.place ?? null}, ${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
                   ${op.baseEtag ?? null}, ${op.attempts}, ${op.nextAttemptAt},
-                  ${op.lastError ?? null}, ${op.createdAt}, ${op.colorHex ?? null},
+                  ${op.lastError ?? null}, ${place?.created_at ?? op.createdAt},
+                  ${op.colorHex ?? null},
                   ${op.taskListId ?? null}, ${op.taskStatus ?? null},
                   ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null},
                   ${op.dispatchedAt ?? null}, ${op.attendeesChanged ? 1 : 0},
                   ${op.geoCleared ? 1 : 0}, ${op.targetCalendarId ?? null},
                   ${op.remindersChanged ? 1 : 0}, ${op.conflictAt ?? null},
-                  ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null},
                   ${op.carriedText ? JSON.stringify(carriedTextJson(op.carriedText)) : null},
                   ${op.recurrenceCleared ? 1 : 0},
-                  ${beforePayloadColumn(op.beforePayload)},
-                  ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
-                  ${op.beforeTask ? JSON.stringify(taskPayloadJson(op.beforeTask)) : null},
                   ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
                   ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
                   ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null},
                   ${op.splitOf ?? null}, ${op.splitIn ?? null}, ${op.splitAt ?? null},
                   ${op.splitCheck ? 1 : 0},
-                  ${op.copySource ? JSON.stringify(copySourceJson(op.copySource)) : null})
-        `),
+                  ${op.copySource ? JSON.stringify(copySourceJson(op.copySource)) : null},
+                  ${op.sourceGone ? 1 : 0}, ${op.discarded ? 1 : 0})
+        `;
+            yield* holdCopies(op);
+            yield* writeChanges(op.id, op.changed ?? []);
+          }),
         ),
       getById: (opId) =>
-        Effect.map(sql<PendingOpRow>`SELECT * FROM pending_ops WHERE id = ${opId}`, (rows) =>
-          rows[0] ? pendingOpFromRow(rows[0]) : undefined,
+        Effect.map(
+          Effect.flatMap(sql<PendingOpRow>`${selectOps} WHERE p.id = ${opId}`, decoded),
+          (ops) => ops[0],
         ),
       listAll: () =>
-        Effect.map(
-          sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at, rowid`,
-          (rows) => rows.flatMap(decodedOps),
-        ),
+        Effect.flatMap(sql<PendingOpRow>`${selectOps} ORDER BY p.created_at, p.rowid`, decoded),
       listDeletes: (accountId, calendarId) =>
-        Effect.map(
-          sql<PendingOpRow>`SELECT * FROM pending_ops
-            WHERE account_id = ${accountId} AND calendar_id = ${calendarId} AND kind = 'delete'
-            ORDER BY created_at, rowid`,
-          (rows) => rows.flatMap(decodedOps),
+        Effect.flatMap(
+          sql<PendingOpRow>`${selectOps}
+            WHERE p.account_id = ${accountId} AND p.calendar_id = ${calendarId}
+              AND p.kind = 'delete'
+            ORDER BY p.created_at, p.rowid`,
+          decoded,
         ),
       // Bounded: one drain handles a page; the next kick takes the rest.
       advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to, landed, options) =>
@@ -440,60 +717,67 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                       (SELECT rowid FROM pending_ops WHERE id = ${landed.id}), -1)))`,
           ),
         ),
-      advanceBefore: ({ accountId, calendarId, eventId }, synced, landed) =>
-        invalidating(
-          Effect.asVoid(
-            sql`UPDATE pending_ops SET before_payload = ${JSON.stringify(eventPayloadJson(synced))}
-              WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
-                AND event_id = ${eventId} AND conflict_at IS NULL
-                AND kind IN ('delete', 'rsvp', 'update') AND id != ${landed.id}`,
-          ),
-        ),
-      advanceBeforeTask: ({ accountId, listId, taskId }, synced, landed) =>
-        invalidating(
-          Effect.asVoid(
-            sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(synced))}
-              WHERE account_id = ${accountId} AND calendar_id = ${listId}
-                AND event_id = ${taskId} AND conflict_at IS NULL
-                AND kind IN ('completeTask', 'deleteTask', 'updateTask') AND id != ${landed.id}`,
-          ),
-        ),
-      forgetDeleted: (accountId, containerId, ids) =>
+      advanceBefore: ({ accountId, calendarId, eventId }, synced) =>
+        invalidating(Effect.asVoid(putCopy(accountId, calendarId, eventId, synced))),
+      forgetDeleted: (accountId, calendarId, ids) =>
         ids.length === 0
           ? Effect.void
           : invalidating(
               Effect.asVoid(
-                sql`UPDATE pending_ops SET before_payload = NULL, before_overrides = NULL,
-                  before_task = NULL
-                  WHERE account_id = ${accountId} AND calendar_id = ${containerId}
-                    AND event_id IN ${sql.in(ids)} AND kind IN ('delete', 'deleteTask')`,
+                Effect.andThen(
+                  sql`DELETE FROM event_copies WHERE account_id = ${accountId}
+                    AND calendar_id = ${calendarId} AND id IN ${sql.in(ids)}`,
+                  sql`DELETE FROM event_copies WHERE account_id = ${accountId}
+                    AND calendar_id = ${calendarId}
+                    AND json_extract(payload, '$.recurringEventId') IN ${sql.in(ids)}`,
+                ),
               ),
             ),
       forgetSeries: (accountId, calendarId, masterId) =>
         invalidating(
           Effect.asVoid(
-            sql`UPDATE pending_ops SET before_payload = 'null'
+            sql`DELETE FROM event_copies
               WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
-                AND kind IN ('delete', 'rsvp', 'update')
-                AND substr(event_id, 1, length(${masterId}) + 1) = ${masterId} || '_'
-                AND substr(event_id, length(${masterId}) + 2, 1) GLOB '[0-9]'`,
+                AND substr(id, 1, length(${masterId}) + 1) = ${masterId} || '_'
+                AND substr(id, length(${masterId}) + 2, 1) GLOB '[0-9]'`,
+          ),
+        ),
+      keepGivenUp: ({ accountId, calendarId, eventId }) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET discarded = 0, last_error = NULL
+              WHERE discarded = 1 AND kind IN ('delete', 'rsvp', 'update')
+                AND account_id = ${accountId} AND calendar_id = ${calendarId}
+                AND (event_id = ${eventId}
+                  OR (substr(${eventId}, 1, length(event_id) + 1) = event_id || '_'
+                    AND substr(${eventId}, length(event_id) + 2, 1) GLOB '[0-9]'))`,
           ),
         ),
       listDue: (now) =>
-        Effect.map(
+        Effect.flatMap(
           // rowid breaks created_at ties in insertion order (two ops of one
           // mutation, or a fixed test clock) — order matters for moves.
-          sql<PendingOpRow>`SELECT * FROM pending_ops
-            WHERE next_attempt_at <= ${now} AND conflict_at IS NULL ORDER BY created_at, rowid LIMIT ${DRAIN_PAGE_SIZE}`,
-          (rows) => rows.flatMap(decodedOps),
+          sql<PendingOpRow>`${selectOps}
+            WHERE p.next_attempt_at <= ${now} AND p.conflict_at IS NULL
+            ORDER BY p.created_at, p.rowid LIMIT ${DRAIN_PAGE_SIZE}`,
+          decoded,
         ),
-      listForEvent: ({ accountId, calendarId, eventId }) =>
-        Effect.map(
-          sql<PendingOpRow>`SELECT * FROM pending_ops
-            WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
-              AND event_id = ${eventId}
-            ORDER BY created_at, rowid`,
-          (rows) => rows.flatMap(decodedOps),
+      listForEvent: ({ accountId, calendarId, eventId }, without) =>
+        Effect.flatMap(
+          sql<PendingOpRow>`${selectOps}
+            WHERE p.account_id = ${accountId} AND p.calendar_id = ${calendarId}
+              AND p.event_id = ${eventId} AND p.id IS NOT ${without ?? null}
+            ORDER BY p.created_at, p.rowid`,
+          (rows) => decoded(rows, without),
+        ),
+      listForTask: (accountId, taskId) =>
+        Effect.flatMap(
+          sql<PendingOpRow>`${selectOps}
+            WHERE p.account_id = ${accountId} AND p.event_id = ${taskId}
+              AND p.kind IN ('completeTask', 'createTask', 'deleteTask', 'moveTask',
+                'reorderTask', 'updateTask')
+            ORDER BY p.created_at, p.rowid`,
+          decoded,
         ),
       makeDue: (opId) =>
         invalidating(
@@ -502,12 +786,18 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE id = ${opId} AND conflict_at IS NULL`,
           ),
         ),
-      markConflict: (opId, at, serverPayload) =>
+      markConflict: (opId, at) =>
         invalidating(
           Effect.asVoid(
             sql`UPDATE pending_ops SET conflict_at = ${at},
-              server_payload = ${serverPayload ? JSON.stringify(eventPayloadJson(serverPayload)) : null},
               last_error = 'changed on Google'
+              WHERE id = ${opId}`,
+          ),
+        ),
+      markDiscarded: (opId, reason) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET discarded = 1, next_attempt_at = 0, last_error = ${reason}
               WHERE id = ${opId}`,
           ),
         ),
@@ -523,6 +813,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE id = ${opId}`,
           ),
         ),
+      markSourceGone: (opIds) =>
+        opIds.length === 0
+          ? Effect.void
+          : invalidating(
+              Effect.asVoid(
+                sql`UPDATE pending_ops SET source_gone = 1
+                  WHERE kind = 'move' AND id IN ${sql.in(opIds)}`,
+              ),
+            ),
       moveSplits: (accountId, masterId, from, to) =>
         invalidating(
           Effect.asVoid(
@@ -530,59 +829,57 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               AND split_of = ${masterId} AND split_in = ${from}`,
           ),
         ),
-      rememberPulled: (accountId, calendarId, events) =>
-        Effect.gen(function* () {
-          if (events.length === 0) {
-            return;
-          }
-          // Few deletes wait at a time: matched here, not against every id of the page in SQL.
-          const waiting = yield* sql<{ readonly event_id: string }>`SELECT p.event_id
-            FROM pending_ops p JOIN events e ON e.account_id = p.account_id
-              AND e.calendar_id = p.calendar_id AND e.id = p.event_id
-            WHERE p.account_id = ${accountId} AND p.calendar_id = ${calendarId}
-              AND p.kind = 'delete' AND e.sync_status = 'pending'`;
-          const ids = new Set(waiting.map((row) => row.event_id));
-          const copies = events.filter((event) => ids.has(event.id));
-          if (copies.length === 0) {
-            return;
-          }
-          yield* invalidating(
-            Effect.forEach(
-              copies,
-              (event) =>
-                sql`UPDATE pending_ops SET before_payload = ${JSON.stringify(eventPayloadJson(event))}
-                  WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
-                    AND event_id = ${event.id} AND kind = 'delete'`,
-              { discard: true },
-            ),
-          );
-        }),
       remove: (opId) =>
-        invalidating(Effect.asVoid(sql`DELETE FROM pending_ops WHERE id = ${opId}`)),
+        invalidating(
+          Effect.andThen(sql`DELETE FROM pending_ops WHERE id = ${opId}`, dropIdleCopies),
+        ),
+      wakeWaiting: ({ accountId, eventId }) =>
+        invalidating(
+          Effect.gen(function* () {
+            const waiting = yield* sql<{ readonly id: string }>`SELECT id FROM pending_ops
+              WHERE account_id = ${accountId} AND conflict_at IS NULL AND next_attempt_at > 0
+                AND last_error LIKE 'waiting for %'
+                AND (event_id = ${eventId}
+                  OR substr(event_id, 1, length(${eventId}) + 1) = ${eventId} || '_'
+                  OR substr(${eventId}, 1, length(event_id) + 1) = event_id || '_')`;
+            if (waiting.length > 0) {
+              yield* sql`UPDATE pending_ops SET next_attempt_at = 0
+                WHERE id IN ${sql.in(waiting.map((row) => row.id))}`;
+            }
+            return waiting.length;
+          }),
+        ),
       // RSVP ops survive content-edit coalescing; stray ones resolve as
       // no-ops through the NotFound path after a delete. A queued move is
       // never coalesced away either: a later edit targets the destination
       // calendar and must land after the move, not replace it.
       removeForEvent: (accountId, calendarId, eventId) =>
         invalidating(
-          Effect.asVoid(
+          Effect.andThen(
             sql`DELETE FROM pending_ops WHERE account_id = ${accountId}
               AND calendar_id = ${calendarId} AND event_id = ${eventId}
               AND kind NOT IN ('rsvp', 'move')`,
+            dropIdleCopies,
           ),
         ),
       retarget: (op) =>
         invalidating(
-          Effect.asVoid(
-            sql`UPDATE pending_ops SET calendar_id = ${op.calendarId},
+          Effect.gen(function* () {
+            yield* sql`UPDATE pending_ops SET calendar_id = ${op.calendarId},
                 payload = ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
-                server_payload = ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null},
-                before_payload = ${beforePayloadColumn(op.beforePayload)},
-                before_overrides = ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
                 attempts = ${op.attempts}, next_attempt_at = ${op.nextAttemptAt},
                 last_error = ${op.lastError ?? null}
-              WHERE id = ${op.id}`,
-          ),
+              WHERE id = ${op.id}`;
+            // Google's copy follows the op to the calendar it names now.
+            if (op.beforePayload && HOLDING_KINDS.has(op.kind)) {
+              yield* putCopy(op.accountId, op.calendarId, op.eventId, op.beforePayload);
+            }
+            for (const taken of TAKING_KINDS.has(op.kind) ? (op.beforeOverrides ?? []) : []) {
+              yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
+            }
+            yield* writeChanges(op.id);
+            yield* dropIdleCopies;
+          }),
         ),
       retryNow: (accountId) =>
         invalidating(
@@ -605,26 +902,55 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE account_id = ${accountId} AND task_parent = ${oldEventId}`;
           }),
         ),
-      setBefore: (opId, before) =>
+      setBaseEtag: ({ accountId, calendarId, eventId }, etag) =>
         invalidating(
           Effect.asVoid(
-            sql`UPDATE pending_ops SET before_payload = ${beforePayloadColumn(before)}
-              WHERE id = ${opId}`,
+            sql`UPDATE pending_ops SET base_etag = ${etag}
+              WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
+                AND event_id = ${eventId} AND conflict_at IS NULL
+                AND kind IN ('delete', 'rsvp', 'update')`,
           ),
+        ),
+      setBefore: (opId, before) =>
+        invalidating(
+          Effect.gen(function* () {
+            const rows = yield* sql<{
+              readonly account_id: string;
+              readonly calendar_id: string;
+              readonly event_id: string;
+            }>`SELECT account_id, calendar_id, event_id FROM pending_ops WHERE id = ${opId}`;
+            const row = rows[0];
+            if (row) {
+              yield* before
+                ? putCopy(row.account_id, row.calendar_id, row.event_id, before)
+                : dropCopy(row.account_id, row.calendar_id, row.event_id);
+            }
+          }),
         ),
       setBeforeOverrides: (opId, overrides) =>
         invalidating(
-          Effect.asVoid(
-            sql`UPDATE pending_ops
-              SET before_overrides = ${overrides ? JSON.stringify(eventListJson(overrides)) : null}
-              WHERE id = ${opId}`,
-          ),
+          Effect.gen(function* () {
+            const rows = yield* sql<{
+              readonly account_id: string;
+              readonly calendar_id: string;
+              readonly event_id: string;
+            }>`SELECT account_id, calendar_id, event_id FROM pending_ops WHERE id = ${opId}`;
+            const row = rows[0];
+            if (!row) {
+              return;
+            }
+            yield* dropTaken(row.account_id, row.calendar_id, row.event_id);
+            for (const taken of overrides ?? []) {
+              yield* putCopy(row.account_id, row.calendar_id, taken.id, taken);
+            }
+          }),
         ),
-      setBeforeTask: (opId, before) =>
+      setCarriedText: (opId, carriedText) =>
         invalidating(
           Effect.asVoid(
-            sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(before))}
-              WHERE id = ${opId}`,
+            sql`UPDATE pending_ops SET carried_text = ${
+              carriedText ? JSON.stringify(carriedTextJson(carriedText)) : null
+            } WHERE id = ${opId}`,
           ),
         ),
       setCopySource: (opIds, source) =>
@@ -646,9 +972,10 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         ),
       setPayload: (opId, payload) =>
         invalidating(
-          Effect.asVoid(
+          Effect.andThen(
             sql`UPDATE pending_ops SET payload = ${JSON.stringify(eventPayloadJson(payload))}
               WHERE id = ${opId}`,
+            writeChanges(opId),
           ),
         ),
       setSplitCheck: (opId, check) =>
@@ -660,7 +987,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       unpark: (opId, now) =>
         invalidating(
           Effect.asVoid(
-            sql`UPDATE pending_ops SET conflict_at = NULL, server_payload = NULL,
+            sql`UPDATE pending_ops SET conflict_at = NULL,
               base_etag = NULL, attempts = 0, next_attempt_at = ${now}, last_error = NULL
               WHERE id = ${opId}`,
           ),

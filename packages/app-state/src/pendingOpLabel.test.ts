@@ -31,6 +31,23 @@ describe('pendingOpLabel', () => {
     expect(long.reason?.endsWith('…')).toBe(true);
   });
 
+  it('says that a discarded move still waits for Google', () => {
+    const label = pendingOpLabel({
+      ...op,
+      attempts: 1,
+      discarded: true,
+      kind: 'move',
+      lastError: 'given up; asking Google where it is',
+    });
+    expect(label.retry).toBe('discarded — asking Google whether it had moved');
+    expect(label.reason).toBeNull();
+    // Any other change shows so while its discard asks: a moment, or
+    // until Google can be reached for a delete or a redraw of a series.
+    expect(pendingOpLabel({ ...op, attempts: 1, discarded: true }).retry).toBe(
+      'discarded — asking Google what it has',
+    );
+  });
+
   it('gives no reason before a failure or while a conflict waits for a choice', () => {
     expect(pendingOpLabel({ ...op, lastError: 'stale' }).reason).toBeNull();
     expect(pendingOpLabel({ ...op, attempts: 3 }).reason).toBeNull();

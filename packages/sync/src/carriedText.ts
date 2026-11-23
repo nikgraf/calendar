@@ -5,7 +5,7 @@ import {
   type PendingOp,
   withConsistentGeo,
 } from '@calendar/core';
-import type { EventRepoShape } from '@calendar/db';
+import type { EventRepoShape, PendingOpRepoShape } from '@calendar/db';
 import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 
@@ -53,31 +53,68 @@ const withText = (row: EventRecord, text: Text, geo?: GeoLocation | null): Event
         }),
       );
 
+const textOf = (event: EventRecord): CarriedText['base'] => ({
+  description: event.description ?? null,
+  location: event.location ?? null,
+  title: event.title,
+});
+
+/**
+ * Google's text of the series, which an edit of it is measured against:
+ * the copy the queued op holds (a pull or a refused write replaces it
+ * with Google's newer one), else the local row, which nothing waits on.
+ * Kept from when the op was first queued, another device's rename pulled
+ * since counted as this edit's and was carried over an exception's own
+ * title, which the PATCH never changes on Google.
+ */
+export const carryBase = (op: PendingOp): CarriedText['base'] | undefined =>
+  op.beforePayload ? textOf(op.beforePayload) : op.carriedText?.base;
+
+const baseOf = (master: EventRecord, queued: PendingOp | undefined): CarriedText['base'] =>
+  (queued && carryBase(queued)) ?? textOf(master);
+
+/**
+ * The text fields in which a series edit (`merged`) differs from what
+ * Google has of the series: the ones Google will copy onto the exceptions.
+ * `master` is the local row before the edit, `queued` the series op it
+ * takes over from.
+ */
+export const carriedFields = (
+  master: EventRecord,
+  merged: EventRecord,
+  queued: PendingOp | undefined,
+): ReadonlyArray<Field> => {
+  const base = baseOf(master, queued);
+  return FIELDS.filter((field) => !same(merged[field], base[field]));
+};
+
 /**
  * The exception rows a series edit rewrites and the `CarriedText` its op
  * keeps. `master` is the local row before this edit (it may already show
- * a queued edit), `queued` the series op this edit replaces.
+ * a queued edit), `queued` the series op this edit replaces. `owned` names,
+ * per exception, the text fields a change of that exception queued behind
+ * the series op set itself after the series last set them: sent after it,
+ * that change's value is what Google ends with, so the series' text is
+ * not carried over it again.
  */
 export const planCarry = ({
   master,
   merged,
   overrides,
+  owned,
   queued,
 }: {
   readonly master: EventRecord;
   readonly merged: EventRecord;
   readonly overrides: ReadonlyArray<EventRecord>;
+  readonly owned?: ReadonlyMap<string, ReadonlySet<string>>;
   readonly queued: PendingOp | undefined;
 }): {
   readonly carriedText: CarriedText | undefined;
   readonly rows: ReadonlyArray<EventRecord>;
 } => {
-  const base = queued?.carriedText?.base ?? {
-    description: master.description ?? null,
-    location: master.location ?? null,
-    title: master.title,
-  };
-  const changed = new Set(FIELDS.filter((field) => !same(merged[field], base[field])));
+  const base = baseOf(master, queued);
+  const changed = new Set(carriedFields(master, merged, queued));
   const rows: Array<EventRecord> = [];
   const entries: Array<Entry> = [];
   for (const row of overrides) {
@@ -100,7 +137,7 @@ export const planCarry = ({
         stillCarried(row, queued, before, field);
       const ownValue = kept ? previous : (row[field] ?? null);
       const geo = kept ? (before.geo ?? null) : (row.geo ?? null);
-      if (changed.has(field)) {
+      if (changed.has(field) && owned?.get(row.id)?.has(field) !== true) {
         text[field] = merged[field] ?? null;
         own[field] = ownValue;
         if (field === 'location') {
@@ -135,7 +172,7 @@ export const planCarry = ({
 /**
  * The exception `row` with its own text back, as if `op` (a series edit
  * that carried text onto it) had never been: what abandoning the op puts
- * back, and what a snapshot of the exception must hold while the op is
+ * back, and what Google's copy of the exception must hold while the op is
  * queued. A field the user has edited on the exception since keeps the
  * newer value, and a row a pull or push has replaced since keeps Google's
  * version. The row itself when `op` carried nothing onto it.
@@ -155,9 +192,98 @@ export const withOwnText = (row: EventRecord, op: PendingOp): EventRecord => {
   return withText(row, text, text.location === undefined ? undefined : entry.geo);
 };
 
-/** Puts back the exceptions' own text when `op` is abandoned (`withOwnText`, row by row). */
+/**
+ * An exception's own edit set `fields` itself: they are the user's from
+ * here on, whatever the series carried there, so the series edits queued
+ * for it record no carry of them onto that exception. A title set by
+ * hand to the series' own read as the carry otherwise, and giving the
+ * series' rename up took it away, in the row and in what its change sends.
+ */
+export const ownFields = (
+  pendingOpRepo: PendingOpRepoShape,
+  seriesEdits: ReadonlyArray<PendingOp>,
+  exceptionId: string,
+  fields: ReadonlyArray<Field>,
+): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    for (const op of seriesEdits) {
+      const carried = op.carriedText;
+      const entry = carried?.overrides.find((one) => one.eventId === exceptionId);
+      if (!carried || !entry || !fields.some((field) => entry[field] !== undefined)) {
+        continue;
+      }
+      const { description, geo, location, title, ...rest } = entry;
+      const kept: Entry = {
+        ...rest,
+        ...(description === undefined || fields.includes('description') ? {} : { description }),
+        ...(location === undefined || fields.includes('location') ? {} : { location }),
+        ...(geo === undefined || fields.includes('location') ? {} : { geo }),
+        ...(title === undefined || fields.includes('title') ? {} : { title }),
+      };
+      yield* pendingOpRepo.setCarriedText(
+        op.id,
+        new CarriedText({
+          base: carried.base,
+          overrides: carried.overrides.map((one) => (one === entry ? kept : one)),
+        }),
+      );
+    }
+  });
+
+/**
+ * The queued changes of the exceptions `op` (a series edit) carried text
+ * onto send what they had set themselves again, in `fields`: they had
+ * taken the series' text there when the edit set it (`carryOntoQueued` in
+ * mutations.ts), and the edit is given up, or no longer changes that
+ * field on Google.
+ */
+export const restoreCarriedChanges = (
+  pendingOpRepo: PendingOpRepoShape,
+  op: PendingOp,
+  fields: ReadonlyArray<Field> = FIELDS,
+): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    if (op.kind !== 'update' || !op.carriedText || !op.payload) {
+      return;
+    }
+    const series = op.payload;
+    for (const entry of op.carriedText.overrides) {
+      for (const other of yield* pendingOpRepo.listForEvent({
+        accountId: op.accountId,
+        calendarId: op.calendarId,
+        eventId: entry.eventId,
+      })) {
+        const payload = other.payload;
+        if (other.kind !== 'update' || !payload) {
+          continue;
+        }
+        const own: Text = {};
+        for (const field of fields) {
+          if (
+            entry[field] !== undefined &&
+            other.changed?.includes(field) === true &&
+            same(payload[field], series[field])
+          ) {
+            own[field] = entry[field];
+          }
+        }
+        if (Object.keys(own).length > 0) {
+          yield* pendingOpRepo.setPayload(
+            other.id,
+            withText(payload, own, own.location === undefined ? undefined : entry.geo),
+          );
+        }
+      }
+    }
+  });
+
+/**
+ * Puts back the exceptions' own text when `op` is abandoned (`withOwnText`,
+ * row by row), and in the queued changes of those exceptions
+ * (`restoreCarriedChanges`).
+ */
 export const restoreCarriedText = (
-  eventRepo: EventRepoShape,
+  { eventRepo, pendingOpRepo }: { eventRepo: EventRepoShape; pendingOpRepo: PendingOpRepoShape },
   op: PendingOp,
 ): Effect.Effect<void, SqlError> =>
   Effect.gen(function* () {
@@ -175,6 +301,7 @@ export const restoreCarriedText = (
         rows.push(restored);
       }
     }
+    yield* restoreCarriedChanges(pendingOpRepo, op);
     if (rows.length > 0) {
       yield* eventRepo.upsertMany(rows);
     }

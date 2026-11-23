@@ -55,10 +55,22 @@ suite). When touching sync code, treat these as invariants.
   occurrence edit put the old text back. One queued after it takes the
   carried text in the fields it did not change itself (a landing or a
   pull may have put Google's copy over the row's carry before it was
-  made). Known gap: a queued instance
-  op's payload is not rewritten for a series edit that never lands, so it
-  can still push carried text of an abandoned series edit; the next pull
-  converges.
+  made). While the series edit waits, the carried text is not the
+  exception's own: a change of the exception queued under it is laid over
+  Google's copy with that text carried onto it (`carriedChangesOf`), names
+  only what the user set, and no longer sends the text of a series edit
+  that was given up. A text the series edit sets itself wins over a
+  queued change of an occurrence that had set the same field
+  (`carryOntoQueued`: that change sends the series' text from then on),
+  also while the series' own create is still unsent, and the occurrence's
+  own comes back if the series edit is given up.
+- **A PATCH of an occurrence without an exception names what changed**
+  (verified live 2026-11-22, `recurring.live.ts`): `events.patch` on an
+  instance id Google has no exception for creates the exception from the
+  series as Google has it then, with the named fields over it. The app
+  sends only those (`changedBody` against the series drawn at the slot),
+  so a rename of the series on another device that this device has not
+  pulled is not written over by an older title.
 - **A new rule keeps the exceptions it still draws** (verified live
   2026-11-03, `recurring.live.ts`): a PATCH of a master's `recurrence`
   leaves an exception whose original slot the new rule still draws as it
@@ -71,11 +83,19 @@ suite). When touching sync code, treat these as invariants.
   Every exception gets a new etag and `updated` with the PATCH (so the
   next delta sends them all), and a DELETE with the etag from before
   meets a 412; a DELETE of an exception already cancelled meets a 410.
-  `updateRecurring` drops only the exceptions the new rule skips. The
-  deletes a cut or rule change queues for what it drops wait behind its
-  PATCH, and its landing takes them off the queue (`forgetDropped`):
-  Google cancelled those exceptions already, and the deletes' If-Match
-  would park a 412.
+  `updateRecurring` drops only the exceptions the new rule skips, and
+  queues nothing for them: Google cancels them with the PATCH. The series
+  update holds Google's copies of them until it lands or is given up
+  (`PendingOp.beforeOverrides`, takenExceptions.ts).
+- **New times redraw a series like a new rule** (verified live
+  2026-11-22, `recurring.live.ts`): a PATCH of a master's `start` cancels
+  every exception whose original slot the series no longer draws — moved
+  an hour, all of them: a moved or renamed occurrence is gone and a
+  cancelled one's day is drawn again — and a write to an old occurrence
+  id is refused (400). A PATCH of its `end` alone leaves every slot
+  drawn, and the exceptions as they were, their own times included. The
+  app follows: a series edit with a new start drops the exceptions it no
+  longer draws and the queued changes of those occurrences with them.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,
@@ -92,19 +112,21 @@ suite). When touching sync code, treat these as invariants.
   the calendar itself (`organizer.self`), so the app refuses an RSVP
   there (`NotAttendeeError`).
 - **412 (etag mismatch)**: we use If-Match on content updates/deletes and
-  RSVPs when an etag is known; on 412 an update or delete is parked with
-  Google's copy (`events.get`) and the user keeps theirs (re-sent without
-  If-Match) or takes Google's (re-fetched live); an RSVP is resent
-  unchecked. A stale-etag PATCH of a deleted event and a stale If-Match
+  RSVPs when an etag is known; on 412 Google's copy is fetched
+  (`events.get`) and an update is laid over it: sent again when the two
+  changed different things, parked when they changed the same one or the
+  update edits the guest list, for the user to keep theirs (re-sent
+  without If-Match) or take Google's (re-fetched live). A delete parks,
+  unless the fetch finds the event gone or cancelled already: then it is
+  done; an RSVP is resent unchecked. A stale-etag PATCH of a deleted event and a stale If-Match
   DELETE are 412s too. `events.get` answers a deleted event with 404 or
   410 — the client maps both to `NotFoundError`, and a 410 on any write
   means "gone", like a 404 (never an expired sync token there). A series
   PATCH (a rename, a new rule) gives every exception a new etag, so an
   occurrence edit queued behind it meets a 412 with nothing changed
-  (verified live, `recurring.live.ts`). Such a 412 on an update, where
-  Google's copy equals what it was built on, is re-sent on Google's etag
-  instead of parked (`onlyEtagMoved`); a delete or a guest-list edit
-  still parks. An exception's own write leaves the master's etag alone:
+  (verified live, `recurring.live.ts`). Such a 412 on an update is
+  re-sent on Google's etag like any other that does not clash; a delete
+  or a guest-list edit still parks. An exception's own write leaves the master's etag alone:
   a rename queued behind it lands (verified live).
 - **events.move** (`POST …/events/{id}/move?destination=`): re-homes an
   event into another calendar _of the same account_, keeping its id,
@@ -601,27 +623,60 @@ separate: it also covers tasks, moves, discards and other-device writes.
   conflict choices; drains that land, refuse (503) or lose the answer
   after the write landed; pulls, an expired token, time passing; another
   device's edits and deletes — then the network recovers, every conflict
-  is settled, the queue drains and a pull runs. After every step, with no
-  drain running: every pending row is owned by a queued op; a synced row
-  at Google's etag has Google's content, and what Google last told the
-  client about an item no op holds is what shows; no write meets a 404 or
-  another 4xx unless another device, or a lost answer of ours, removed the
-  item; no conflict parks on an item nobody else changed. At the end the
-  rows equal Google's, and what the user did last to an item nobody else
-  touched is what Google has. Kicked drains run whenever the test fiber
-  suspends (setImmediate order), ids come from a seeded
-  `crypto.getRandomValues`, so a seed replays exactly; a failure prints
-  the whole sequence and the requests of the failing step.
+  is settled, the queue drains and a pull runs. Repeating events are in:
+  a series created, one occurrence edited (its time, its text) or
+  deleted, all events edited (text or time), another rule or none, "this
+  and following", the series
+  deleted or moved, each of them discarded while queued, and another
+  device renaming or deleting a series, changing or cancelling an
+  occurrence. A series is judged by what it draws: every occurrence is an
+  item under Google's id for it, shown on the client by its exception row
+  or else by its master's rule, on Google by the fake's `instancesOf`.
+  The steps keep to what is recorded of Google (Events & recurrence
+  above): no rule draws a slot
+  again that an earlier one dropped, nobody edits an occurrence Google
+  holds cancelled, and nothing sends an exception's etag from before its
+  series moved (a series is not moved while a queued change of one of
+  its occurrences has not seen Google's exception of it, and another
+  device leaves such an occurrence alone while the move waits:
+  `unseenOccurrenceNews`); a sequence that leaves that ground anyway fails as such
+  (the fake's `unverified`), and what a client shows of the exceptions of
+  a series a list reported gone is not judged (`goneWithExceptions`).
+  After every step, with no drain running: every pending row is owned by
+  a queued op; a synced row at Google's etag has Google's content, and
+  what Google last told the client about an item no op holds is what
+  shows; no write meets a 404 or another 4xx unless another device, or a
+  lost answer of ours, removed the item; no conflict parks on an item
+  nobody else changed. At the end the rows equal Google's, and what the
+  user did last to an item nobody else touched is what Google has. Kicked
+  drains run whenever the test fiber suspends (setImmediate order), ids
+  come from a seeded `crypto.getRandomValues`, so a seed replays exactly;
+  a failure prints the whole sequence and the requests of the failing
+  step. The gate runs the first 50 seeds; the `Queue search` workflow
+  (`queue-search.yml`) runs 7,000 every night main has moved, and on
+  demand. Run a wide search before pushing any change to the queue
+  (`QUEUE_SEQUENCE_RUNS=7000 QUEUE_SEQUENCE_KNOWN=1`): a change in the
+  requests the app sends reshuffles every seed, so compare the count and
+  the classes of failures, never seed numbers. Longer sequences find
+  what 40 steps do not (`QUEUE_SEQUENCE_STEPS=80`, 2,000 seeds: review
+  round 11 of #374 found seven bugs that way); a test file cannot set
+  the variables for itself, they are read when it is imported.
   `QUEUE_SEQUENCE_SEED=<n>` runs one seed, `QUEUE_SEQUENCE_RUNS` and
-  `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take ~30 s),
-  `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. A difference
-  where Google sent a newer state while an op held the row is the open
-  gap the skipped tests at its end show (docs/architecture.md → An op
-  remembers what it replaced): it is listed with the failure, not failed.
-  Seeds past the gate's that still fail are listed in `KNOWN_FAILING`,
-  skipped (`QUEUE_SEQUENCE_KNOWN=1` runs them); a change to the steps
-  reshuffles every sequence, so search again after one. A bug a sequence finds gets a scripted test of its own
-  beside them (`writesDown` holds every write at a 503).
+  `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take about a
+  minute), `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. What
+  a pull's events page brings for an item an op holds must show once the
+  op is gone (docs/architecture.md → Google's copy of a held item). A conflict parked
+  on a delete after a PATCH of its series is the recorded decision, not a
+  failure (`World.retagged`). Seeds that still fail are listed in
+  `KNOWN_FAILING` with the gap each meets, skipped
+  (`QUEUE_SEQUENCE_KNOWN=1` runs them; none in the first 7,000 since
+  #374, nor in 2,000 at 80 steps); a change to the steps, or to the
+  requests the app sends, reshuffles every sequence, so search again
+  after one. A bug a sequence finds gets
+  a scripted test of its own beside them (`writesDown` holds every write
+  at a 503), and a gap that stays open a skipped one ("open gaps the
+  sequences found", "… in series" for what the series steps found): it
+  shows the gap alone and goes into the gate once a change closes it.
 - AI pipelines never hit a real model: the seams take a fake
   `LanguageModel`/`SpeechToText`/`TextRecognizer` returning canned JSON
   (`packages/ai/src/*.test.ts`). The e2e suites use the shared fixture model
@@ -704,10 +759,52 @@ watermark with deleted task tombstones, server-assigned task ids, PATCH
 merge and null-delete of private properties. The fake pages event lists
 (`pageSize`, default 2,500; the sync token rides only on the last page)
 and reports a removed calendar as a `deleted` calendarList entry on
-incremental passes. It models **no recurrence**: no expansion, no
-exceptions, no new etag when a rule changes, so a series' behaviour comes
-only from the live suite (a rule change from 5 to 12 occurrences
-cancelled a moved occurrence on Google, which the fake could not show).
+incremental passes.
+
+It models **repeating events as Events & recurrence above records them**
+and as `live/recurring.live.ts` finds them on Google, and nothing past
+that. An exception is an event of its own under `<masterId>_<original
+start>`, with `recurringEventId` and `originalStartTime`. A PATCH of that
+id makes the exception or changes it, and a DELETE cancels the
+occurrence, with or without an exception stored: 410 once it is
+cancelled, 412 on a stale If-Match, 404 for a slot the series does not
+draw; `events.get` shows a cancelled one as `status: cancelled`. Such a
+write leaves the master's etag alone. Every PATCH of the master gives
+each exception a new etag and `updated`, copies a title, description or
+location it changed onto them (one sent with its old value leaves theirs
+alone) and, by the series it leaves (its rule, its start), keeps the
+exceptions it still draws as they were and cancels the others. A master's DELETE takes its
+exceptions, `events.move` takes them along (an instance id is refused),
+an incremental list sends each of these and a full one names a live
+series' cancelled occurrences. Which slots a rule draws is core's own
+expansion (`expandRecurringEvent`), the one the app draws with: the fake
+and the app cannot disagree about a rule, so what Google draws for one
+still comes from the live suite. `patchEventServerSide` and
+`deleteEventServerSide` are another device's writes with these semantics
+(`putEvent` and `cancelEvent` stay raw writes, for single events),
+`instancesOf` is `events.instances`, `exceptionsOf` a series' stored
+exceptions.
+
+Where Google's answer is **not recorded**, the fake makes none up: it
+answers as it did before it knew series and names the request in
+`unverified`, which a test that judges the app by the fake keeps empty.
+Each is a probe for the live suite to settle:
+
+- a PATCH of a cancelled occurrence (the fake: 404, as for a deleted event);
+- a rule that draws a slot again which an earlier rule or cut dropped: a
+  plain occurrence, as verified, but what a list then reports for the
+  exception that was there is not (the fake: nothing);
+- a write on the etag an exception had before its series moved (the
+  move gives the event a new etag; here its exceptions get one too);
+- `events.update` of an occurrence, or of a series with exceptions;
+- what a list reports for the live exceptions of a series that left the
+  calendar, deleted or moved away. The fake names the series alone and
+  says so in `goneWithExceptions`. The app drops the rows of such
+  exceptions itself only where a delete of its own is involved
+  (`dropSeriesExceptions`); told by a list alone it keeps them, so if
+  Google does not send them as cancelled too, a series another device
+  deleted leaves its changed occurrences behind as events of their own.
+
 Its clock starts at its own `now` (2026-08-24): a `TestClock` left before
 it makes every pull's `updatedMin` 1970, which returns everything and
 hides a watermark bug, so set the clock past it
@@ -925,8 +1022,8 @@ the series' first day to seven weeks past today, one stored master and
 one queued create per split, and one exception row per slot edited
 alone. Generation stays on documented ground: a series or split never
 changes the date, a moved occurrence is edited alone, and a series with
-exceptions is not retimed (an exception keeps its slot through a series
-retime, unverified on Google). Ledgers and the drawn and expected lists
+exceptions is not retimed (a new start drops them, as on Google; the
+spec's model does not replay that drop yet). Ledgers and the drawn and expected lists
 use `bombadil-recurring-<timestamp>/`; replay one with
 `E2E=1 BOMBADIL=1 BOMBADIL_RECURRING_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadilRecurring.e2e.ts`.
 
@@ -1087,7 +1184,10 @@ nothing are answered without a version, a dictated phrase's other
 readings offered); `editorDiscard` (the question before an edited editor
 closes); `quickAddInvitees` and `quickAddPlaces` (a phrase's guests and
 places: one match taken, two asked about, the places on one map);
-`unsynced` (a queued change's diff and discard, a parked one's choice).
+`unsynced` (a queued change's diff and discard, a parked one's choice);
+`seriesEditQuestion` (the question before new times for all events drop
+an occurrence changed on its own; set the end time before the start: a
+start at the old end is refused as typed).
 
 Page code is a TypeScript function (`page.ts`), sent as its source with
 its arguments as JSON: `cdp.evaluate(fn, ...args)` returns what it

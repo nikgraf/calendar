@@ -298,7 +298,10 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
   Temporal validation on Hermes before trusting a static list.
 - **`toSorted is not a function` on iOS only**: Hermes has no
   `Array.prototype.toSorted`, and the Node unit tests pass anyway. Copy
-  and `sort` in code that runs on the phone (`modelSpike.ts`).
+  and `sort` in code that runs on the phone (`modelSpike.ts`); the same
+  for `toReversed` and `toSpliced`. `scripts/hermesArrays.test.ts`, in
+  the gate, fails on a call in the source the iOS bundle is built from
+  (three in the queue's code failed every save on the iPhone, #374).
 
 ## MapKit
 

@@ -122,8 +122,9 @@ was cut (pruned 2026-11-17).
   Solunivo", the webcam on dense codes, parked Google prefs untitled.
 - **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
   bump together when a release is worth a number.
-- **Schema baseline** (2026-09-15, again 2026-10-15) — the pre-release
-  migrations were collapsed into one, twice, since nothing had shipped;
+- **Schema baseline** (2026-09-15, again 2026-10-15 and 2026-11-22, #374)
+  — the pre-release migrations were collapsed into one, three times,
+  since nothing had shipped;
   the second pass also dropped every upgrade of old data (zone lists
   without the device entry, the old fired map and Keychain key, the
   Birthdays purge). The runner refuses rather than self-wipes: an applied
@@ -389,15 +390,15 @@ was cut (pruned 2026-11-17).
 - **Op queue invariants** (2026-09-11 sweep, #110, #118, #125) — the
   local write and the queue change commit in one transaction, with the
   drain kicked after commit (`Effect.suspend(forkDetach)` so a failed
-  transaction never starts a drain); pulls skip rows with a queued local
-  edit; a permanent rejection drops the op _and_ announces it; a row
+  transaction never starts a drain); a pull never overwrites a row a
+  queued change holds; a permanent rejection drops the op _and_ announces it; a row
   whose payload no longer decodes is quarantined by being skipped (no
   payload version tag — the schema is the tag); a response writes its row
   only while no later op of the event is queued; an update that lands
   moves its followers to the etag it produced, an RSVP only when its
   If-Match held; a 412 is done only when Google's copy yields exactly the
-  PATCH body, and re-sent on Google's etag when only the etag moved (see
-  "A re-etag is no conflict"); only a never-sent create is folded into or dropped; a sent
+  PATCH body (see "Google's copy of a held item" for the rest); only a
+  never-sent create is folded into or dropped; a sent
   create stays in its calendar on a move; a 410 on a write is "gone".
 - **Full event history** (2026-09-14) — the events pass sends no
   `timeMin`: one unbounded first pass rather than a quick window plus a
@@ -427,27 +428,26 @@ was cut (pruned 2026-11-17).
   start. Rejected: deriving the bound from the move (by days, by the time
   of day on the series' calendar, at the nearest day) — each failed a
   review round; a cut written as the end of the day before the split.
-  Open: exceptions keep their slots through a series retime, unverified.
 - **A master edit reaches the exceptions** (2026-09-26, review of
   #88/#90) — Google copies a master's _changed_ title, description or
   location onto every exception, so the app mirrors that at save as a
   projection of the queued op, storing Google's master text and each
   exception's own (nothing could be recomputed otherwise); discard,
   take-theirs and a permanent rejection restore the exceptions.
-- **A re-etag is no conflict** (2026-11-03, #282) — a series PATCH gives
-  every exception a new etag (probed live), so an occurrence edit queued
-  behind a rename or a new rule parked as "changed on Google" with
-  nothing changed. An update whose 412 copy equals its snapshot (of the
-  If-Match version) in every field we keep goes again on Google's etag.
-  Rejected: dropping If-Match behind a series edit (another client's
-  change would be overwritten). A guest-list edit and a delete still park:
-  Google replaces guest fields we lack, and a delete takes along what we
-  do not keep. Open: an occurrence delete behind a rename still asks.
-- **Conflicts with a choice** (2026-09-23, #85) — a 412 parks the op
-  instead of dropping it (server-wins deleted the user's version and lost
-  server changes a pull had skipped). Show Google's version, not just the
-  title (Nik's pick); the stored copy is a preview and take-theirs
-  re-fetches live; keep-mine re-sends without If-Match (the user saw the
+- **A re-etag is no conflict** (2026-11-03, #282; #374) — a series PATCH
+  gives every exception a new etag (probed live), so an occurrence edit
+  queued behind a rename or a new rule parked as "changed on Google" with
+  nothing changed. It goes again on Google's etag, like every update that
+  does not clash with Google's version. Rejected: dropping If-Match
+  behind a series edit (another client's change would be overwritten). A
+  guest-list edit and a delete still park: Google replaces guest fields
+  we lack, and a delete takes along what we do not keep. Open: an
+  occurrence delete behind a rename still asks.
+- **Conflicts with a choice** (2026-09-23, #85) — a change that clashes
+  with Google's version parks instead of being dropped (server-wins
+  deleted the user's version). Show Google's version, not just the title
+  (Nik's pick); the event's copy is a preview and take-theirs re-fetches
+  live; keep-mine re-sends without If-Match (the user saw the
   comparison); an edit of an event Google deleted is restored under a new
   id; a parked op survives a move. The old `notice:conflict` toasts are
   gone.
@@ -461,53 +461,50 @@ was cut (pruned 2026-11-17).
   test polls six minutes, then skips while Google still lists the calendar
   or serves its event. Rejected: a longer budget alone (the lag has no
   known bound), a full calendarList every pass (lagging replicas list it).
-- **A queued delete and the copy a pull puts back** (2026-10-30, #265,
-  #267, #270) — a page answered before a delete landed put the row back
-  until the next poll (live nightly 40265233306). An events pass holds the
-  drain like a task list's, a landed delete removes the synced copy at
-  its id, and acting on that copy (an edit, a move, an answer) replaces
-  the delete and takes the copy as its snapshot. Rejected: a pull skipping
-  rows whose delete is queued (the token never resends them, so a discard
-  restored a stale copy); holding the drain per page; refusing the move;
-  the pull writing into the delete's snapshot. Open: a replica lagging
-  behind a landed delete; an occurrence edit leaves a series' queued delete.
-- **A move Google never makes takes its queued edits back** (2026-10-31, #271)
-  — Opus review of #267: a refused, unfound or discarded move put only
-  the rows back; the edits behind it stayed addressed to the destination,
-  404'd and were dropped. They now go back in place, snapshots re-keyed; a
-  move onwards leaves from the source. A 404, or a discard of a move that
-  was sent, asks the destination first: a lost answer means it may have
-  landed. Rejected: dropping the edits and restoring rows from snapshots
-  (a 403 is no reason to lose an edit); a discard waiting for the drain
-  (it sent the move meanwhile). Open: a discarded sent move with Google
-  unreachable goes back; a refused sent create takes only one move along.
+- **A queued delete leaves no row for a pull to fill** (2026-10-30, #265,
+  #267, #270; #374) — a page answered before a delete landed put the row
+  back until the next poll (live nightly 40265233306). An events pass
+  holds the drain like a task list's, and a pull writes no row for an
+  event whose delete waits: Google's version becomes the copy that delete
+  holds, so a discard restores what Google has now. That copy is what
+  answers the first objection to skipping such rows (the token never
+  resends them). Rejected: holding the drain per page; refusing the move.
+  Open: a replica lagging behind a landed delete.
+- **A move Google never makes takes its queued edits back** (2026-10-31,
+  #271; #374) — a refused, unfound or discarded move put only the rows
+  back; the edits behind it stayed addressed to the destination, 404'd
+  and were dropped. They go back in place, Google's copies re-keyed with
+  them; a move onwards leaves from the source. A 404, or a discard of a
+  sent move, asks the destination first (a lost answer means it may have
+  landed); one Google cannot be asked about stays queued, never sent
+  again, until Google answers. Rejected: dropping the edits; putting a
+  discarded sent move back unasked (a change made meanwhile went to the
+  wrong calendar). Open: a refused sent create takes only one move along.
 - **A waiting series delete holds Google's copies of its exceptions**
-  (2026-10-31 to 2026-11-02, #274, #279, #280) — in its snapshot while the
-  master is gone, on the table once a pull put the master back; a discard
-  puts them back only where no row is (an occurrence's own tombstone
-  stays), and a landed delete takes them. What a cut or a rule change
-  dropped goes back where Google's master draws the slot, and the series
-  update records where its drop starts (`dropsFrom`). Rejected: putting
-  every taken exception back; the delete keeping copies too (an aging one
-  a discard could resurrect); telling the deletes apart by the queue or
-  the master's rule.
+  (2026-10-31 to 2026-11-02, #274, #279, #280; #374) — as copies kept per
+  exception, which pulls and answers keep current while the master is
+  gone; a discard puts them back only where no row is (an occurrence's
+  own tombstone stays), and a landed delete takes them. A cut, a new
+  rule or new times hold what they drop the same way (#374): it goes
+  back where Google's master draws the slot, and the series update
+  records where its drop starts (`dropsFrom`). Rejected: putting every
+  taken exception back; a queued delete per dropped exception.
 - **A new rule keeps the exceptions it still draws** (2026-11-03, #281) —
   probed live: Google keeps an exception whose slot the new rule draws
-  and cancels the rest, with new etags all round. So only skipped
-  exceptions drop, their deletes wait behind the PATCH whose landing
-  takes them off the queue, and a later rule drawing a slot again takes
-  its delete back. Rejected: sending them without If-Match (a request
-  for nothing).
+  and cancels the rest, with new etags all round; new times do the same
+  (probed 2026-11-22, #374). So only exceptions no longer drawn drop,
+  nothing is sent for them, and a later rule drawing a slot again puts
+  its exception back. Rejected: a delete for each (a request for
+  nothing, with or without If-Match).
 - **An undone cut or rule change takes what it queued along** (2026-11-03,
-  #284, #285) — Nik's choice for both: its exception deletes (on a
-  discard, keep-theirs or refusal of it, or of a series delete that
-  replaced it) and, while unsent, the new series a this-and-following
-  edit split off; the user's own occurrence delete stays, and Google's
-  copy decides whether the new series goes. Rejected: a marker column,
-  keeping the series, asking at undo time, deciding by the local copy (a
-  cut can land unseen). Open: a series delete that replaced the cut lets
-  both out (todo.md, Tier 0); a discarded exception delete shows past a
-  waiting cut; beside another device's split a kept series shows twice.
+  #284, #285; #374) — Nik's choice for both: the exceptions it held come
+  back (on a discard, keep-theirs or refusal of it, or of a series delete
+  that replaced it) and, while unsent, the new series a
+  this-and-following edit split off goes; the user's own occurrence
+  delete stays, and Google's copy decides whether the new series goes.
+  Rejected: a marker column, keeping the series, asking at undo time,
+  deciding by the local copy (a cut can land unseen). Open: beside
+  another device's split a kept series shows twice.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
@@ -542,23 +539,35 @@ was cut (pruned 2026-11-17).
   periodic stat is the source of truth and directory watchers only the
   fast path (watching the home directory was rejected: noisy). Rejected:
   iCloud key-value sync of the document.
-- **Unsynced changes diff and revert** (2026-10-10) — a queued op keeps
-  the row it replaced (`before*` columns, inherited across coalescing, so
-  the diff is always against what Google last acknowledged); the list's
-  rows expand to the diff and the discard action lives only there,
-  and discarding — like a permanent rejection — puts the row back instead
-  of marking the edit synced. The diff ships as display lines computed in
-  the handler, not as records. Rejected: a server-copy column on
-  events/tasks (every pull would write it), a per-op detail rpc, and
-  whole-row restore — four Codex rounds showed a discard resurrecting
-  another change discarded meanwhile, a landed one, a pulled color or a
-  remotely deleted item: an op puts back only the fields it owns (and
-  takes them out of the other queued snapshots and payloads), a landed
-  op moves every queued snapshot of the item, a confirming pull clears a
-  delete's, a superseded op refused in flight puts nothing back. Open: a
-  deletion a full re-list confirms only by absence clears no snapshot; a per-item
-  acknowledged copy would replace the per-op snapshots if more
-  interleavings turn up.
+- **Unsynced changes diff and revert** (2026-10-10; #374) — the list's
+  rows expand to a diff against what Google has, the discard action lives
+  only there, and discarding — like a permanent rejection — puts the row
+  back instead of marking the edit synced. The diff ships as display
+  lines computed in the handler, not as records. Rejected: a per-op
+  detail rpc, and restoring the whole row while another change of the
+  item still waits — four Codex rounds showed a discard resurrecting
+  another change discarded meanwhile or a landed one: then an op puts
+  back only the fields it owns, and a superseded op refused in flight
+  puts nothing back.
+- **Google's copy of a held item** (2026-11-22, #374) — while a change of
+  an event or a to-do waits, Google's version is kept once per item, and
+  a waiting change keeps only what its edit set (an occurrence without an
+  exception: over its series at the slot). Different things changed on
+  two devices both hold; the same thing, a guest-list edit or a delete
+  asks (Nik's picks, with: kept while held, databases reset, one PR). An
+  event has one waiting update; a series' text wins over an occurrence's,
+  a redrawn series drops and holds its exceptions, as on Google. Rejected:
+  per-change snapshots; updates sent in turn; a delete queued per dropped
+  exception. Open: the provider seam.
+- **A given-up delete or redraw waits for Google** (2026-11-23, #374) —
+  discarded after it was tried and with Google out of reach, a delete, a
+  cut, a new rule or new times stay as they are until Google says what it
+  has, as a sent move does (Nik chose waiting for the move); a change
+  made meanwhile to what it left on screen keeps it. Rejected: putting it
+  back at once (it showed what Google might have no more, and a change
+  made there was dropped), and waiting for every edit (a plain edit that
+  had landed comes with the next pull, nothing lost). A lost to-do create
+  is settled by the pull that brings its task, by the retry's own match.
 - **UI action state** (2026-11-05, #296) — an async action of a
   component is one value (`useAction`: idle, running, failed with its
   line, done with the result) on the editors' one-write slot; a value
@@ -585,12 +594,19 @@ was cut (pruned 2026-11-17).
   user, network and other-device steps on the fake, checking its
   invariants after every step, and found nine bugs, fixed here. Rejected:
   fast-check (steps read the app's state, and a seed must replay exactly)
-  and a full model of the expected state. Open: a pull that skips a held
-  row loses Google's copy for an abandoned op; a task move discarded after
-  it landed; subtasks around a moved or deleted parent.
+  and a full model of the expected state. It covers repeating events
+  since #374, on a fake that mirrors what is recorded of a series; the
+  gaps it still finds are its `KNOWN_FAILING` (none since #374).
 
 ## Calendar: editing, gestures, views
 
+- **The editor asks before a save for all events drops occurrences**
+  (2026-11-23, #374) — a new start or rule makes Google cancel the
+  occurrences changed on their own; the editor names how many lose their
+  change and how many deleted days come back, and "Keep editing" writes
+  nothing. The count is the save's own: `previewSeriesEdit` runs it in a
+  transaction it rolls back. Rejected: a second copy of the save's rules
+  for the preview. Open: an agent's "all events" edit is not asked.
 - **New events start in a default calendar** (2026-11-21, #373) —
   Settings › Calendar picks where the editor, the Assistant's drafts and
   Add all start, or Last used (the behaviour before: the calendar last

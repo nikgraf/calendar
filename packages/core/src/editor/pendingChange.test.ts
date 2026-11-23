@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { Attendee, EventRecord, EventReminders, PendingOp, TaskRecord } from '../types.ts';
-import { pendingOpDiff } from './pendingChange.ts';
+import { pendingOpDiff, type PendingOpDiffContext } from './pendingChange.ts';
 
 const TZ = 'Europe/Vienna';
 
@@ -59,14 +59,21 @@ const self = (responseStatus: Attendee['responseStatus']) =>
 const taskOp = (overrides: Partial<PendingOp> & Pick<PendingOp, 'kind'>) =>
   op({ calendarId: 'l1', eventId: 't1', taskListId: 'l1', ...overrides });
 
-const context = {
+const context: PendingOpDiffContext = {
   calendarName: (_accountId: string, calendarId: string) => ({ c: 'Work', d: 'Home' })[calendarId],
+  taskBefore: () => undefined,
   taskListName: (_accountId: string, taskListId: string) =>
     ({ errands: 'Errands', inbox: 'Inbox' })[taskListId],
   taskTitle: (_accountId: string, _taskListId: string, taskId: string) =>
     ({ p1: 'Plan trip', s1: 'Renew passport' })[taskId],
   timeZone: TZ,
 };
+
+/** The context with Google's copy of the op's task: what a task change is shown against. */
+const held = (before: TaskRecord): PendingOpDiffContext => ({
+  ...context,
+  taskBefore: () => before,
+});
 
 describe('pendingOpDiff', () => {
   it('lists what an edit changed, as displayed', () => {
@@ -186,8 +193,8 @@ describe('pendingOpDiff', () => {
     // Nested under "Plan trip", after its first subtask.
     expect(
       pendingOpDiff(
-        taskOp({ beforeTask: task(), kind: 'reorderTask', taskParent: 'p1', taskPrevious: 's1' }),
-        context,
+        taskOp({ kind: 'reorderTask', taskParent: 'p1', taskPrevious: 's1' }),
+        held(task()),
       ),
     ).toEqual([
       { after: '“Plan trip”', before: 'none', label: 'Subtask of' },
@@ -196,8 +203,8 @@ describe('pendingOpDiff', () => {
     // Out of it again, right after it.
     expect(
       pendingOpDiff(
-        taskOp({ beforeTask: task({ parentId: 'p1' }), kind: 'reorderTask', taskPrevious: 'p1' }),
-        context,
+        taskOp({ kind: 'reorderTask', taskPrevious: 'p1' }),
+        held(task({ parentId: 'p1' })),
       ),
     ).toEqual([
       { after: 'none', before: '“Plan trip”', label: 'Subtask of' },
@@ -206,8 +213,8 @@ describe('pendingOpDiff', () => {
     // First among the siblings it already has.
     expect(
       pendingOpDiff(
-        taskOp({ beforeTask: task({ parentId: 'p1' }), kind: 'reorderTask', taskParent: 'p1' }),
-        context,
+        taskOp({ kind: 'reorderTask', taskParent: 'p1' }),
+        held(task({ parentId: 'p1' })),
       ),
     ).toEqual([{ after: 'First', before: null, label: 'Place' }]);
     expect(pendingOpDiff(taskOp({ kind: 'reorderTask' }), context)).toBeUndefined();
@@ -222,24 +229,18 @@ describe('pendingOpDiff', () => {
     ).toEqual([{ after: '#ff0000', before: '#00ff00', label: 'Color' }]);
   });
 
-  it('describes task ops from their snapshot and the fields they carry', () => {
+  it('describes task ops from Google’s copy and the fields they carry', () => {
     expect(
-      pendingOpDiff(
-        taskOp({ beforeTask: task(), kind: 'updateTask', taskTitle: 'Pay rent today' }),
-        context,
-      ),
+      pendingOpDiff(taskOp({ kind: 'updateTask', taskTitle: 'Pay rent today' }), held(task())),
     ).toEqual([{ after: 'Pay rent today', before: 'Pay rent', label: 'Title' }]);
     // A due day taken away reads as "none".
+    expect(pendingOpDiff(taskOp({ kind: 'updateTask', taskDue: null }), held(task()))).toEqual([
+      { after: 'none', before: 'Sun, Aug 30', label: 'Due' },
+    ]);
     expect(
-      pendingOpDiff(taskOp({ beforeTask: task(), kind: 'updateTask', taskDue: null }), context),
-    ).toEqual([{ after: 'none', before: 'Sun, Aug 30', label: 'Due' }]);
-    expect(
-      pendingOpDiff(
-        taskOp({ beforeTask: task(), kind: 'completeTask', taskStatus: 'completed' }),
-        context,
-      ),
+      pendingOpDiff(taskOp({ kind: 'completeTask', taskStatus: 'completed' }), held(task())),
     ).toEqual([{ after: 'Completed', before: 'Open', label: 'Status' }]);
-    expect(pendingOpDiff(taskOp({ beforeTask: task(), kind: 'deleteTask' }), context)).toEqual([
+    expect(pendingOpDiff(taskOp({ kind: 'deleteTask' }), held(task()))).toEqual([
       { after: null, before: 'Pay rent', label: 'Title' },
       { after: null, before: 'Sun, Aug 30', label: 'Due' },
     ]);

@@ -350,8 +350,10 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
  */
 export class CarriedText extends Schema.Class<CarriedText>('CarriedText')({
   /**
-   * The master's text as Google last acknowledged it: what "changed" is
-   * measured against, also when later edits coalesce into this op.
+   * The master's text as Google had it when the op was queued. What
+   * "changed" is measured against Google's copy the op holds
+   * (`beforePayload`, `carryBase` in sync); this stands in for an op that
+   * holds none.
    */
   base: Schema.Struct({
     description: Schema.NullOr(Schema.String),
@@ -407,27 +409,47 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   attendeesChanged: Schema.optional(Schema.Boolean),
   /** If-Match etag captured when the op was enqueued (update/delete). */
   baseEtag: Schema.optional(Schema.String),
+  /**
+   * What an update or an answer is laid over, read by the repo: Google's
+   * copy of the event (for an occurrence Google has no exception for, its
+   * series drawn at that slot) with the changes queued for the event ahead
+   * of this op over it. `payload` is this with the op's own changes over
+   * it, and the PATCH names only what differs from it. Absent where Google
+   * has neither (the series is not there yet).
+   */
+  basePayload: Schema.optional(EventRecord),
   /** Kind 'calendarColor': the color the calendar had, so a discard puts it back. */
   beforeColorHex: Schema.optional(Schema.String),
   /**
-   * A series delete only: the exception rows it removed locally along with
-   * the master (Google cascades, so they queue no op of their own). A
-   * discard re-inserts them with the master.
+   * What an update or an answer names as its own, read by the repo: an
+   * update's fields (the guest list aside), the emails of the guests an
+   * answer answers for. On an op being queued: the ones it takes over from
+   * the queued update it replaces, or answers for, which are its own
+   * whatever their value is by now.
+   */
+  changed: Schema.optional(Schema.Array(Schema.String)),
+  /**
+   * A change of a series that takes exceptions off the table: Google's
+   * copies of them. A series delete takes them all with the master; an
+   * update that redraws the series (`dropsFrom`: a cut, a new rule, new
+   * times) takes the ones it no longer draws. Google cancels them with
+   * that one write, so they queue no op of their own. Kept per exception
+   * like any copy and read here; giving the change up puts them back.
+   * One whose own delete waits is that delete's.
    */
   beforeOverrides: Schema.optional(Schema.Array(EventRecord)),
   /**
-   * The event row as it was before this change was made locally — what the
-   * unsynced-changes list diffs against and what a discard (or a permanent
-   * rejection) puts back. Inherited when a newer edit replaces a queued op,
-   * so it always names the last state Google acknowledged. `null`: there
-   * was no row (an occurrence edit or delete materialized its override), so
-   * a discard removes the row. Absent: no snapshot (a pull confirmed the
-   * delete, `forgetDeleted`, or it did not decode) — a discard can only
-   * mark the row synced.
+   * Google's copy of the event this op holds, for an update, a delete and
+   * an RSVP: kept once per event beside its row (`event_copies`), so every
+   * queued op of the event reads the same one, and written by pulls,
+   * conflict fetches and answers as well as when the change was made.
+   * What the unsynced-changes list diffs against, what a discard (or a
+   * permanent rejection) puts back, and Google's version of a parked
+   * conflict. `null`: Google has none — an occurrence edit or delete
+   * materialized its override, or Google deleted the event — so a discard
+   * removes the row. Absent on the other op kinds.
    */
   beforePayload: Schema.optional(Schema.NullOr(EventRecord)),
-  /** The task row before a task edit, toggle, delete, move or reorder, for the same purposes. */
-  beforeTask: Schema.optional(TaskRecord),
   calendarId: Schema.String,
   /**
    * Set on a series update that mirrored changed text onto the local
@@ -446,6 +468,22 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   copySource: Schema.optional(CopySource),
   createdAt: Schema.Number,
   /**
+   * The user gave the change up after it was tried, and Google has still
+   * to say whether it had landed: it is never sent again. A move (an
+   * event's or a task's) stays queued so, and the item where the move
+   * put it, until Google says where the item is: there, the move landed
+   * and stays; not there, everything goes back; what is changed
+   * meanwhile waits behind it and follows the item either way. An
+   * event's update, delete or answer carries it until its discard has
+   * asked Google: right after when Google answers (the drain finishes
+   * that if the app stopped in between), and for as long as Google is
+   * out of reach where the change takes something away (a delete; a cut,
+   * a new rule or new times). A change made meanwhile to what it left on
+   * screen clears it: the given-up change is sent after all
+   * (`PendingOpRepo.keepGivenUp`).
+   */
+  discarded: Schema.optional(Schema.Boolean),
+  /**
    * Set just before a non-idempotent network call (createTask). A re-run
    * that finds it set must verify with the server before inserting again
    * — the first request may have landed even though we never saw the
@@ -455,10 +493,11 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   /**
    * Set on a series update that drops exceptions on Google: the earliest
    * original start it drops them from — a this-and-following cut's
-   * occurrence, 0 for a new rule (Google drops them with the old one).
+   * occurrence, 0 for a new rule or new times (Google drops the ones the
+   * series no longer draws).
    * An update that replaces it keeps the earlier of the two. Once it
-   * lands, the copies and snapshots of those exceptions are Google's no
-   * more; until then they are.
+   * lands, the copies of those exceptions are Google's no more; until
+   * then they are.
    */
   dropsFrom: Schema.optional(Schema.Number),
   eventId: Schema.String,
@@ -487,8 +526,11 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   /**
-   * Snapshot of the event: what to send for create/update, and the row as
-   * it was when deleted for delete (so a parked delete can be named).
+   * The user's version of the event. For an update or an answer of an
+   * event Google has a copy of it is not stored: the repo keeps only what
+   * the op changed and reads this as that copy with the changes over it,
+   * so it follows the copy. For a create it is what to send; for a delete
+   * the row as it was when deleted (so a parked delete can be named).
    */
   payload: Schema.optional(EventRecord),
   /**
@@ -503,10 +545,12 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    */
   remindersChanged: Schema.optional(Schema.Boolean),
   /**
-   * Google's version fetched when the op was parked; absent on a parked op
-   * means the event was deleted on Google.
+   * A move only: a pull reported the event deleted in the calendar the
+   * move takes it from (or a full list no longer named it). Google has it
+   * there no more — the move landed, or another device deleted it — so a
+   * move Google turns out never to have made puts nothing back there.
    */
-  serverPayload: Schema.optional(EventRecord),
+  sourceGone: Schema.optional(Schema.Boolean),
   /**
    * The create of a series a this-and-following edit split off: the
    * original start of the occurrence it starts at (`splitAt`) in the series

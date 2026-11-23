@@ -226,7 +226,7 @@ describe('task order made elsewhere (Google)', () => {
       // Google's order, with the queued reorder placed over it again.
       expect(yield* group('trip')).toEqual(['tickets', 'pack', 'visa', 'book']);
       // A discard would put Visa back where Google has it now.
-      expect(queued?.beforeTask?.position).toBe(at(3));
+      expect((yield* (yield* TaskRepo).findCopy('acc-1', 'visa'))?.position).toBe(at(3));
 
       yield* TestClock.adjust('1 hour');
       yield* mutations.processPendingOps();

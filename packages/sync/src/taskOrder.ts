@@ -48,12 +48,13 @@ export const readTaskOrder = (
 
 /**
  * Google's order written onto a list's rows, pending ones included (their
- * queued edits do not touch the order); then the reorders still queued
- * are replayed over it in queue order, as Google will apply them — each
- * placed by its parent and previous sibling, and each holding the place
- * before it as what a discard puts back. A queued delete holds Google's
- * place too. `landedOpId` is a reorder that just landed and is still in
- * the queue: its place is already in `entries`.
+ * queued edits do not touch the order), and onto Google's copies of the
+ * held ones — the place a discarded reorder or delete puts a task back
+ * at; then the moves into the list and the reorders still queued are
+ * replayed over the rows in queue order, as Google will apply them — a
+ * moved task at the top, a reordered one by its parent and previous
+ * sibling. `landedOpId` is a reorder that just landed and is
+ * still in the queue: its place is already in `entries`.
  */
 export const makeApplyTaskOrder =
   (deps: { readonly pendingOpRepo: PendingOpRepoShape; readonly taskRepo: TaskRepoShape }) =>
@@ -67,23 +68,38 @@ export const makeApplyTaskOrder =
       const { pendingOpRepo, taskRepo } = deps;
       yield* taskRepo.refreshHierarchy(accountId, listId, entries);
       const google = new Map(entries.map((entry) => [entry.id, entry]));
+      for (const copy of yield* taskRepo.listCopies(accountId)) {
+        const entry = copy.listId === listId ? google.get(copy.id) : undefined;
+        if (entry && (entry.parentId !== copy.parentId || entry.position !== copy.position)) {
+          yield* taskRepo.putCopy(placedTask(copy, entry));
+        }
+      }
       for (const queued of yield* pendingOpRepo.listAll()) {
-        if (
-          queued.id === landedOpId ||
-          queued.accountId !== accountId ||
-          queued.calendarId !== listId
-        ) {
+        if (queued.id === landedOpId || queued.accountId !== accountId) {
           continue;
         }
-        const entry = google.get(queued.eventId);
-        if (queued.kind === 'deleteTask' && queued.beforeTask && entry) {
-          yield* pendingOpRepo.setBeforeTask(
-            queued.id,
-            placedTask(queued.beforeTask, {
-              ...(entry.parentId === undefined ? {} : { parentId: entry.parentId }),
-              ...(entry.position === undefined ? {} : { position: entry.position }),
-            }),
-          );
+        // A task its own queued move brings into this list arrives at the
+        // top of it. Where it was here before (it moved out and comes
+        // back), Google still lists it under its old parent until the
+        // moves land: the row stays out of it, or that parent's next move
+        // took it along here and nowhere on Google.
+        if (queued.kind === 'moveTask' && queued.targetTaskListId === listId) {
+          const back = yield* taskRepo.get(accountId, listId, queued.eventId);
+          if (back?.parentId !== undefined) {
+            const top = (yield* taskRepo.listSiblings(accountId, listId, undefined)).filter(
+              (sibling) => sibling.id !== back.id,
+            );
+            yield* taskRepo.updateLocal({
+              accountId,
+              changes: { parentId: null, position: provisionalPosition(top, undefined) },
+              listId,
+              taskId: back.id,
+            });
+          }
+          continue;
+        }
+        if (queued.calendarId !== listId) {
+          continue;
         }
         const row =
           queued.kind === 'reorderTask'
@@ -92,7 +108,6 @@ export const makeApplyTaskOrder =
         if (row === undefined) {
           continue;
         }
-        yield* pendingOpRepo.setBeforeTask(queued.id, placedTask(queued.beforeTask ?? row, row));
         const siblings = (yield* taskRepo.listSiblings(
           accountId,
           listId,

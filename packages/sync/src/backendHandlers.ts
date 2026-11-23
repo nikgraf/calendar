@@ -15,6 +15,7 @@ import {
   type BackendSuccess,
   birthdaysInRange,
   pendingOpDiff,
+  type TaskRecord,
   contactsNamed,
   rankContacts,
 } from '@calendar/core';
@@ -66,6 +67,7 @@ import {
 import { SyncEngine } from './engine.ts';
 import { clearPendingVisibility } from './importedVisibility.ts';
 import { locationHandlers } from './locationHandlers.ts';
+import { ownVersion } from './heldEvents.ts';
 import { EventMutations } from './mutations.ts';
 import { PlatformSettings } from './platformSettings.ts';
 import { searchCalendar } from './search.ts';
@@ -380,6 +382,15 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const calendars = yield* (yield* CalendarRepo).list();
       const taskLists = yield* taskRepo.listLists();
       const timeZone = yield* readPrimaryTimeZone;
+      // Google's copy of each held task: what a task change is shown against.
+      const copies = new Map<string, TaskRecord>();
+      for (const accountId of new Set(
+        ops.filter((op) => op.taskListId !== undefined).map((op) => op.accountId),
+      )) {
+        for (const copy of yield* taskRepo.listCopies(accountId)) {
+          copies.set(`${accountId}:${copy.id}`, copy);
+        }
+      }
       // The tasks a reorder names: its old and new parent, the sibling it follows.
       const named = new Map<string, string>();
       for (const op of ops) {
@@ -387,7 +398,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         if (op.kind !== 'reorderTask' || listId === undefined) {
           continue;
         }
-        for (const id of [op.taskParent, op.taskPrevious, op.beforeTask?.parentId]) {
+        const before = copies.get(`${op.accountId}:${op.eventId}`)?.parentId;
+        for (const id of [op.taskParent, op.taskPrevious, before]) {
           const key = id === undefined ? undefined : `${op.accountId}:${listId}:${id}`;
           if (id !== undefined && key !== undefined && !named.has(key)) {
             const task = yield* taskRepo.get(op.accountId, listId, id);
@@ -402,6 +414,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
           calendars.find(
             (calendar) => calendar.accountId === accountId && calendar.id === calendarId,
           )?.summary,
+        taskBefore: (accountId: string, taskId: string) => copies.get(`${accountId}:${taskId}`),
         taskListName: (accountId: string, taskListId: string) =>
           taskLists.find((list) => list.accountId === accountId && list.id === taskListId)?.title,
         taskTitle: (accountId: string, taskListId: string, taskId: string) =>
@@ -424,11 +437,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
             : {
                 conflict: {
                   at: op.conflictAt,
-                  ...(op.payload === undefined ? {} : { mine: op.payload }),
-                  theirs: op.serverPayload ?? null,
+                  ...(op.payload === undefined ? {} : { mine: ownVersion(op) ?? op.payload }),
+                  theirs: op.beforePayload ?? null,
                 },
               }),
           ...(diff === undefined ? {} : { diff }),
+          ...(op.discarded === true ? { discarded: true } : {}),
           ...(op.lastError === undefined ? {} : { lastError: op.lastError }),
           ...(titles[index] === undefined ? {} : { title: titles[index] }),
         };
@@ -492,6 +506,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
       return yield* mutations.previewMoveTask(params);
+    }),
+
+  previewSeriesEdit: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.previewSeriesEdit(params);
     }),
 
   previewSettingsImport: ({ document }) => previewSettingsImport(document),

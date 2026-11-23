@@ -234,9 +234,12 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
       deleteByCalendar: (accountId, calendarId) =>
         reactivity.mutation(
           [EVENTS_KEY, eventsKey(calendarId)],
-          Effect.asVoid(
-            sql`DELETE FROM events WHERE account_id = ${accountId} AND calendar_id = ${calendarId}`,
-          ),
+          Effect.gen(function* () {
+            yield* sql`DELETE FROM events
+              WHERE account_id = ${accountId} AND calendar_id = ${calendarId}`;
+            yield* sql`DELETE FROM event_copies
+              WHERE account_id = ${accountId} AND calendar_id = ${calendarId}`;
+          }),
         ),
       deleteEvent: (accountId, calendarId, eventId) =>
         reactivity.mutation(

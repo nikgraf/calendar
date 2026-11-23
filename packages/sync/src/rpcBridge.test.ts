@@ -98,6 +98,7 @@ const stubHandlers: BackendHandlers = {
   previewMirror: notStubbed,
   previewMove: notStubbed,
   previewMoveTask: notStubbed,
+  previewSeriesEdit: notStubbed,
   previewSettingsImport: notStubbed,
   previewTaskToEvent: notStubbed,
   removeAccount: () => Effect.void,

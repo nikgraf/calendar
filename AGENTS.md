@@ -494,8 +494,11 @@ learned it, never only into a chat or a local memory file.
 - Build on a Google or EventKit behaviour only once it is verified: the
   "Verified …" sections of `docs/google-sync-and-testing.md`, or a probe
   against the live test account (ask Nik before the first live run). The
-  fake Google server models no recurrence, so a series' semantics never
-  come from it.
+  fake Google server mirrors what those sections record of a repeating
+  event and nothing more (where Google's answer is not recorded it
+  answers as it always did and says so in `unverified`): a series'
+  semantics still come only from them and the live suite, never from the
+  fake.
 - A push that moves the iOS native fingerprint makes CI request an EAS
   build, and the month's builds are few: ask Nik before each such push.
 - When Nik forwards someone else's input and asks what you think, assess

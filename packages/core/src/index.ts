@@ -23,6 +23,7 @@ export * from './editor/eventDraft.ts';
 export * from './editor/itemKinds.ts';
 export * from './editor/moveLoss.ts';
 export * from './editor/pendingChange.ts';
+export * from './editor/seriesEditLoss.ts';
 export * from './editor/taskMoveLoss.ts';
 export * from './editor/writable.ts';
 export * from './eventIdentity.ts';

@@ -23,13 +23,17 @@ import {
   mergeAttendees,
   meetingUrl,
   type MoveEventParams,
+  expandRecurringEvent,
   moveLoss,
+  NO_SERIES_EDIT_LOSS,
   type MoveTaskParams,
   normalizeHexColor,
   PendingOp,
   type PreviewEventToTaskParams,
   type PreviewMoveTaskParams,
+  type RecurringScope,
   remainingRecurrence,
+  type SeriesEditLoss,
   type TaskAddressParams,
   taskMoveLoss,
   TaskRecord,
@@ -43,6 +47,7 @@ import {
   toStructuredRules,
   truncateRecurrence,
   withConsistentGeo,
+  projectInstance,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
@@ -54,19 +59,28 @@ import {
   mapGcalEvent,
 } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
-import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
+import { Cause, Clock, Context, Data, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { type AppleCopySource, isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
+import { makeHeldEvents } from './heldEvents.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
 import { countAppleChangedOccurrences, findAppleOccurrence } from './appleOccurrence.ts';
-import { planCarry, restoreCarriedText, withOwnText } from './carriedText.ts';
+import {
+  carriedFields,
+  ownFields,
+  planCarry,
+  restoreCarriedChanges,
+  restoreCarriedText,
+  withOwnText,
+} from './carriedText.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
   CalendarNotWritableError,
   ConflictNotResolvableError,
+  EventAlreadyThereError,
   EventNotFoundError,
   type EventMutationsShape,
   InvalidColorError,
@@ -86,7 +100,6 @@ import { makeReminderMutations } from './reminderMutations.ts';
 import { dropSplitSeries, holdsSplit, releaseSplits, waitingSplits } from './splitSeries.ts';
 import {
   drawsSlot,
-  dropChangeDeletes,
   dropSeriesExceptions,
   restoreDropped,
   restoreTaken,
@@ -100,7 +113,6 @@ import { makeTaskMutations } from './taskMutations.ts';
 
 export * from './mutationTypes.ts';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
 
 /**
@@ -130,16 +142,15 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
   });
 
 /**
- * What a new update or delete of the event diffs against and a discard
- * puts back: the before of the queued update or delete it replaces — the
- * last state Google acknowledged, also when edits pile up offline — else
- * the row as it is now (`null` when there is none: an occurrence edit
- * materializing its override). A replaced op without one leaves it
- * unknown: the row already holds that op's edit. A replaced delete hands
- * on Google's copy instead when a pull put one back while it waited
- * (`isPulledCopy`), not the snapshot it took before. An occurrence's
- * delete that took its row along (a cut's or a rule change's) holds the
- * exception as Google has it until that change lands (`dropsFrom`).
+ * Google's copy of the event for a new update or delete of it: what it
+ * diffs against and a discard puts back. The copy the queued update or
+ * delete it replaces reads — the last state Google acknowledged or a
+ * pull brought, also when edits pile up offline — else the row as it is
+ * now (`null` when there is none: an occurrence edit materializing its
+ * override). The repo keeps one copy per event, so this only matters
+ * for the first op to hold it. A synced row at a replaced delete's id is
+ * Google's copy put back while that delete waited (`isPulledCopy`) and
+ * is taken instead.
  */
 const inheritedBefore = (
   queued: ReadonlyArray<PendingOp>,
@@ -152,15 +163,183 @@ const inheritedBefore = (
   return prior ? prior.beforePayload : (current ?? null);
 };
 
-/** The queued series edit whose text the exceptions show locally, if any. */
-const seriesEditOf = (queued: ReadonlyArray<PendingOp>): PendingOp | undefined =>
-  queued.findLast((op) => op.kind === 'update' && op.carriedText !== undefined);
+/**
+ * The park of the queued change a new edit or delete replaces: one made
+ * while a change of the event waits for the user's choice waits for it
+ * too. The row carries Google's etag by then — it is Google's version
+ * with the user's fields over it — so sent on that etag the new change
+ * went through and overwrote, unasked, what the two clashed over.
+ */
+const inheritedPark = (
+  queued: ReadonlyArray<PendingOp>,
+): { readonly conflictAt?: number; readonly lastError?: string } => {
+  const parked = queued.find(
+    (op) => (op.kind === 'update' || op.kind === 'delete') && op.conflictAt !== undefined,
+  );
+  return parked?.conflictAt === undefined
+    ? {}
+    : { conflictAt: parked.conflictAt, lastError: parked.lastError ?? 'changed on Google' };
+};
 
-/** `before` as Google has it: a queued series edit's carried text taken out. */
-const ownTextOf = (
-  before: PendingOp['beforePayload'],
-  seriesEdit: PendingOp | undefined,
-): PendingOp['beforePayload'] => (before && seriesEdit ? withOwnText(before, seriesEdit) : before);
+/**
+ * Whether the edited series resets this exception to a plain occurrence:
+ * it no longer draws the exception's slot, and still draws that day (in
+ * the series' zone). An exception whose day is gone goes with the edit.
+ */
+const resetBy = (edited: EventRecord, exception: EventRecord): boolean => {
+  const slot = exception.originalStartUtc;
+  if (slot === undefined || !edited.recurrence || drawsSlot(edited, exception)) {
+    return false;
+  }
+  const day = toZonedDateTime(
+    slot,
+    edited.isAllDay ? 'UTC' : (edited.startTimeZone ?? 'UTC'),
+  ).startOfDay();
+  return (
+    expandRecurringEvent(
+      recurrenceMasterOf(edited),
+      day.epochMilliseconds,
+      day.add({ days: 1 }).epochMilliseconds,
+    ).length > 0
+  );
+};
+
+/** The slot a change of one occurrence names; none for a change of the series. */
+const occurrenceOf = (params: {
+  readonly originalStartUtc: number;
+  readonly scope: RecurringScope;
+}): number | undefined => (params.scope === 'instance' ? params.originalStartUtc : undefined);
+
+/** How `previewSeriesEdit` leaves its transaction: with the answer, and nothing written. */
+class PreviewedSeriesEdit extends Data.TaggedError('PreviewedSeriesEdit')<{
+  readonly loss: SeriesEditLoss;
+}> {}
+
+/**
+ * An edit that replaces a queued update waits where that one did: ahead of
+ * an answer the user gave after it. The answer is that RSVP's alone, so
+ * the edit sends the one the update it replaces sent. Taken from the row,
+ * the answer was the edit's too: discarded, it still went to Google with
+ * the edit, and its own baseline held it already.
+ */
+const aheadOfAnswer = (
+  payload: EventRecord,
+  queued: ReadonlyArray<PendingOp>,
+  replaced: PendingOp | undefined,
+): EventRecord => {
+  const own =
+    replaced === undefined
+      ? undefined
+      : queued.slice(queued.indexOf(replaced) + 1).find((op) => op.kind === 'rsvp')?.changed;
+  const sent = replaced?.payload?.attendees;
+  if (!own?.length || !sent || !payload.attendees) {
+    return payload;
+  }
+  return new EventRecord({
+    ...payload,
+    attendees: payload.attendees.map((attendee) => {
+      const was = own.includes(attendee.email)
+        ? sent.find((other) => other.email === attendee.email)
+        : undefined;
+      return was ? new Attendee({ ...attendee, responseStatus: was.responseStatus }) : attendee;
+    }),
+  });
+};
+
+/**
+ * The fields the queued update a new update takes over from named as its
+ * own: they stay the new one's, whatever their value is by now. A rename
+ * back to the old title while the rename is out differs from nothing here,
+ * and left out, it was never sent.
+ */
+const inheritedChanged = (queued: ReadonlyArray<PendingOp>): ReadonlyArray<string> | undefined => {
+  const names = [
+    ...new Set(queued.flatMap((op) => (op.kind === 'update' ? (op.changed ?? []) : []))),
+  ];
+  return names.length > 0 ? names : undefined;
+};
+
+/**
+ * Per exception, the text fields its queued changes among `behind` set
+ * themselves and this edit of the series leaves alone (`planCarry`): the
+ * series' queued text is not carried over them again. A field the edit
+ * sets now (`sets`) is the series' from here on, as on Google.
+ */
+const ownedText = (
+  behind: ReadonlyArray<PendingOp>,
+  sets: ReadonlyArray<string>,
+): ReadonlyMap<string, ReadonlySet<string>> => {
+  const owned = new Map<string, Set<string>>();
+  for (const op of behind) {
+    if (op.kind === 'update') {
+      owned.set(
+        op.eventId,
+        new Set([
+          ...(owned.get(op.eventId) ?? []),
+          ...(op.changed ?? []).filter((name) => !sets.includes(name)),
+        ]),
+      );
+    }
+  }
+  return owned;
+};
+
+/**
+ * Whether a series edit changes which slots the series draws: a new rule
+ * (or none), or a new start. Google then cancels every exception whose
+ * slot is no longer drawn and keeps the others as they are, for new times
+ * as for a new rule (verified live 2026-11-22: a series moved an hour
+ * loses them all, one whose end alone moved keeps them).
+ */
+const redraws = (
+  changes: UpdateEventParams['changes'],
+  master: EventRecord,
+  merged: EventRecord,
+): boolean => changes.recurrence !== undefined || merged.startUtc !== master.startUtc;
+
+/**
+ * The exceptions a series update holds off the table (`beforeOverrides`):
+ * the ones the queued update it takes over from held, and the ones it
+ * drops itself.
+ */
+const heldWith = (
+  queued: PendingOp | undefined,
+  taken: ReadonlyArray<EventRecord>,
+): ReadonlyArray<EventRecord> | undefined => {
+  const ids = new Set(taken.map((copy) => copy.id));
+  const held = [
+    ...(queued?.kind === 'update' ? (queued.beforeOverrides ?? []) : []).filter(
+      (copy) => !ids.has(copy.id),
+    ),
+    ...taken,
+  ];
+  return held.length > 0 ? held : undefined;
+};
+
+/** The text of a series that Google copies onto its exceptions when it changes. */
+const TEXT_FIELDS = ['description', 'location', 'title'] as const;
+
+/**
+ * When a new update of the event is queued: now, and not before an op of
+ * it that is queued already. A move re-queues what waited for its event a
+ * millisecond after itself, and an edit made in that same millisecond
+ * sorted ahead of the change it was made on.
+ */
+const notBefore = (queued: ReadonlyArray<PendingOp>, now: number): number =>
+  Math.max(now, ...queued.map((op) => op.createdAt));
+
+/**
+ * The queued series edits whose text the exceptions show locally, in queue
+ * order.
+ */
+const seriesEditsOf = (queued: ReadonlyArray<PendingOp>): ReadonlyArray<PendingOp> =>
+  queued.filter((op) => op.kind === 'update' && op.carriedText !== undefined);
+
+/** `before` as Google has it: the queued series edits' carried text taken out, the last first. */
+const ownTextOf = <Row extends EventRecord | null | undefined>(
+  before: Row,
+  seriesEdits: ReadonlyArray<PendingOp>,
+): Row => (before ? (seriesEdits.reduceRight<EventRecord>(withOwnText, before) as Row) : before);
 
 /** Whether this edit — or a still-queued update it replaces — touched the guest list. */
 const attendeesFlag = (
@@ -363,31 +542,6 @@ const copyDraft = (
   };
 };
 
-/** The occurrence as it would render, keyed by its Google instance id. */
-const projectInstance = (master: EventRecord, originalStartUtc: number, now: number) => {
-  const durationDays =
-    master.isAllDay && master.startDate && master.endDate
-      ? Math.round((Date.parse(master.endDate) - Date.parse(master.startDate)) / DAY_MS)
-      : 0;
-  return new EventRecord({
-    ...master,
-    endDate: master.isAllDay ? isoDate(originalStartUtc + durationDays * DAY_MS) : undefined,
-    endUtc:
-      originalStartUtc +
-      (master.isAllDay ? durationDays * DAY_MS : master.endUtc - master.startUtc),
-    etag: null,
-    id: googleInstanceId(master.id, originalStartUtc, master.isAllDay),
-    originalStartUtc,
-    recurrence: undefined,
-    recurringEventId: master.id,
-    startDate: master.isAllDay ? isoDate(originalStartUtc) : undefined,
-    startUtc: originalStartUtc,
-    syncedAt: 0,
-    syncStatus: 'pending',
-    updatedAt: now,
-  });
-};
-
 /** What a series or "following" edit has settled before it writes (see updateRecurring). */
 interface SettledSeriesEdit {
   readonly defined: Partial<EventRecord>;
@@ -464,16 +618,82 @@ const make: Effect.Effect<
       }
     });
 
-  const taken = { eventRepo, pendingOpRepo };
+  /**
+   * The queued update of the event, which a new edit of it takes over from
+   * and whose place in the queue it takes (`pendingOpRepo.enqueue`): an
+   * event has one waiting update at most, holding everything the user
+   * changed since Google last answered. `behind` are the queued changes of
+   * the series' occurrences made under it; they stay behind it. (Replaced
+   * at the back of the queue, the update went behind them: a delete of an
+   * occurrence only its new rule draws met a 404 and counted as done, and
+   * the day came back with the rule.) A queued delete of the event leaves:
+   * the edit keeps the event.
+   */
+  const queuedUpdate = (
+    event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
+    queued: ReadonlyArray<PendingOp>,
+  ) =>
+    Effect.gen(function* () {
+      for (const op of queued) {
+        if (op.kind === 'delete') {
+          yield* pendingOpRepo.remove(op.id);
+        }
+      }
+      const replaced = queued.findLast((op) => op.kind === 'update');
+      if (!replaced) {
+        return { behind: [], replaced };
+      }
+      const all = yield* pendingOpRepo.listAll();
+      const behind = all
+        .slice(all.findIndex((op) => op.id === replaced.id) + 1)
+        .filter(
+          (op) =>
+            op.accountId === event.accountId &&
+            op.calendarId === event.calendarId &&
+            op.eventId.startsWith(`${event.eventId}_`),
+        );
+      return { behind, replaced };
+    });
 
   /**
-   * A change of the series made while its delete is still queued (the
-   * user acts on the master a pull put back meanwhile) replaces that
-   * delete: what it took locally comes back first, as Google has it, so
-   * the change sees the series as Google does — a move, an answer, an
-   * edit, or a new delete's snapshot. The pull that put the master back
-   * put back the exceptions with it (takenExceptions.ts); a delete still
-   * holding some was left so by a pull made before it did.
+   * The series' text wins over an occurrence's own where this edit sets
+   * it: Google copies a changed title, description or location onto every
+   * exception (verified live), so a change of an occurrence queued behind
+   * the series' takes the new text in the fields it had set itself, as its
+   * row does (`planCarry`).
+   */
+  const carryOntoQueued = (
+    behind: ReadonlyArray<PendingOp>,
+    merged: EventRecord,
+    sets: ReadonlyArray<(typeof TEXT_FIELDS)[number]>,
+  ) =>
+    Effect.gen(function* () {
+      for (const op of behind) {
+        const mine = sets.filter((field) => op.changed?.includes(field) === true);
+        if (op.kind !== 'update' || !op.payload || mine.length === 0) {
+          continue;
+        }
+        yield* pendingOpRepo.setPayload(
+          op.id,
+          withConsistentGeo(
+            new EventRecord({
+              ...op.payload,
+              ...Object.fromEntries(mine.map((field) => [field, merged[field]])),
+            }),
+          ),
+        );
+      }
+    });
+
+  const taken = { eventRepo, pendingOpRepo };
+  const heldEvents = makeHeldEvents(taken);
+
+  /**
+   * A change of the series made while its delete is still queued replaces
+   * that delete: the exceptions it took off the table come back first, as
+   * Google has them, so the change sees the series as Google does — a
+   * move, an answer, an edit, or what a new delete takes
+   * (takenExceptions.ts).
    */
   const restoreTakenExceptions = (accountId: string, calendarId: string, masterId: string) =>
     restoreTaken(taken, accountId, calendarId, masterId);
@@ -481,15 +701,13 @@ const make: Effect.Effect<
   /**
    * What an occurrence edit or delete starts from: the occurrence's row,
    * else the exception a queued series delete took there — Google still
-   * has it while that delete waits behind the master a pull put back (a
-   * pull now puts the exceptions back with it, one made before it did
-   * left them in the delete). Built on the master's slot instead, the edit would patch
-   * the exception's own changes away and the delete would remember
-   * nothing to put back. The series delete stays queued, so nothing else
-   * it took comes back. A cancellation it took is no base: the slot
-   * shows, and the change starts from it as before. (An exception's own
-   * queued delete is no base either: a cut or a rule change queues one for
-   * each exception it drops, and Google cancels those with its PATCH.)
+   * has it while that delete waits, and the master may be on the table
+   * again (keep-theirs on another change of it). Built on the master's
+   * slot instead, the edit would patch the exception's own changes away
+   * and the delete would remember nothing to put back. The series delete
+   * stays queued, so nothing else it took comes back. A cancellation it
+   * took is no base: the slot shows, and the change starts from it as
+   * before.
    */
   const occurrenceRow = (
     accountId: string,
@@ -522,37 +740,47 @@ const make: Effect.Effect<
     unsentCreate: PendingOp | undefined,
     now: number,
     cutAt: number,
+    taken: ReadonlyArray<EventRecord>,
   ) =>
     Effect.gen(function* () {
       const queued = yield* opsForEvent(accountId, calendarId, master.id);
-      const replaced = queued.findLast((op) => op.kind === 'update');
-      // The carried text of the series edit the truncation replaces: its
-      // payload still shows that edit's text, so abandoning it must still
-      // undo the carry.
-      const carriedText = unsentCreate ? undefined : replaced?.carriedText;
       if (unsentCreate) {
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, master.id);
-      } else {
-        yield* supersedeQueued(accountId, calendarId, master.id);
+        return yield* pendingOpRepo.enqueue(foldIntoCreate(unsentCreate, truncated));
       }
-      yield* enqueue(
-        unsentCreate
-          ? foldIntoCreate(unsentCreate, truncated)
-          : new PendingOp({
-              accountId,
-              attempts: 0,
-              baseEtag: master.etag ?? undefined,
-              beforePayload: inheritedBefore(queued, master),
-              calendarId,
-              carriedText,
-              createdAt: now,
-              dropsFrom: Math.min(cutAt, replaced?.dropsFrom ?? cutAt),
-              eventId: master.id,
-              id: generateEventId(),
-              kind: 'update',
-              nextAttemptAt: 0,
-              payload: truncated,
-            }),
+      const { replaced } = yield* queuedUpdate(
+        { accountId, calendarId, eventId: master.id },
+        queued,
+      );
+      yield* pendingOpRepo.enqueue(
+        new PendingOp({
+          accountId,
+          attempts: 0,
+          // What the series edit it takes over from changed still goes:
+          // guests, reminders and dropped coordinates ride on flags.
+          attendeesChanged: attendeesFlag({}, queued),
+          ...inheritedPark(queued),
+          baseEtag: master.etag ?? undefined,
+          // The exceptions from the cut on, which Google cancels with it.
+          beforeOverrides: heldWith(replaced, taken),
+          beforePayload: inheritedBefore(queued, master),
+          calendarId,
+          // The carried text of the series edit it takes over from: its
+          // payload still shows that edit's text, so abandoning it must
+          // still undo the carry.
+          carriedText: replaced?.carriedText,
+          changed: inheritedChanged(queued),
+          createdAt: notBefore(queued, now),
+          dropsFrom: Math.min(cutAt, replaced?.dropsFrom ?? cutAt),
+          eventId: master.id,
+          geoCleared: geoClearedFlag(master, truncated, queued),
+          id: generateEventId(),
+          kind: 'update',
+          nextAttemptAt: 0,
+          payload: aheadOfAnswer(truncated, queued, replaced),
+          remindersChanged: remindersFlag({}, queued),
+        }),
+        replaced?.id,
       );
     });
 
@@ -667,11 +895,13 @@ const make: Effect.Effect<
     });
 
   /**
-   * Drops override rows at/after the split, except those `keeps` names,
-   * and returns the deletes that cancel them remotely, for the caller to
-   * queue behind the series update that drops them — none if the series
-   * never reached Google (`remote: false`): its create already carries the
-   * truncated rule, so there is nothing to cancel.
+   * Drops override rows at/after the split, except those `keeps` names:
+   * Google cancels them with the series update that redraws the series,
+   * so nothing is queued for them. Returns Google's copies of them
+   * (`taken`), which that update holds until it lands or is given up —
+   * none if the series never reached Google (`remote: false`) — and the
+   * deletes the user made of such occurrences themselves (`deletes`), for
+   * the caller to queue behind the update.
    */
   const dropOverridesFrom = (
     accountId: string,
@@ -686,12 +916,11 @@ const make: Effect.Effect<
   ) =>
     Effect.gen(function* () {
       const deletes: Array<PendingOp> = [];
+      const taken: Array<EventRecord> = [];
       const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
       // A queued series edit carried its text onto the exceptions locally;
       // what Google has is their own text.
-      const seriesEdit = (yield* opsForEvent(accountId, calendarId, masterId)).findLast(
-        (op) => op.kind === 'update' && op.carriedText !== undefined,
-      );
+      const seriesEdits = seriesEditsOf(yield* opsForEvent(accountId, calendarId, masterId));
       for (const override of overrides) {
         if (
           (override.originalStartUtc ?? override.startUtc) < fromOriginalStartUtc ||
@@ -701,11 +930,11 @@ const make: Effect.Effect<
         }
         const queued = yield* opsForEvent(accountId, calendarId, override.id);
         // An occurrence the user deleted keeps its own delete and tombstone
-        // (folded into the change's, it went with a discard of the change),
-        // queued behind the change like the change's own: ahead, it went out
-        // first, and a 412's keep-theirs showed the occurrence past the cut.
-        // A park goes too: the change's landing settles it, and abandoned,
-        // the delete meets that 412 again.
+        // (folded into the change, it went with a discard of the change),
+        // queued behind the change: ahead, it went out first, and a 412's
+        // keep-theirs showed the occurrence past the cut. A park goes too:
+        // the change's landing settles it, and abandoned, the delete meets
+        // that 412 again.
         const own = queued.find((op) => op.kind === 'delete');
         if (remote && own && override.status === 'cancelled' && override.syncStatus === 'pending') {
           yield* pendingOpRepo.remove(own.id);
@@ -718,40 +947,34 @@ const make: Effect.Effect<
               id: generateEventId(),
               lastError: undefined,
               nextAttemptAt: 0,
-              serverPayload: undefined,
             }),
           );
           continue;
         }
-        // What a discard puts back: the exception as Google has it, not an
-        // offline edit of it whose op goes with it here.
-        const acked = inheritedBefore(queued, override);
+        // What giving the change up puts back: the exception as Google has
+        // it, not an offline edit of it whose op goes with it here; none
+        // for one this device only materialized.
+        const holder = queued.find(
+          (op) => op.kind === 'delete' || op.kind === 'rsvp' || op.kind === 'update',
+        );
+        const acked = ownTextOf(
+          holder === undefined || isPulledCopy(queued, override) ? override : holder.beforePayload,
+          seriesEdits,
+        );
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
         yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
-        if (!remote) {
-          continue;
+        if (remote && acked) {
+          taken.push(acked);
         }
-        deletes.push(
-          new PendingOp({
-            accountId,
-            attempts: 0,
-            baseEtag: override.etag ?? undefined,
-            beforePayload: acked && seriesEdit ? withOwnText(acked, seriesEdit) : acked,
-            calendarId,
-            createdAt: now,
-            eventId: override.id,
-            id: generateEventId(),
-            kind: 'delete',
-            nextAttemptAt: 0,
-            payload: override,
-          }),
-        );
       }
-      return deletes;
+      return { deletes, taken };
     });
 
   const {
+    acknowledge,
+    acknowledgeTasks,
     apply: applyOp,
+    dropUndrawn,
     releaseAccountCopies,
     releaseRow,
     settleDiscardedMove,
@@ -803,6 +1026,57 @@ const make: Effect.Effect<
       }
     });
 
+  /**
+   * An op left the queue: what stood back for it (an occurrence's change
+   * behind its series', a later change of the event behind this one) goes
+   * with the next drain, not once its backoff is over.
+   */
+  const wake = (op: PendingOp) =>
+    Effect.flatMap(pendingOpRepo.wakeWaiting(op), (woken) => (woken > 0 ? kick : Effect.void));
+
+  /** An op is done: it leaves the queue, and what waited for it may go. */
+  const finish = (op: PendingOp) =>
+    Effect.gen(function* () {
+      yield* pendingOpRepo.remove(op.id);
+      yield* wake(op);
+      // The source deletes this copy held may go now (applyOp
+      // copyGate); a copy that did not land took them back.
+      if (op.copySource?.kind === 'held') {
+        yield* settleHeld(op.copySource.opIds);
+      }
+      // A series split off this one waits for it no more (splitSeries.ts).
+      if (holdsSplit(op)) {
+        yield* releaseSplits(taken, op);
+      }
+    });
+
+  const landedInPull: EventMutationsShape['landedInPull'] = (landed) =>
+    Effect.ignore(
+      Effect.forEach(
+        landed,
+        ({ opId, record }) =>
+          Effect.gen(function* () {
+            // Re-read: an earlier one of the page may have settled it.
+            const op = yield* pendingOpRepo.getById(opId);
+            if (op && (yield* acknowledge(op, record))) {
+              yield* finish(op);
+            }
+          }),
+        { discard: true },
+      ),
+    );
+
+  const landedTasksInPull: EventMutationsShape['landedTasksInPull'] = (
+    accountId,
+    taskListId,
+    items,
+  ) =>
+    Effect.ignore(
+      Effect.flatMap(acknowledgeTasks(accountId, taskListId, items), (settled) =>
+        Effect.forEach(settled, finish, { discard: true }),
+      ),
+    );
+
   const processPendingOps = (): Effect.Effect<void> =>
     gate
       .withPermits(1)(
@@ -813,27 +1087,26 @@ const make: Effect.Effect<
             // Re-read: an earlier op in this drain may have rewritten this
             // one (createTask swaps a temp task id into queued followers) —
             // or the user may have discarded it, in which case skip rather
-            // than resurrect the stale snapshot.
+            // than send what they took back.
             const op = yield* pendingOpRepo.getById(queuedOp.id);
             if (!op) {
               continue;
             }
+            // Given up, and its discard still to finish (it waits for this
+            // gate, or the app stopped before it could): never sent.
+            if (op.discarded === true && op.kind !== 'move' && op.kind !== 'moveTask') {
+              yield* finishDiscard(op.id);
+              continue;
+            }
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
-              yield* pendingOpRepo.remove(op.id);
-              // The source deletes this copy held may go now (applyOp
-              // copyGate); a copy that did not land took them back.
-              if (op.copySource?.kind === 'held') {
-                yield* settleHeld(op.copySource.opIds);
-              }
-              // A series split off this one waits for it no more (splitSeries.ts).
-              if (holdsSplit(op)) {
-                yield* releaseSplits(taken, op);
-              }
+              yield* finish(op);
             } else if ('conflict' in outcome) {
-              // Parked until the user chooses (resolveConflict); the local
-              // row stays pending so pulls cannot overwrite their version.
-              yield* pendingOpRepo.markConflict(op.id, now, outcome.conflict ?? undefined);
+              // Parked until the user chooses (resolveConflict), with the
+              // user's version on screen. Google's is the event's copy
+              // from here on; none, when Google has the event no more.
+              yield* pendingOpRepo.setBefore(op.id, outcome.conflict);
+              yield* pendingOpRepo.markConflict(op.id, now);
             } else {
               // The reason lands in pending_ops.last_error, which the
               // unsynced-changes panel shows next to the retry count.
@@ -854,6 +1127,97 @@ const make: Effect.Effect<
       );
 
   /**
+   * Whether the discard of this change asks Google first: an event's
+   * update, delete or answer that was tried before. Its request may have
+   * landed with the answer lost. Put back as "never sent", a cut, a new
+   * rule or a delete that had landed left occurrences, or an event, on
+   * screen that Google has no more, and a change made to one was refused
+   * and dropped. Not one that waits for the user's choice (that has its
+   * own answers), nor one behind a move or a create, where Google has
+   * nothing to ask about yet, nor one of an occurrence Google held no
+   * exception for: asked by its id, Google answers with the series drawn
+   * at that slot, which cannot be told from an exception and is nothing
+   * to store (kept as a row, it stood still when the series changed).
+   * Such a change goes back as never sent, and the next pull brings what
+   * it made if it had landed.
+   */
+  const asksGoogleOnDiscard = (op: PendingOp) =>
+    op.attempts > 0 &&
+    op.conflictAt === undefined &&
+    op.copySource === undefined &&
+    op.beforePayload != null &&
+    (op.kind === 'delete' || op.kind === 'rsvp' || op.kind === 'update')
+      ? Effect.map(
+          pendingOpRepo.earlierInSeries(op),
+          (earlier) => !earlier.some((entry) => entry.kind === 'move' || entry.kind === 'create'),
+        )
+      : Effect.succeed(false);
+
+  /**
+   * Finishes the discard of a change marked given up (`PendingOp.discarded`),
+   * with no request of it out (under the drain's gate): Google says what it
+   * has, and that is what shows, as take-theirs does, whether the change
+   * had landed or not. When Google cannot be reached, a change that takes
+   * something away where it lands (a delete; a cut, a new rule or new
+   * times, which drop occurrences) stays as it is, given up and never
+   * sent again, until Google answers: put back at once, the app drew an
+   * event or occurrences Google might have no more, and a change made to
+   * one was refused and dropped. Any other change is put back as never
+   * sent, as the user asked: had it landed, the next pull brings it, and
+   * what was made on top of it meanwhile is laid over that.
+   */
+  const finishDiscard = (opId: string) =>
+    Effect.gen(function* () {
+      const op = yield* pendingOpRepo.getById(opId);
+      // Landed, or settled otherwise, while this waited: nothing to undo.
+      // Or kept after all: the user built on what it left (`keepGivenUp`).
+      if (!op || op.discarded !== true) {
+        return;
+      }
+      // Any failure but "gone" is no answer, a defect of the client's
+      // included: the discard itself must not fail for it.
+      const answer = yield* client
+        .getEvent({ accountId: op.accountId, calendarId: op.calendarId, eventId: op.eventId })
+        .pipe(
+          Effect.map((item): { readonly item: GcalEvent | undefined } | undefined => ({ item })),
+          Effect.catchTags({
+            NotFoundError: () => Effect.succeed({ item: undefined }),
+            SyncTokenExpiredError: () => Effect.succeed({ item: undefined }),
+          }),
+          Effect.catchCause(() => Effect.succeed(undefined)),
+        );
+      const now = yield* Clock.currentTimeMillis;
+      // The answer took a while, and only the drain waits for it: the user
+      // may have built on what the change left meanwhile, which keeps it
+      // (`keepGivenUp`) or puts another in its place. Read again, with
+      // what is done about it in one transaction: acted on as it was read
+      // before the answer, a change kept after all was taken back, and
+      // what it held was put on screen beside what replaced it.
+      const settled = yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const current = yield* pendingOpRepo.getById(opId);
+          if (!current || current.discarded !== true) {
+            return undefined;
+          }
+          if (answer !== undefined) {
+            yield* takeTheirs(current, answer.item, now);
+            yield* dropUndrawn(current);
+            return current;
+          }
+          if (current.kind === 'delete' || current.dropsFrom !== undefined) {
+            yield* pendingOpRepo.markDiscarded(opId, 'given up; asking Google what it has');
+            return undefined;
+          }
+          yield* discard(opId);
+          return current;
+        }),
+      );
+      if (settled) {
+        yield* wake(settled);
+      }
+    });
+
+  /**
    * A move's discard sends what was queued after it back to the source,
    * reading its place in the queue, so the move goes only once released.
    * One never sent goes at once (the drain stamps a move as sent in one
@@ -867,6 +1231,14 @@ const make: Effect.Effect<
   const discardPendingOp: EventMutationsShape['discardPendingOp'] = (opId) =>
     Effect.gen(function* () {
       const queued = yield* pendingOpRepo.getById(opId);
+      if (queued && (yield* asksGoogleOnDiscard(queued))) {
+        // Marked at once, so a drain already running does not send it
+        // while this waits for the gate; the drain finishes the discard
+        // itself if the app stops in between.
+        yield* pendingOpRepo.markDiscarded(opId, 'discarded');
+        yield* gate.withPermits(1)(Effect.orDie(finishDiscard(opId)));
+        return yield* kick;
+      }
       const splits = queued !== undefined && (yield* waitingSplits(taken, queued));
       // A copy's discard puts its source back: under the drain's gate, so
       // a refusal the drain is putting back meanwhile cannot do it twice.
@@ -876,6 +1248,9 @@ const make: Effect.Effect<
       if (splits) {
         yield* kick;
       }
+      if (queued && !sent) {
+        yield* wake(queued);
+      }
       if (!sent) {
         return;
       }
@@ -883,9 +1258,16 @@ const make: Effect.Effect<
         Effect.gen(function* () {
           // The drain settled it meanwhile (it landed, or was dropped).
           const op = yield* pendingOpRepo.getById(opId);
-          if (op) {
-            yield* settleDiscardedMove(op);
+          if (!op) {
+            return;
+          }
+          if ((yield* settleDiscardedMove(op)) === 'done') {
             yield* pendingOpRepo.remove(opId);
+            yield* wake(op);
+          } else {
+            // Google did not say whether it landed: it stays queued, never
+            // sent again, and settles once Google answers.
+            yield* pendingOpRepo.markDiscarded(opId, 'given up; asking Google where it is');
           }
         }),
       );
@@ -896,49 +1278,62 @@ const make: Effect.Effect<
     sql.withTransaction(
       Effect.gen(function* () {
         let op = yield* pendingOpRepo.getById(opId);
-        if (op?.kind === 'move') {
+        // A move (an event's or a task's) is released while still queued:
+        // what goes back with it is what was queued behind it. One that
+        // was sent may have landed: it stays queued for the caller to ask.
+        if (op?.kind === 'move' || op?.kind === 'moveTask') {
           if (op.dispatchedAt !== undefined) {
+            // Given up from here on, in this transaction: a drain already
+            // running reads it so and only asks Google where the item is.
+            // Marked after the wait for its gate, it was sent once more.
+            yield* pendingOpRepo.markDiscarded(opId, 'given up; asking Google where it is');
             return op;
           }
           yield* releaseRow(op);
           yield* pendingOpRepo.remove(opId);
           return undefined;
         }
-        // A task move, too, is released while still queued: what goes back
-        // with it is what was queued behind it.
-        if (op?.kind === 'moveTask') {
-          yield* releaseRow(op);
-          yield* pendingOpRepo.remove(opId);
-          return undefined;
-        }
         yield* pendingOpRepo.remove(opId);
+        const given = op;
         while (op) {
-          yield* releaseRow(op);
           // A subtask kept is a parent kept: Google deletes a parent's
-          // subtasks with it, so the parent's queued delete goes too.
-          const parentId = op.kind === 'deleteTask' ? op.beforeTask?.parentId : undefined;
-          const { accountId, calendarId } = op;
+          // subtasks with it, so the parent's queued delete goes too. The
+          // parent Google has it under, read before its copy is released.
+          const parentId =
+            op.kind === 'deleteTask'
+              ? (yield* taskRepo.findCopy(op.accountId, op.eventId))?.parentId
+              : undefined;
+          yield* releaseRow(op);
+          // The parent's delete, in whatever list it waits: moved since
+          // the subtask was deleted, it is queued in the destination, and
+          // left there it took the subtask the user kept along on Google.
+          const { accountId } = op;
           op =
             parentId === undefined
               ? undefined
-              : (yield* opsForEvent(accountId, calendarId, parentId)).find(
+              : (yield* pendingOpRepo.listForTask(accountId, parentId)).find(
                   (queued) => queued.kind === 'deleteTask',
                 );
           if (op) {
             yield* pendingOpRepo.remove(op.id);
           }
         }
+        if (given) {
+          yield* dropUndrawn(given);
+        }
         return undefined;
       }),
     );
 
   /**
-   * Keep mine: re-send without If-Match. A parked delete also takes back
-   * the copies a pull put back while it waited, into its snapshot
-   * (`takeBackPulled`; a pending row — an instance tombstone — is the
-   * user's own and stays). An edit of an event Google deleted is restored
-   * as a new event: patching it would 404 and the NotFound arm would drop
-   * the edit.
+   * Keep mine: re-send without If-Match. A parked delete also takes any
+   * row of Google's still at its id, or of its series' exceptions, back
+   * off the table as copies it holds (`takeBackPulled`; a pending row —
+   * an instance tombstone — is the user's own and stays). An edit of an
+   * event Google deleted is restored as a new event: patching it would 404
+   * and the NotFound arm would drop the edit. Of an occurrence Google
+   * cancelled, that new event stands on its own and the occurrence stays
+   * cancelled in its series.
    */
   const keepMine = (op: PendingOp, now: number) =>
     Effect.gen(function* () {
@@ -946,7 +1341,7 @@ const make: Effect.Effect<
         yield* takeBackPulled(taken, op);
         return yield* pendingOpRepo.unpark(op.id, now);
       }
-      if (op.serverPayload && op.serverPayload.status !== 'cancelled') {
+      if (op.beforePayload && op.beforePayload.status !== 'cancelled') {
         return yield* pendingOpRepo.unpark(op.id, now);
       }
       yield* pendingOpRepo.remove(op.id);
@@ -964,7 +1359,14 @@ const make: Effect.Effect<
         syncStatus: 'pending',
         updatedAt: now,
       });
-      yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+      // An occurrence Google holds cancelled stays hidden: its tombstone
+      // is Google's copy, and the row. Taken away with the edit, the
+      // series drew that day again beside the copy, and no later pull
+      // says it is cancelled.
+      const tombstone = op.beforePayload;
+      yield* tombstone?.status === 'cancelled' && tombstone.recurringEventId !== undefined
+        ? eventRepo.upsertMany([new EventRecord({ ...tombstone, syncStatus: 'synced' })])
+        : eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
       yield* eventRepo.upsertMany([restored]);
       yield* enqueue(
         new PendingOp({
@@ -985,11 +1387,10 @@ const make: Effect.Effect<
    * Take theirs: Google's current copy (undefined = gone) replaces the
    * local row — an exception's goes into its series delete instead while
    * that waits with the master gone (`takeIntoDelete`). Google kept a
-   * series' exceptions with its master: what a series delete or its
-   * occurrences' own deletes took comes back, where no row is, and the
-   * series change taken back (a cut, a rule change, or a series delete that
-   * replaced one) takes the deletes it queued along. A series gone on
-   * Google took them along, and their synced rows go too.
+   * series' exceptions with its master: what the change taken back held
+   * off the table (a series delete, or a cut, a new rule or new times)
+   * comes back, where no row is and Google's series draws it. A series
+   * gone on Google took them along, and their synced rows go too.
    */
   const takeTheirs = (op: PendingOp, item: GcalEvent | undefined, now: number) =>
     Effect.gen(function* () {
@@ -1009,10 +1410,7 @@ const make: Effect.Effect<
         // Ack mode: overwrites the pending row the pulls skipped.
         yield* eventRepo.upsertMany([record]);
         yield* restoreTaken(taken, op.accountId, op.calendarId, op.eventId);
-        yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
-        if (op.kind === 'delete' || op.dropsFrom !== undefined) {
-          yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
-        }
+        yield* restoreDropped(taken, op);
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
         yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);
@@ -1022,8 +1420,13 @@ const make: Effect.Effect<
       if (holdsSplit(op)) {
         yield* dropSplitSeries(taken, op, record);
       }
-      yield* restoreCarriedText(eventRepo, op);
+      yield* restoreCarriedText(taken, op);
       yield* pendingOpRepo.remove(op.id);
+      // What still waits for the event is laid over Google's version now,
+      // and asks in its turn where it changed the same thing.
+      if (record && record.status !== 'cancelled') {
+        yield* heldEvents.take(record);
+      }
     });
 
   const resolveConflict: EventMutationsShape['resolveConflict'] = ({ choice, opId }) =>
@@ -1033,8 +1436,8 @@ const make: Effect.Effect<
         return;
       }
       if (choice === 'mine') {
-        // Read again in the transaction: a pull page may have changed the
-        // snapshot keep-mine adds to. transactional kicks the drain once the
+        // Read again in the transaction: a pull page may have changed what
+        // the op holds, which keep-mine adds to. transactional kicks the drain once the
         // unpark committed.
         return yield* transactional(
           Effect.gen(function* () {
@@ -1070,9 +1473,11 @@ const make: Effect.Effect<
           const current = yield* pendingOpRepo.getById(opId);
           if (current?.conflictAt !== undefined) {
             yield* takeTheirs(current, item, now);
+            yield* dropUndrawn(current);
           }
         }),
       );
+      yield* wake(op);
     });
 
   const googleTasks = makeTaskMutations({
@@ -1188,6 +1593,14 @@ const make: Effect.Effect<
         }),
       );
       yield* eventRepo.upsertMany([merged]);
+      // The text this edit sets is the occurrence's own from here on.
+      const seriesEdits = seriesEditsOf(yield* opsForEvent(accountId, calendarId, masterId));
+      yield* ownFields(
+        pendingOpRepo,
+        seriesEdits,
+        instanceId,
+        TEXT_FIELDS.filter((field) => (merged[field] ?? '') !== (base[field] ?? '')),
+      );
       const queued = yield* opsForEvent(accountId, calendarId, instanceId);
       yield* pendingOpRepo.removeForEvent(accountId, calendarId, instanceId);
       yield* enqueue(
@@ -1195,14 +1608,14 @@ const make: Effect.Effect<
           accountId,
           attempts: 0,
           attendeesChanged: attendeesFlag(changes, queued),
+          ...inheritedPark(queued),
           baseEtag: existing?.etag ?? undefined,
           // Its own text, not what a queued series edit carried onto it.
-          beforePayload: ownTextOf(
-            inheritedBefore(queued, existing),
-            seriesEditOf(yield* opsForEvent(accountId, calendarId, masterId)),
-          ),
+          beforePayload: ownTextOf(inheritedBefore(queued, existing), seriesEdits),
           calendarId,
-          createdAt: now,
+          changed: inheritedChanged(queued),
+          // Never ahead of a change of its series it was made under.
+          createdAt: notBefore(yield* opsForEvent(accountId, calendarId, masterId), now),
           eventId: instanceId,
           geoCleared: geoClearedFlag(base, merged, queued),
           id: generateEventId(),
@@ -1215,8 +1628,11 @@ const make: Effect.Effect<
     });
 
   /**
-   * What a series edit's new rule does to the exceptions: the deletes to
-   * queue behind the PATCH, none while the rule stays as it is.
+   * What a series edit that redraws the series does to the exceptions:
+   * the ones it holds off the table from here on (`taken`, with what the
+   * queued update it takes over from still holds) and the user's own
+   * deletes of dropped occurrences to queue behind the PATCH (`deletes`).
+   * Nothing new while the series draws the slots it drew.
    */
   const dropUndrawnExceptions = (
     { accountId, calendarId, changes, masterId }: UpdateRecurringParams,
@@ -1224,34 +1640,39 @@ const make: Effect.Effect<
     { master, now, unsentCreate }: SettledSeriesEdit,
   ) =>
     Effect.gen(function* () {
-      // A new rule — or none — cancels the exceptions whose slots it no
-      // longer draws, and keeps the others as they are (Google does both
-      // with the PATCH, verified live); so do we. What a cut or rule
-      // change queued before it dropped comes back where it draws again.
-      // The deletes wait behind the PATCH, whose landing takes them along.
-      if (changes.recurrence === undefined) {
-        return [];
+      const queued = yield* opsForEvent(accountId, calendarId, masterId);
+      const replaced = queued.findLast((op) => op.kind === 'update');
+      // A new rule (or none), or new times, cancel the exceptions whose
+      // slots the series no longer draws, and keep the others as they are
+      // (Google does both with the PATCH, verified live); so do we. What a
+      // cut or rule change queued before it dropped comes back where it
+      // draws again.
+      if (!redraws(changes, master, merged)) {
+        return { deletes: [], taken: heldWith(replaced, []) };
       }
+      let held: ReadonlyArray<EventRecord> = [];
       if (!unsentCreate) {
         // An exception whose slot Google's own rule no longer draws is
         // one Google cancelled with an earlier cut or rule change (a
         // full pull brings its tombstone): drawn again, that slot is a
-        // plain occurrence on Google. It goes without a delete.
-        const onGoogle = inheritedBefore(
-          yield* opsForEvent(accountId, calendarId, masterId),
-          master,
-        );
+        // plain occurrence on Google.
+        const onGoogle = inheritedBefore(queued, master);
         for (const override of yield* eventRepo.listOverrides(accountId, calendarId, masterId)) {
           if (override.syncStatus === 'synced' && onGoogle && !drawsSlot(onGoogle, override)) {
             yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
           }
         }
-        yield* takeBackDropped(taken, merged);
+        held = yield* takeBackDropped(taken, merged, replaced);
       }
-      return yield* dropOverridesFrom(accountId, calendarId, masterId, 0, now, {
+      const dropped = yield* dropOverridesFrom(accountId, calendarId, masterId, 0, now, {
         keeps: (override) => drawsSlot(merged, override),
         remote: !unsentCreate,
       });
+      const ids = new Set(dropped.taken.map((copy) => copy.id));
+      return {
+        deletes: dropped.deletes,
+        taken: [...held.filter((copy) => !ids.has(copy.id)), ...dropped.taken],
+      };
     });
 
   /**
@@ -1301,50 +1722,89 @@ const make: Effect.Effect<
       const dropped = yield* dropUndrawnExceptions(params, merged, settled);
       yield* eventRepo.upsertMany([merged]);
       if (unsentCreate) {
-        // Google has no exceptions to carry text onto yet: the queued
-        // occurrence edits land after the create with their own text.
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, masterId);
-        return yield* enqueue(foldIntoCreate(unsentCreate, merged));
+        yield* enqueue(foldIntoCreate(unsentCreate, merged));
+        // Google has no exceptions to carry text onto yet, but the
+        // series' text still wins over an occurrence's own where this
+        // edit sets it, as it does once the series is there: the queued
+        // changes of its occurrences take it, and their rows show it.
+        const waiting = (yield* pendingOpRepo.listAll()).filter(
+          (op) =>
+            op.accountId === accountId &&
+            op.calendarId === calendarId &&
+            op.kind === 'update' &&
+            op.eventId.startsWith(`${masterId}_`),
+        );
+        yield* carryOntoQueued(
+          waiting,
+          merged,
+          TEXT_FIELDS.filter((field) => merged[field] !== master[field]),
+        );
+        for (const op of waiting) {
+          yield* heldEvents.show(op);
+        }
+        return;
       }
       // Google carries changed text onto the exceptions; so does the
       // local copy, undoably (carriedText.ts).
       const queued = yield* opsForEvent(accountId, calendarId, masterId);
+      const { behind, replaced } = yield* queuedUpdate(
+        { accountId, calendarId, eventId: masterId },
+        queued,
+      );
+      // What this edit sets and Google will copy onto the exceptions.
+      const carried = carriedFields(master, merged, replaced);
+      const sets = TEXT_FIELDS.filter(
+        (field) => merged[field] !== master[field] && carried.includes(field),
+      );
       const { carriedText, rows } = planCarry({
         master,
         merged,
         overrides: yield* eventRepo.listOverrides(accountId, calendarId, masterId),
-        queued: queued.findLast((op) => op.kind === 'update'),
+        owned: ownedText(behind, sets),
+        queued: replaced,
       });
       yield* eventRepo.upsertMany(rows);
-      // A sent create stays ahead: this patch follows whatever it did.
-      yield* supersedeQueued(accountId, calendarId, masterId);
-      yield* enqueue(
+      yield* pendingOpRepo.enqueue(
         new PendingOp({
           accountId,
           attempts: 0,
           attendeesChanged: attendeesFlag(changes, queued),
+          ...inheritedPark(queued),
           baseEtag: master.etag ?? undefined,
+          beforeOverrides: dropped.taken?.length ? dropped.taken : undefined,
           beforePayload: inheritedBefore(queued, master),
           calendarId,
           carriedText,
-          createdAt: now,
-          // A new rule drops the exceptions it no longer draws; one
-          // queued before it dropped some already.
-          dropsFrom:
-            changes.recurrence === undefined
-              ? queued.findLast((op) => op.kind === 'update')?.dropsFrom
-              : 0,
+          changed: inheritedChanged(queued),
+          createdAt: notBefore(queued, now),
+          // A new rule or new times drop the exceptions the series no
+          // longer draws; a change queued before it dropped some already.
+          dropsFrom: redraws(changes, master, merged) ? 0 : replaced?.dropsFrom,
           eventId: masterId,
           geoCleared: geoClearedFlag(master, merged, queued),
           id: generateEventId(),
           kind: 'update',
           nextAttemptAt: 0,
-          payload: merged,
+          payload: aheadOfAnswer(merged, queued, replaced),
           recurrenceCleared: recurrenceClearedFlag(changes, queued),
           remindersChanged: remindersFlag(changes, queued),
         }),
+        // A sent create stays ahead: this patch follows whatever it did.
+        replaced?.id,
       );
-      yield* Effect.forEach(dropped, enqueue);
+      // A field the series no longer changes on Google (set back to what
+      // Google has) is copied onto nothing: an occurrence's queued change
+      // that had taken the series' text there sends its own again.
+      if (replaced) {
+        yield* restoreCarriedChanges(
+          pendingOpRepo,
+          replaced,
+          TEXT_FIELDS.filter((field) => !carried.includes(field)),
+        );
+      }
+      yield* carryOntoQueued(behind, merged, sets);
+      yield* Effect.forEach(dropped.deletes, enqueue);
     });
 
   /** A "following" edit: the series splits at the occurrence into two. */
@@ -1386,6 +1846,14 @@ const make: Effect.Effect<
         updatedAt: now,
       });
       yield* eventRepo.upsertMany([truncated]);
+      const dropped = yield* dropOverridesFrom(
+        accountId,
+        calendarId,
+        masterId,
+        originalStartUtc,
+        now,
+        { remote: !unsentCreate },
+      );
       yield* truncateQueued(
         accountId,
         calendarId,
@@ -1394,13 +1862,9 @@ const make: Effect.Effect<
         unsentCreate,
         now,
         originalStartUtc,
+        dropped.taken,
       );
-      yield* Effect.forEach(
-        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
-          remote: !unsentCreate,
-        }),
-        enqueue,
-      );
+      yield* Effect.forEach(dropped.deletes, enqueue);
 
       const projected = projectInstance(master, originalStartUtc, now);
       const startUtc =
@@ -1473,6 +1937,78 @@ const make: Effect.Effect<
       );
     });
 
+  /**
+   * Deletes an event with the exceptions it has. Google deletes a series'
+   * exceptions with its master: they go with it locally and come back
+   * with it on a discard, as Google has them — one edited offline in its
+   * acknowledged state (its op goes with it here), one this device only
+   * materialized not at all. The same for an event that repeats no more
+   * here (a series cleared while offline): the rows and queued changes of
+   * its occurrences are still there, and left queued, the delete of an
+   * occurrence only a rule Google never got drew went out on its own.
+   */
+  const deleteWithExceptions = (
+    master: EventRecord,
+    unsentCreate: PendingOp | undefined,
+    now: number,
+  ) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, id: masterId } = master;
+      const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+      const queued = yield* opsForEvent(accountId, calendarId, masterId);
+      // A queued series edit carried its text onto them locally; that
+      // op goes with the master too, so their own text is taken now.
+      const seriesEdits = seriesEditsOf(queued);
+      // What a cut, a new rule or new times still queued had dropped
+      // is Google's too, and this delete's now.
+      const beforeOverrides: Array<EventRecord> = [
+        ...(heldWith(
+          queued.findLast((op) => op.kind === 'update'),
+          [],
+        ) ?? []),
+      ];
+      for (const override of overrides) {
+        // Google's copy of each: the one its own queued ops hold, else
+        // the row itself, which nothing changed here.
+        const own = yield* opsForEvent(accountId, calendarId, override.id);
+        const holder = own.find(
+          (op) => op.kind === 'delete' || op.kind === 'rsvp' || op.kind === 'update',
+        );
+        const acked =
+          holder === undefined || isPulledCopy(own, override) ? override : holder.beforePayload;
+        if (acked) {
+          beforeOverrides.push(ownTextOf(acked, seriesEdits));
+        }
+        yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
+        yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+      }
+      yield* eventRepo.deleteEvent(accountId, calendarId, masterId);
+      if (unsentCreate) {
+        // Never sent: dropping its create is the whole delete.
+        return yield* pendingOpRepo.removeForEvent(accountId, calendarId, masterId);
+      }
+      // A sent create stays ahead: the delete follows whatever it did.
+      yield* supersedeQueued(accountId, calendarId, masterId);
+      yield* enqueue(
+        new PendingOp({
+          accountId,
+          attempts: 0,
+          ...inheritedPark(queued),
+          baseEtag: master.etag ?? undefined,
+          ...(beforeOverrides.length > 0 ? { beforeOverrides } : {}),
+          beforePayload: inheritedBefore(queued, master),
+          calendarId,
+          createdAt: now,
+          eventId: masterId,
+          id: generateEventId(),
+          kind: 'delete',
+          nextAttemptAt: 0,
+          // Snapshot of what was deleted: names a parked 412 in the UI.
+          payload: master,
+        }),
+      );
+    });
+
   const shape: Omit<
     EventMutationsShape,
     | 'convertEventToTask'
@@ -1483,6 +2019,7 @@ const make: Effect.Effect<
     | 'previewEventToTask'
     | 'previewMove'
     | 'previewMoveTask'
+    | 'previewSeriesEdit'
     | 'previewTaskToEvent'
   > = {
     ...taskMutations,
@@ -1544,35 +2081,8 @@ const make: Effect.Effect<
         if (existing.recurringEventId || existing.recurrence) {
           return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
         }
-        const queued = yield* opsForEvent(accountId, calendarId, eventId);
-        const unsentCreate = queued.find(
-          (op) => op.kind === 'create' && op.dispatchedAt === undefined,
-        );
-        yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
-        if (unsentCreate) {
-          // Never sent: dropping its create is the whole delete.
-          yield* pendingOpRepo.removeForEvent(accountId, calendarId, eventId);
-        } else {
-          // A sent create stays ahead: the delete follows whatever it did.
-          yield* supersedeQueued(accountId, calendarId, eventId);
-          const now = yield* Clock.currentTimeMillis;
-          yield* enqueue(
-            new PendingOp({
-              accountId,
-              attempts: 0,
-              baseEtag: existing.etag ?? undefined,
-              beforePayload: inheritedBefore(queued, existing),
-              calendarId,
-              createdAt: now,
-              eventId,
-              id: generateEventId(),
-              kind: 'delete',
-              nextAttemptAt: 0,
-              // Snapshot of what was deleted: names a parked 412 in the UI.
-              payload: existing,
-            }),
-          );
-        }
+        const unsentCreate = yield* unsentCreateOf(accountId, calendarId, eventId);
+        yield* deleteWithExceptions(existing, unsentCreate, yield* Clock.currentTimeMillis);
       }),
 
     deleteRecurring: ({ accountId, calendarId, masterId, originalStartUtc, scope }) =>
@@ -1593,16 +2103,17 @@ const make: Effect.Effect<
           });
           yield* eventRepo.upsertMany([tombstone]);
           const queued = yield* opsForEvent(accountId, calendarId, instanceId);
-          const seriesEdit = seriesEditOf(yield* opsForEvent(accountId, calendarId, masterId));
+          const seriesEdits = seriesEditsOf(yield* opsForEvent(accountId, calendarId, masterId));
           yield* pendingOpRepo.removeForEvent(accountId, calendarId, instanceId);
           yield* enqueue(
             new PendingOp({
               accountId,
               attempts: 0,
+              ...inheritedPark(queued),
               baseEtag: existing?.etag ?? undefined,
-              beforePayload: ownTextOf(inheritedBefore(queued, existing), seriesEdit),
+              beforePayload: ownTextOf(inheritedBefore(queued, existing), seriesEdits),
               calendarId,
-              createdAt: now,
+              createdAt: notBefore(yield* opsForEvent(accountId, calendarId, masterId), now),
               eventId: instanceId,
               id: generateEventId(),
               kind: 'delete',
@@ -1614,59 +2125,11 @@ const make: Effect.Effect<
         }
 
         // A series delete or cut below replaces one still queued: what that
-        // one took is Google's, for this one's snapshot or its cut.
+        // one took is Google's, for this one to take or to cut.
         yield* restoreTakenExceptions(accountId, calendarId, masterId);
         const unsentCreate = yield* unsentCreateOf(accountId, calendarId, masterId);
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
-          // Deleting the master cascades to its exceptions server-side.
-          // They go with the master locally and come back with it on a
-          // discard — as Google has them: an exception edited offline goes
-          // back to its acknowledged state (its op goes with it here), one
-          // this device only materialized does not come back at all.
-          const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
-          const queued = yield* opsForEvent(accountId, calendarId, masterId);
-          // A queued series edit carried its text onto them locally; that
-          // op goes with the master too, so their own text is taken now.
-          const seriesEdit = queued.findLast(
-            (op) => op.kind === 'update' && op.carriedText !== undefined,
-          );
-          const beforeOverrides: Array<EventRecord> = [];
-          for (const override of overrides) {
-            const acked = inheritedBefore(
-              yield* opsForEvent(accountId, calendarId, override.id),
-              override,
-            );
-            if (acked !== null) {
-              const own = acked ?? override;
-              beforeOverrides.push(seriesEdit ? withOwnText(own, seriesEdit) : own);
-            }
-            yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
-            yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
-          }
-          yield* eventRepo.deleteEvent(accountId, calendarId, masterId);
-          if (unsentCreate) {
-            // Never sent: dropping its create is the whole delete.
-            return yield* pendingOpRepo.removeForEvent(accountId, calendarId, masterId);
-          }
-          // A sent create stays ahead: the delete follows whatever it did.
-          yield* supersedeQueued(accountId, calendarId, masterId);
-          yield* enqueue(
-            new PendingOp({
-              accountId,
-              attempts: 0,
-              baseEtag: master.etag ?? undefined,
-              beforeOverrides,
-              beforePayload: inheritedBefore(queued, master),
-              calendarId,
-              createdAt: now,
-              eventId: masterId,
-              id: generateEventId(),
-              kind: 'delete',
-              nextAttemptAt: 0,
-              payload: master,
-            }),
-          );
-          return;
+          return yield* deleteWithExceptions(master, unsentCreate, now);
         }
 
         // this-and-following: end the series just before the occurrence.
@@ -1682,6 +2145,14 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
+        const dropped = yield* dropOverridesFrom(
+          accountId,
+          calendarId,
+          masterId,
+          originalStartUtc,
+          now,
+          { remote: !unsentCreate },
+        );
         yield* truncateQueued(
           accountId,
           calendarId,
@@ -1690,16 +2161,16 @@ const make: Effect.Effect<
           unsentCreate,
           now,
           originalStartUtc,
+          dropped.taken,
         );
-        yield* Effect.forEach(
-          yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
-            remote: !unsentCreate,
-          }),
-          enqueue,
-        );
+        yield* Effect.forEach(dropped.deletes, enqueue);
       }),
 
     discardPendingOp,
+
+    landedInPull,
+
+    landedTasksInPull,
 
     processPendingOps,
 
@@ -1733,11 +2204,15 @@ const make: Effect.Effect<
         });
         yield* eventRepo.upsertMany([merged]);
         // Only the latest response needs to reach Google. A delete still
-        // queued goes too: the user answered the copy a pull put back while
-        // it waited, and the answer keeps the event, as an edit does.
+        // queued goes too: the user answered Google's copy put back at its
+        // id while it waited, and the answer keeps the event, as an edit
+        // does.
         yield* restoreTakenExceptions(accountId, calendarId, eventId);
         const queued = yield* opsForEvent(accountId, calendarId, eventId);
-        const priorRsvp = queued.find((op) => op.kind === 'rsvp');
+        // What already holds the event knows what Google has of it: none
+        // for an occurrence an edit here materialized. Named as Google's
+        // copy, that edit's row made the edit differ from it in nothing.
+        const holder = queued.find((op) => op.kind === 'rsvp' || op.kind === 'update');
         for (const op of queued) {
           if (op.kind === 'rsvp' || op.kind === 'delete') {
             yield* pendingOpRepo.remove(op.id);
@@ -1750,10 +2225,14 @@ const make: Effect.Effect<
             // Sent as If-Match, retried without on a 412 (applyOp): when it
             // holds, the edits queued on this etag can follow the RSVP.
             baseEtag: existing.etag ?? undefined,
-            // Google's copy, when a pull put one back while the delete waited.
+            // Google's copy at a waiting delete's id (isPulledCopy), else the
+            // one the answer it replaces read.
             beforePayload:
-              priorRsvp && !isPulledCopy(queued, existing) ? priorRsvp.beforePayload : existing,
+              holder && !isPulledCopy(queued, existing) ? holder.beforePayload : existing,
             calendarId,
+            // The user's own answer is this op's, also where it is the one
+            // Google has: an answer of theirs may be out.
+            changed: existing.attendees.filter(isOwn).map((attendee) => attendee.email),
             createdAt: now,
             eventId,
             id: generateEventId(),
@@ -1848,30 +2327,35 @@ const make: Effect.Effect<
           yield* pendingOpRepo.removeForEvent(accountId, calendarId, eventId);
           return yield* enqueue(foldIntoCreate(unsentCreate, merged));
         }
-        yield* supersedeQueued(accountId, calendarId, eventId);
-        yield* enqueue(
+        // A series cleared while offline keeps that change where it is,
+        // ahead of the user's own deletes of its occurrences behind it.
+        const { replaced } = yield* queuedUpdate({ accountId, calendarId, eventId }, queued);
+        yield* pendingOpRepo.enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
             attendeesChanged: attendeesFlag(changes, queued),
+            ...inheritedPark(queued),
             baseEtag: existing.etag ?? undefined,
             beforePayload: inheritedBefore(queued, existing),
             calendarId,
-            createdAt: now,
+            changed: inheritedChanged(queued),
+            createdAt: notBefore(queued, now),
             // A series cleared while offline drops its exceptions on Google;
-            // this edit replaces that queued op and drops them in its place.
-            dropsFrom: queued.findLast((op) => op.kind === 'update')?.dropsFrom,
+            // an edit that replaces that queued op drops them in its place.
+            dropsFrom: replaced?.dropsFrom,
             eventId,
             geoCleared: geoClearedFlag(existing, merged, queued),
             id: generateEventId(),
             kind: 'update',
             nextAttemptAt: 0,
-            payload: merged,
+            payload: aheadOfAnswer(merged, queued, replaced),
             // A series cleared while offline is a single event here already;
-            // this edit replaces that queued op and must still clear it there.
+            // an edit that replaces that queued op must still clear it there.
             recurrenceCleared: recurrenceClearedFlag(changes, queued),
             remindersChanged: remindersFlag(changes, queued),
           }),
+          replaced?.id,
         );
       }),
 
@@ -1927,23 +2411,78 @@ const make: Effect.Effect<
     whileQueueHeld: (effect) => gate.withPermits(1)(effect),
   };
 
+  /**
+   * A change of an event, or of an occurrence of its series, keeps a
+   * change of it the user had given up and that still waits for Google's
+   * word (`PendingOpRepo.keepGivenUp`) — where the new change stands on
+   * it. One occurrence's (`slot`, or the row's own of an exception named
+   * by its id) stands without it where Google's copy of the series draws
+   * that slot too: a drag of a day both draw re-sent a new end for the
+   * series the user had just given up.
+   */
+  const kept = (
+    { accountId, calendarId }: { readonly accountId: string; readonly calendarId: string },
+    eventId: string,
+    slot?: number,
+  ) =>
+    Effect.gen(function* () {
+      const row =
+        slot === undefined ? yield* eventRepo.getById(accountId, calendarId, eventId) : undefined;
+      const masterId = slot === undefined ? row?.recurringEventId : eventId;
+      const at = slot ?? row?.originalStartUtc;
+      if (masterId !== undefined && at !== undefined) {
+        const copy = (yield* opsForEvent(accountId, calendarId, masterId)).find(
+          (op) => op.discarded === true && op.kind === 'update',
+        )?.beforePayload;
+        if (copy?.recurrence && drawsSlot(copy, projectInstance(copy, at, 0))) {
+          return;
+        }
+      }
+      yield* pendingOpRepo.keepGivenUp({ accountId, calendarId, eventId });
+    });
+
+  /**
+   * The Google event mutations as every path runs them, the conversions
+   * and the copy-then-delete moves included: each keeps a change of the
+   * event (or of its series) the user had given up and that still waits
+   * for Google's word (`kept`), then makes its own.
+   */
+  const standing = {
+    deleteEvent: (params: Parameters<EventMutationsShape['deleteEvent']>[0]) =>
+      Effect.andThen(kept(params, params.eventId), shape.deleteEvent(params)),
+    deleteRecurring: (params: Parameters<EventMutationsShape['deleteRecurring']>[0]) =>
+      Effect.andThen(
+        kept(params, params.masterId, occurrenceOf(params)),
+        shape.deleteRecurring(params),
+      ),
+    respondToEvent: (params: Parameters<EventMutationsShape['respondToEvent']>[0]) =>
+      Effect.andThen(kept(params, params.eventId), shape.respondToEvent(params)),
+    updateEvent: (params: Parameters<EventMutationsShape['updateEvent']>[0]) =>
+      Effect.andThen(kept(params, params.eventId), shape.updateEvent(params)),
+    updateRecurring: (params: Parameters<EventMutationsShape['updateRecurring']>[0]) =>
+      Effect.andThen(
+        kept(params, params.masterId, occurrenceOf(params)),
+        shape.updateRecurring(params),
+      ),
+  };
+
   // Every queue-backed method runs inside one transaction (see
   // `transactional`); the EventKit paths (Reminders, Apple Calendar)
   // write the local store synchronously and need none.
   const google = {
     createEvent: (draft: EventDraft) => transactional(shape.createEvent(draft)),
     deleteEvent: (params: Parameters<EventMutationsShape['deleteEvent']>[0]) =>
-      transactional(shape.deleteEvent(params)),
+      transactional(standing.deleteEvent(params)),
     deleteRecurring: (params: Parameters<EventMutationsShape['deleteRecurring']>[0]) =>
-      transactional(shape.deleteRecurring(params)),
+      transactional(standing.deleteRecurring(params)),
     respondToEvent: (params: Parameters<EventMutationsShape['respondToEvent']>[0]) =>
-      transactional(shape.respondToEvent(params)),
+      transactional(standing.respondToEvent(params)),
     setCalendarColor: (params: Parameters<EventMutationsShape['setCalendarColor']>[0]) =>
       transactional(shape.setCalendarColor(params)),
     updateEvent: (params: Parameters<EventMutationsShape['updateEvent']>[0]) =>
-      transactional(shape.updateEvent(params)),
+      transactional(standing.updateEvent(params)),
     updateRecurring: (params: Parameters<EventMutationsShape['updateRecurring']>[0]) =>
-      transactional(shape.updateRecurring(params)),
+      transactional(standing.updateRecurring(params)),
   };
   const apple = makeAppleEventMutations({
     accountRepo,
@@ -2088,12 +2627,12 @@ const make: Effect.Effect<
    * in the source (its response lost): it stays queued there with the move
    * behind it, since re-keyed it would insert a second copy in the target.
    *
-   * A delete of the event still queued means the user moved the copy a
-   * pull put back while it waited: the move replaces it, as an edit does
-   * (supersedeQueued). An exception's delete (a this-and-following cut)
-   * goes behind the move, and the copy of it a pull put back moves as
-   * Google's copy, still synced, for that delete to take once it lands
-   * (applyOp dropPulledCopy leaves pending rows alone).
+   * A delete of the event still queued means the user moved Google's copy
+   * put back at its id while it waited (isPulledCopy): the move replaces
+   * it, as an edit does (supersedeQueued). An exception's delete (a
+   * this-and-following cut) goes behind the move, and a row of it put
+   * back as Google's moves with it, still synced, for that delete to take
+   * once it lands (applyOp dropPulledCopy leaves pending rows alone).
    */
   const googleServerMove = (params: MoveEventParams) =>
     Effect.gen(function* () {
@@ -2101,15 +2640,53 @@ const make: Effect.Effect<
       const { master } = yield* loadSource(params, 'google');
       const account = yield* accountRepo.get(accountId);
       yield* ensureOrganizer(master, account?.email, calendarId);
+      yield* pendingOpRepo.keepGivenUp({ accountId, calendarId, eventId: master.id });
+      // The destination's own event of that id: this one's row would
+      // replace it, and a page that names it there would read as the move
+      // landed (`landedInPull`).
+      // Deleted here, it is still there for Google while that delete waits.
+      // And another event of the id that is moving between other calendars:
+      // what a page brings for a moving event finds its rows by its id.
+      const there = { accountId, calendarId: target.calendarId, eventId };
+      const moves = (yield* pendingOpRepo.listAll()).filter(
+        (op) => op.kind === 'move' && op.accountId === accountId && op.eventId === eventId,
+      );
+      // This event's own way here: the calendars its queued moves took it
+      // through, followed back from where it is.
+      const own = new Set([calendarId]);
+      // Hermes has no toReversed: reverse a copy.
+      for (const op of [...moves].reverse()) {
+        if (own.has(op.targetCalendarId ?? '')) {
+          own.add(op.calendarId);
+        }
+      }
+      const elsewhere = moves.some((op) => !own.has(op.targetCalendarId ?? ''));
+      if (
+        elsewhere ||
+        (yield* eventRepo.getById(accountId, target.calendarId, eventId)) ||
+        // (A move queued there is this event's own way out of it or back,
+        // and a create its own beginning there.)
+        (yield* pendingOpRepo.listForEvent(there)).some(
+          (op) => op.kind !== 'move' && op.kind !== 'create',
+        )
+      ) {
+        return yield* Effect.fail(
+          new EventAlreadyThereError({
+            calendarId: target.calendarId,
+            eventId,
+            message: elsewhere
+              ? 'Another event with this id is still moving. Try again once it synced.'
+              : 'That calendar already has this event.',
+          }),
+        );
+      }
       const now = yield* Clock.currentTimeMillis;
       yield* restoreTakenExceptions(accountId, calendarId, master.id);
-      const overrides = master.recurrence
-        ? yield* eventRepo.listOverrides(accountId, calendarId, eventId)
-        : [];
+      // Also of an event whose rule was cleared while offline: the
+      // tombstone of an occurrence the user deleted before that waits with
+      // its delete, and left in the source it stayed pending for good.
+      const overrides = yield* eventRepo.listOverrides(accountId, calendarId, eventId);
       const seriesIds = new Set([master.id, ...overrides.map((row) => row.id)]);
-      // A cut's or rule change's delete of an exception owns no row: it
-      // moves with the change that queued it, or that change's discard in
-      // the destination missed it.
       const inSeries = (yield* pendingOpRepo.listAll()).filter(
         (op) =>
           op.accountId === accountId &&
@@ -2183,14 +2760,14 @@ const make: Effect.Effect<
 
   const deleteFrom = (provider: 'apple' | 'google', params: EventRef, master: EventRecord) =>
     master.recurrence
-      ? (provider === 'apple' ? apple : shape).deleteRecurring({
+      ? (provider === 'apple' ? apple : standing).deleteRecurring({
           accountId: params.accountId,
           calendarId: params.calendarId,
           masterId: params.eventId,
           originalStartUtc: master.startUtc,
           scope: 'series',
         })
-      : (provider === 'apple' ? apple : shape).deleteEvent({
+      : (provider === 'apple' ? apple : standing).deleteEvent({
           accountId: params.accountId,
           calendarId: params.calendarId,
           eventId: params.eventId,
@@ -2214,7 +2791,7 @@ const make: Effect.Effect<
           masterId: params.eventId,
           originalStartUtc,
         })
-      : shape.deleteRecurring({
+      : standing.deleteRecurring({
           accountId: params.accountId,
           calendarId: params.calendarId,
           masterId: params.eventId,
@@ -2264,6 +2841,55 @@ const make: Effect.Effect<
         createIn(route.target, draft),
         deleteFrom(route.source, params, source.master),
       );
+    });
+
+  /**
+   * What a series edit would take from the occurrences changed on their
+   * own, read off the edit itself: it runs in a transaction that is
+   * rolled back, and the series it leaves says which exceptions go. So
+   * the answer is the save's own, with what is queued and what Google
+   * holds as the save will find them. Counted: an exception whose slot
+   * the edited series no longer draws while it still draws that day —
+   * a changed one shows as the plain occurrence again, a deleted one
+   * comes back (one deleted here and not synced yet too: its delete
+   * meets a slot Google has no more). Not counted: one whose day the
+   * series draws no more (a shorter series, other weekdays), which goes
+   * as the edit says. An edit the save would refuse takes nothing: the
+   * save says why.
+   */
+  const previewSeriesEdit: EventMutationsShape['previewSeriesEdit'] = (params) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, masterId, originalStartUtc, scope } = params;
+      const master = yield* eventRepo.getById(accountId, calendarId, masterId);
+      if (
+        !master ||
+        scope === 'instance' ||
+        (scope === 'following' && originalStartUtc > master.startUtc) ||
+        (yield* providerOf(accountId)) === 'apple'
+      ) {
+        return NO_SERIES_EDIT_LOSS;
+      }
+      return yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const before = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+            yield* shape.updateRecurring(params);
+            const edited = yield* eventRepo.getById(accountId, calendarId, masterId);
+            const reset = edited ? before.filter((row) => resetBy(edited, row)) : [];
+            return yield* Effect.fail(
+              new PreviewedSeriesEdit({
+                loss: {
+                  changed: reset.filter((row) => row.status !== 'cancelled').length,
+                  deleted: reset.filter((row) => row.status === 'cancelled').length,
+                },
+              }),
+            );
+          }),
+        )
+        .pipe(
+          Effect.catchTag('PreviewedSeriesEdit', ({ loss }) => Effect.succeed(loss)),
+          Effect.catch(() => Effect.succeed(NO_SERIES_EDIT_LOSS)),
+        );
     });
 
   const previewMove = (params: MoveEventParams) =>
@@ -2607,6 +3233,7 @@ const make: Effect.Effect<
     previewEventToTask,
     previewMove,
     previewMoveTask,
+    previewSeriesEdit,
     previewTaskToEvent,
     respondToEvent: byProvider(apple.respondToEvent, google.respondToEvent),
     setCalendarColor: byProvider(apple.setCalendarColor, google.setCalendarColor),

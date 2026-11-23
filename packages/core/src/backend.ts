@@ -8,6 +8,7 @@ import {
 } from './birthdays/reminders.ts';
 import { EventToTaskPreview, TaskToEventLoss } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
+import { SeriesEditLoss } from './editor/seriesEditLoss.ts';
 import { TaskMoveLoss } from './editor/taskMoveLoss.ts';
 import { failureText } from './failureText.ts';
 import { PlaceCandidate } from './geo/candidates.ts';
@@ -155,6 +156,12 @@ export const PendingOpSummary = Schema.Struct({
    * the op has no snapshot to compare against: no details.
    */
   diff: Schema.optional(Schema.Array(PendingOpDiffLine)),
+  /**
+   * A change the user gave up after it was tried, waiting for Google to
+   * say whether it had landed: a move, or a delete or a redraw of a
+   * series discarded with Google out of reach (`PendingOp.discarded`).
+   */
+  discarded: Schema.optional(Schema.Boolean),
   eventId: Schema.String,
   id: Schema.String,
   kind: Schema.Literals([
@@ -708,6 +715,23 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: PreviewMoveTaskParams,
     success: TaskMoveLoss,
+  }),
+  /**
+   * What `updateRecurring` with the same payload takes from the
+   * occurrences changed on their own: a new start or rule drops them.
+   * Ask before saving for all events.
+   */
+  Rpc.make('previewSeriesEdit', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      calendarId: Schema.String,
+      changes: UpdateEventChanges,
+      masterId: Schema.String,
+      originalStartUtc: Schema.Number,
+      scope: RecurringScope,
+    },
+    success: SeriesEditLoss,
   }),
   /** What `deleteTask` takes with it: a Google task's subtasks. Ask before deleting. */
   Rpc.make('previewDeleteTask', {

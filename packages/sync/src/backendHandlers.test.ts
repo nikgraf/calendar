@@ -476,7 +476,7 @@ describe('listPendingOps', () => {
   );
 
   it.effect(
-    'says what each op does, naming calendars, and nothing for an op without a snapshot',
+    'says what each op does, naming calendars, and lists what an op made from nothing',
     () =>
       Effect.gen(function* () {
         yield* (yield* AccountRepo).upsert(googleAccount);
@@ -512,12 +512,14 @@ describe('listPendingOps', () => {
             payload: eventRow('Standup (moved)'),
           }),
         );
+        // An occurrence whose override the edit made: Google has none of it.
         yield* queue.enqueue(
           new PendingOp({
             ...base,
+            beforePayload: null,
             createdAt: 2,
-            eventId: 'evt-1',
-            id: 'no-snapshot',
+            eventId: 'evt-1_20260702T090000Z',
+            id: 'made',
             kind: 'update',
             payload: eventRow('Standup (moved)'),
           }),
@@ -536,8 +538,59 @@ describe('listPendingOps', () => {
         expect(diffs['edit']).toEqual([
           { after: 'Standup (moved)', before: 'Standup', label: 'Title' },
         ]);
-        expect(diffs['no-snapshot']).toBeUndefined();
+        expect(diffs['made']?.[0]).toEqual({
+          after: 'Standup (moved)',
+          before: null,
+          label: 'Title',
+        });
         expect(diffs['move']).toEqual([{ after: 'Home', before: 'Work', label: 'Calendar' }]);
       }).pipe(Effect.provide(queueLayer)),
+  );
+  it.effect("a parked change is shown with its own fields, not an earlier one's too", () =>
+    // Review (Opus, round 4): two changes of one event queued in order, the
+    // second parked. Its version holds the first one's title as well; the
+    // banner showed that title as part of the choice, and "theirs" left it
+    // queued all the same.
+    Effect.gen(function* () {
+      yield* (yield* AccountRepo).upsert(googleAccount);
+      const queue = yield* PendingOpRepo;
+      const base = { accountId: 'acc-1', attempts: 0, calendarId: 'cal-1', nextAttemptAt: 0 };
+      const copy = new EventRecord({ ...eventRow('Standup'), syncStatus: 'synced' });
+      const renamed = eventRow('Standup (renamed)');
+      yield* queue.enqueue(
+        new PendingOp({
+          ...base,
+          beforePayload: copy,
+          createdAt: 1,
+          eventId: 'evt-1',
+          id: 'rename',
+          kind: 'update',
+          payload: renamed,
+        }),
+      );
+      yield* queue.enqueue(
+        new PendingOp({
+          ...base,
+          beforePayload: copy,
+          conflictAt: 5,
+          createdAt: 2,
+          eventId: 'evt-1',
+          id: 'place',
+          kind: 'update',
+          payload: new EventRecord({ ...renamed, location: 'Room 4' }),
+        }),
+      );
+      const listed = (yield* listPendingOps) as ReadonlyArray<{
+        readonly conflict?: { readonly mine?: EventRecord };
+        readonly diff?: ReadonlyArray<PendingOpDiffLine>;
+        readonly id: string;
+      }>;
+      const place = listed.find((op) => op.id === 'place');
+      expect([place?.conflict?.mine?.title, place?.conflict?.mine?.location]).toEqual([
+        'Standup',
+        'Room 4',
+      ]);
+      expect(place?.diff?.map((line) => line.label)).toEqual(['Location']);
+    }).pipe(Effect.provide(queueLayer)),
   );
 });

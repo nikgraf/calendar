@@ -30,7 +30,8 @@ const reasonLine = (lastError: string): string | null => {
 /**
  * One line for the unsynced-changes list: "<kind> · <subject>", plus the
  * retry note when the op has failed before (or the conflict note while a
- * 412 has it parked), and why the last attempt failed. Desktop had the
+ * 412 has it parked, or that a discarded move still waits for Google's
+ * word), and why the last attempt failed. Desktop had the
  * label map and iOS printed raw kinds ("createTask"); both use this now.
  * Without the reason, an op retrying forever said only that it was — the
  * cause sat in the database of a phone nobody can read.
@@ -39,6 +40,7 @@ export const pendingOpLabel = (op: {
   readonly attempts: number;
   readonly calendarId: string;
   readonly conflict?: unknown;
+  readonly discarded?: boolean | undefined;
   readonly eventId: string;
   readonly kind: PendingOp['kind'];
   readonly lastError?: string | undefined;
@@ -49,14 +51,21 @@ export const pendingOpLabel = (op: {
   readonly text: string;
 } => ({
   reason:
-    op.conflict === undefined && op.attempts > 0 && op.lastError !== undefined
+    op.conflict === undefined &&
+    op.discarded !== true &&
+    op.attempts > 0 &&
+    op.lastError !== undefined
       ? reasonLine(op.lastError)
       : null,
   retry:
     op.conflict !== undefined
       ? 'changed on Google — choose a version'
-      : op.attempts > 0
-        ? `retrying (${String(op.attempts)}×)`
-        : null,
+      : op.discarded === true
+        ? op.kind === 'move' || op.kind === 'moveTask'
+          ? 'discarded — asking Google whether it had moved'
+          : 'discarded — asking Google what it has'
+        : op.attempts > 0
+          ? `retrying (${String(op.attempts)}×)`
+          : null,
   text: `${KIND_LABEL[op.kind]} · ${op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}`,
 });

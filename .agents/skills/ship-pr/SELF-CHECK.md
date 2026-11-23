@@ -111,6 +111,45 @@ The class found in the most PRs (54), almost all by Opus.
 - Does any write rebuild the item from a subset of its fields and drop
   the rest (guests' optional fields, a Meet link, attachments, every alert
   but the first)?
+- Does any path make something Google's copy of an item (the reply to a
+  write sent without If-Match, a move's or a create's answer, a page's
+  record) while another change of the item still waits? Is that change
+  laid over it first (`heldEvents.take`), or does the copy just move on
+  (`advanceBefore`) and leave the change's stale fields to read as the
+  user's own, sent back over another device's? Test it with a value
+  already on Google: a stale field that is absent is not sent by a PATCH,
+  and hides the bug (#374, six findings of this one shape).
+- What does each queued change store as its own? Only what its edit set:
+  measured as "the row minus Google's copy" it also holds what an earlier
+  change of the event set, or a series' carried text, and sends that on
+  after its owner was replaced or discarded; and it loses a value set
+  back to the one Google has while the first write is out (#374, Opus
+  round 3).
+- A check for "Google changed this": does it leave out what an earlier
+  change of ours put there (its landing, sent without If-Match) and what
+  only stopped being laid under the change (a series' carried text)?
+  Both parked conflicts nobody caused (#374, seeds 2368 and 1782).
+- Does the diff queue a second update of an event, or a request for
+  something Google does itself with another write (a delete for each
+  exception a cut's PATCH cancels)? An event has one waiting update, and
+  what Google's own order would decide is settled when the edit is made
+  (#374: each of the other shapes took review rounds to keep correct).
+- Does the code assume what Google does with a series' exceptions, ids or
+  etags? Probe it against the live test account first: "a retimed series
+  keeps its exceptions" stood unverified for weeks and was wrong (#374).
+- A discard or a rejection of a change that may already have landed (its
+  answer lost): what does the app show until the next pull, and where
+  does a change made in between go? A move's goes to the wrong calendar
+  unless the move waits for Google's answer (`PendingOp.discarded`);
+  other changes ask Google on the discard (`finishDiscard`).
+- An answer to a lookup by id (`events.get`): is it kept (`learned`,
+  take-theirs), or used for one question and thrown away while the row
+  shows the older version? And for an occurrence id: is it an exception
+  Google holds, or only the series drawn at that slot, which must not be
+  stored as a row?
+- Does anything read the queue or a copy and then write a row in two
+  steps outside a transaction? The desktop's store answers within the
+  fiber's turn; the iPhone's does not, and a discard gets in between.
 - Does every write path (Save, Add all, an Assistant turn, a finder
   phrase, Mark as Done, a title trim) apply Save's gate:
   `UnsupportedForProviderError`, the Reminders-only fields, validation?

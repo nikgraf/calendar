@@ -1,5 +1,6 @@
 import { plainDateToUtcMs } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
+import { EventRecord } from '../types.ts';
 import {
   DTSTART_ONLY_RULE,
   expandRecurringEvent,
@@ -312,3 +313,30 @@ export const isRecurringSet = (recurrence: ReadonlyArray<string>): boolean =>
     const upper = line.toUpperCase();
     return upper.startsWith('RRULE:') || upper.startsWith('RDATE');
   });
+
+const DAY = 24 * 60 * 60 * 1000;
+const isoDay = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
+
+/** The occurrence as it would render, keyed by its Google instance id. */
+export const projectInstance = (master: EventRecord, originalStartUtc: number, now: number) => {
+  const durationDays =
+    master.isAllDay && master.startDate && master.endDate
+      ? Math.round((Date.parse(master.endDate) - Date.parse(master.startDate)) / DAY)
+      : 0;
+  return new EventRecord({
+    ...master,
+    endDate: master.isAllDay ? isoDay(originalStartUtc + durationDays * DAY) : undefined,
+    endUtc:
+      originalStartUtc + (master.isAllDay ? durationDays * DAY : master.endUtc - master.startUtc),
+    etag: null,
+    id: googleInstanceId(master.id, originalStartUtc, master.isAllDay),
+    originalStartUtc,
+    recurrence: undefined,
+    recurringEventId: master.id,
+    startDate: master.isAllDay ? isoDay(originalStartUtc) : undefined,
+    startUtc: originalStartUtc,
+    syncedAt: 0,
+    syncStatus: 'pending',
+    updatedAt: now,
+  });
+};

@@ -6,6 +6,7 @@ import {
   isLossy,
   isTaskToEventLossy,
   moveLossSummary,
+  seriesEditLossSummary,
   placeDefaultCalendar,
   taskRecurrenceFromLines,
   taskToEventLossSummary,
@@ -310,12 +311,14 @@ export const repeatScopeError = ({
  * What an editor asks before a write that drops something. The platform
  * words the buttons from `kind` and `subject`: a `move` keeps the item
  * where it is, a `convert` (an existing item changes kind on Save) or a
- * `switch` (a new draft changes kind) keeps it as the `subject`, and a
+ * `switch` (a new draft changes kind) keeps it as the `subject`, a
  * `delete` keeps it — its `summary` is the whole question
- * (`deleteQuestion`, `deleteTaskQuestion`).
+ * (`deleteQuestion`, `deleteTaskQuestion`) — and `allEvents` (a save for
+ * all events that drops occurrences changed on their own,
+ * `seriesEditLossSummary`) goes back to the form.
  */
 export interface EditorConfirmRequest {
-  readonly kind: 'convert' | 'delete' | 'move' | 'switch';
+  readonly kind: 'allEvents' | 'convert' | 'delete' | 'move' | 'switch';
   readonly subject: 'event' | 'reminder' | 'task';
   readonly summary: string;
   /** A `switch`: the kind being switched to (the dialog names it). */
@@ -1163,14 +1166,25 @@ export const useEventEditorModel = ({
         // An untouched Save writes nothing; a move (below) still runs.
         const edited = Object.keys(changes).length > 0;
         if (edited && masterId) {
-          await mutations.updateRecurring({
+          const edit = {
             accountId,
             calendarId,
             changes,
             masterId,
             originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
             scope,
-          });
+          };
+          // A new start or rule for all events drops the occurrences
+          // changed on their own (Google cancels them): ask first, so
+          // "keep editing" leaves them as they are.
+          const lost =
+            scope === 'instance'
+              ? null
+              : seriesEditLossSummary(await mutations.previewSeriesEdit(edit));
+          if (lost && !(await confirm({ kind: 'allEvents', subject: 'event', summary: lost }))) {
+            return;
+          }
+          await mutations.updateRecurring(edit);
         } else if (edited) {
           await mutations.updateEvent({ accountId, calendarId, changes, eventId: existing.id });
         }

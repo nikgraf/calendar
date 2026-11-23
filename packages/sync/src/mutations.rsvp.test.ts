@@ -21,7 +21,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { EventMutations } from './mutations.ts';
@@ -144,7 +144,12 @@ const ifMatchGoogle = (initialEtag: string, { firstEditFails = false } = {}) => 
     getEvent: () => Effect.sync(() => current()),
     patchEvent: ({ baseEtag, event, eventId }) =>
       Effect.suspend((): ReturnType<GoogleCalendarClientShape['patchEvent']> => {
-        const fields = 'summary' in event ? 'summary' : 'attendees';
+        // An answer names the guests alone, as many as were invited; an
+        // edit names what it changed: a title, or a longer guest list.
+        const fields =
+          'summary' in event || event.attendees?.length !== invited.attendees?.length
+            ? 'summary'
+            : 'attendees';
         const check = baseEtag === undefined ? 'unchecked' : `If-Match ${baseEtag}`;
         if (fields === 'summary' && editFails) {
           editFails = false;
@@ -163,6 +168,10 @@ const ifMatchGoogle = (initialEtag: string, { firstEditFails = false } = {}) => 
   };
   return { client, sent };
 };
+
+/** Keeps the drain a mutation forks from running before the next call. */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 describe('EventMutations.respondToEvent', () => {
   it.effect('updates only the own attendee and patches attendees-only', () => {
@@ -249,27 +258,31 @@ describe('EventMutations.respondToEvent', () => {
     }).pipe(Effect.provide(makeLayer(google.client)));
   });
 
-  it.effect('an RSVP lands when Google moved on; the edit behind it still asks', () => {
-    // Another client changed the event after it was pulled.
-    const google = ifMatchGoogle('"remote"');
-    return Effect.gen(function* () {
-      yield* seed;
-      const mutations = yield* EventMutations;
-      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
-      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
-      yield* mutations.processPendingOps();
-      yield* mutations.processPendingOps();
+  it.effect(
+    'an RSVP lands when Google moved on; the edit behind it goes on Google’s version',
+    () => {
+      // Another client changed the event after it was pulled, in nothing
+      // the edit changes. The answer goes again unchecked, and its reply
+      // is Google's version now: the edit is laid over it and goes on its
+      // etag, and nobody is asked.
+      const google = ifMatchGoogle('"remote"');
+      return Effect.gen(function* () {
+        yield* seed;
+        const mutations = yield* EventMutations;
+        yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+        yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+        yield* mutations.processPendingOps();
+        yield* mutations.processPendingOps();
 
-      expect(google.sent).toEqual([
-        'attendees If-Match "inv-1" → 412',
-        'attendees unchecked → "w1"',
-        'summary If-Match "inv-1" → 412',
-      ]);
-      const [parked] = yield* (yield* PendingOpRepo).listAll();
-      expect(parked?.kind).toBe('update');
-      expect(parked?.conflictAt).toBeDefined();
-    }).pipe(Effect.provide(makeLayer(google.client)));
-  });
+        expect(google.sent).toEqual([
+          'attendees If-Match "inv-1" → 412',
+          'attendees unchecked → "w1"',
+          'summary If-Match "w1" → "w2"',
+        ]);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }).pipe(Effect.provide(makeLayer(google.client)));
+    },
+  );
 
   it.effect('an edit queued before an RSVP that overtook it keeps its etag and asks', () => {
     // The guest-list edit carries the response the RSVP then replaced: on
@@ -489,6 +502,9 @@ describe('an RSVP discarded after a delete took the row', () => {
       ).toBe('needsAction');
       expect(row?.syncStatus).toBe('synced');
     }).pipe(
+      // Neither change is tried in between: a delete that was tried waits
+      // for Google's word when it is discarded (`finishDiscard`).
+      noYield,
       Effect.provide(
         makeLayer({
           deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
@@ -540,6 +556,41 @@ describe('a discarded change leaves what the other queued op sends', () => {
     }).pipe(Effect.provide(offline)),
   );
 
+  it.effect(
+    'a discarded RSVP is not sent along by the edit that replaced one queued before it',
+    () =>
+      Effect.gen(function* () {
+        yield* seed;
+        const mutations = yield* EventMutations;
+        yield* mutations.updateEvent({
+          ...respond,
+          changes: {
+            attendees: [
+              new Attendee({
+                email: 'organizer@example.com',
+                isOrganizer: true,
+                responseStatus: 'accepted',
+              }),
+              new Attendee({ email: 'nik@example.com', responseStatus: 'needsAction' }),
+              new Attendee({ email: 'ann@example.com', responseStatus: 'needsAction' }),
+            ],
+          },
+        });
+        yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+        // Replaces the guest-list edit where it waits, ahead of the answer.
+        yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+        const queue = yield* PendingOpRepo;
+        expect((yield* queue.listAll()).map((op) => op.kind)).toEqual(['update', 'rsvp']);
+        const rsvp = (yield* queue.listAll()).find((op) => op.kind === 'rsvp');
+        yield* mutations.discardPendingOp(rsvp!.id);
+        const edit = (yield* queue.listAll()).find((op) => op.kind === 'update');
+        expect(ownResponseOf(edit?.payload)).toBe('needsAction');
+        expect(edit?.payload?.title).toBe('Planning v2');
+        const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-invite');
+        expect(ownResponseOf(row ?? undefined)).toBe('needsAction');
+      }).pipe(Effect.provide(offline)),
+  );
+
   it.effect('a discarded guest-list edit is not sent along by a queued RSVP', () =>
     Effect.gen(function* () {
       yield* seed;
@@ -568,5 +619,207 @@ describe('a discarded change leaves what the other queued op sends', () => {
         rsvp?.payload?.attendees?.some((attendee) => attendee.email === 'ann@example.com'),
       ).toBe(false);
     }).pipe(Effect.provide(offline)),
+  );
+});
+
+describe('an answer waiting under a newer rename', () => {
+  it.effect(
+    'a rename that lands before an older answer keeps its title, also in what follows',
+    () => {
+      // Review (Opus): the answer was queued on a row that showed a rename
+      // and kept that title among its changes. A newer rename replaced the
+      // first and landed while the answer still backed off: the row was drawn
+      // again from the answer, old title and all, and the next edit of what
+      // the user saw sent that title to Google as theirs.
+      const sent: Array<string> = [];
+      let offline = true;
+      let etag = '"inv-1"';
+      let writes = 0;
+      let summary = 'Planning';
+      let description: string | undefined = undefined;
+      let attendees = invited.attendees!.map((attendee) => ({
+        email: attendee.email,
+        responseStatus: attendee.responseStatus as string,
+      }));
+      const current = () => ({
+        attendees,
+        ...(description === undefined ? {} : { description }),
+        end: { dateTime: '2026-07-08T11:00:00Z' },
+        etag,
+        id: 'evt-invite',
+        start: { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
+        status: 'confirmed' as const,
+        summary,
+      });
+      const layer = makeLayer({
+        getEvent: () => Effect.sync(() => current()),
+        patchEvent: ({ baseEtag, event, eventId }) =>
+          Effect.suspend((): ReturnType<GoogleCalendarClientShape['patchEvent']> => {
+            const keys = Object.keys(event).join(',');
+            if (offline) {
+              return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+            }
+            if (baseEtag !== undefined && baseEtag !== etag) {
+              return Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
+            }
+            summary = typeof event.summary === 'string' ? event.summary : summary;
+            description = typeof event.description === 'string' ? event.description : description;
+            if (event.attendees) {
+              attendees = event.attendees.map((guest) => ({
+                email: guest.email,
+                responseStatus: guest.responseStatus as string,
+              }));
+            }
+            writes += 1;
+            etag = `"w${writes}"`;
+            sent.push(keys);
+            return Effect.succeed(current());
+          }),
+      });
+      return Effect.gen(function* () {
+        yield* seed;
+        const mutations = yield* EventMutations;
+        const events = yield* EventRepo;
+        const ops = yield* PendingOpRepo;
+        const rename = (title: string) => mutations.updateEvent({ ...respond, changes: { title } });
+        yield* rename('B');
+        yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+        // Both back off.
+        yield* mutations.processPendingOps();
+        yield* rename('D');
+        offline = false;
+        yield* mutations.processPendingOps();
+        const row = yield* events.getById('acc-1', 'cal-1', 'evt-invite');
+        expect([row?.title, summary]).toEqual(['D', 'D']);
+        // The user then edits the description of what they see.
+        yield* mutations.updateEvent({ ...respond, changes: { description: 'Agenda' } });
+        yield* ops.retryNow();
+        yield* mutations.processPendingOps();
+        yield* mutations.processPendingOps();
+        const final = yield* events.getById('acc-1', 'cal-1', 'evt-invite');
+        expect([final?.title, final?.description, final?.syncStatus]).toEqual([
+          'D',
+          'Agenda',
+          'synced',
+        ]);
+        expect([summary, description]).toEqual(['D', 'Agenda']);
+        expect(sent).toEqual(['summary', 'attendees', 'description']);
+        expect(yield* ops.listAll()).toEqual([]);
+      }).pipe(Effect.provide(layer));
+    },
+  );
+});
+
+describe('an answer given while an earlier one is out', () => {
+  it.effect('the answer Google has, given again, is sent once the other has landed', () => {
+    // Review (Opus): declined, then back to accepted while the decline was
+    // out. Measured against Google's copy the second answer changed
+    // nothing, and what went was the copy's answer once the decline had
+    // landed: declined, on Google and on the row.
+    const sent: Array<string | undefined> = [];
+    let duringNext: Effect.Effect<unknown, unknown> | undefined;
+    let attendees = invited.attendees!.map((attendee) => ({
+      email: attendee.email,
+      responseStatus: attendee.responseStatus as string,
+    }));
+    const own = () => attendees.find((guest) => guest.email === 'nik@example.com')?.responseStatus;
+    const layer = makeLayer({
+      patchEvent: ({ event }) =>
+        Effect.gen(function* () {
+          const during = duringNext;
+          duringNext = undefined;
+          if (during) {
+            yield* Effect.orDie(during);
+          }
+          attendees = attendees.map((guest) => ({
+            ...guest,
+            responseStatus:
+              event.attendees?.find((answer) => answer.email === guest.email)?.responseStatus ??
+              guest.responseStatus,
+          }));
+          sent.push(own());
+          return {
+            attendees,
+            end: { dateTime: '2026-07-08T11:00:00Z' },
+            etag: `"a${sent.length}"`,
+            id: 'evt-invite',
+            start: { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
+            status: 'confirmed' as const,
+            summary: 'Planning',
+          };
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.processPendingOps();
+      yield* mutations.respondToEvent({ ...respond, response: 'declined' });
+      duringNext = mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+      expect(sent).toEqual(['accepted', 'declined', 'accepted']);
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-invite');
+      expect(
+        row?.attendees?.find((guest) => guest.email === 'nik@example.com')?.responseStatus,
+      ).toBe('accepted');
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+describe('an answer to an occurrence changed here first', () => {
+  it.effect(
+    "Google has no exception of it: the answer does not make the edit Google's copy",
+    () => {
+      // Review (Codex, round 3): an occurrence renamed offline, which Google
+      // has no exception for, then answered. The answer named the renamed
+      // row as what Google has, so the rename differed from "Google's copy"
+      // in nothing and its PATCH went out empty.
+      const sent: Array<string> = [];
+      const layer = makeLayer({
+        patchEvent: ({ event }) => {
+          sent.push(Object.keys(event).join(','));
+          return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+        },
+      });
+      return Effect.gen(function* () {
+        yield* seed;
+        const weekly = new EventRecord({
+          ...invited,
+          etag: '"series-1"',
+          id: 'evt-weekly',
+          recurrence: ['RRULE:FREQ=WEEKLY;COUNT=4'],
+        });
+        yield* (yield* EventRepo).upsertMany([weekly]);
+        const mutations = yield* EventMutations;
+        const second = weekly.startUtc + 7 * 24 * 60 * 60 * 1000;
+        yield* mutations.updateRecurring({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Planning (second)' },
+          masterId: 'evt-weekly',
+          originalStartUtc: second,
+          scope: 'instance',
+        });
+        const [rename] = yield* (yield* PendingOpRepo).listAll();
+        yield* mutations.respondToEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          eventId: rename!.eventId,
+          response: 'accepted',
+        });
+        const queued = yield* (yield* PendingOpRepo).listAll();
+        expect(
+          queued.map((op) => `${op.kind} ${op.beforePayload === null ? 'no copy' : 'copy'}`),
+        ).toEqual(['update no copy', 'rsvp no copy']);
+        expect(queued[0]?.changed).toEqual(['title']);
+        expect(queued[0]?.basePayload?.title).toBe('Planning');
+        sent.length = 0;
+        yield* (yield* PendingOpRepo).retryNow();
+        yield* mutations.processPendingOps();
+        expect(sent).toEqual(['summary', 'attendees']);
+      }).pipe(Effect.provide(layer));
+    },
   );
 });

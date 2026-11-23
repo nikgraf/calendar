@@ -3,15 +3,16 @@ import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
-import { TASKLISTS_KEY, TASKS_KEY } from './keys.ts';
+import { OPS_KEY, TASKLISTS_KEY, TASKS_KEY } from './keys.ts';
 import {
+  taskFromPayload,
   taskFromRow,
   taskJsonColumns,
   taskListFromRow,
   type TaskListRow,
   type TaskRow,
 } from './rows.ts';
-import { accountGuard } from './repoShared.ts';
+import { accountGuard, taskPayloadJson } from './repoShared.ts';
 
 export interface TaskRepoShape {
   /** Deletes synced tasks of the list not touched since syncedAt (full pass). */
@@ -30,6 +31,14 @@ export interface TaskRepoShape {
     accountId: string,
     taskId: string,
   ) => Effect.Effect<TaskRecord | undefined, SqlError>;
+  /**
+   * Google's copy of a task a queued change holds, by account and id, in
+   * whichever list Google has it (the source list while a move waits).
+   */
+  readonly findCopy: (
+    accountId: string,
+    taskId: string,
+  ) => Effect.Effect<TaskRecord | undefined, SqlError>;
   /** One task by its full key, or undefined. */
   readonly get: (
     accountId: string,
@@ -45,6 +54,12 @@ export interface TaskRepoShape {
     startMs: number,
     endMs: number,
   ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
+  /** Google's copy of a held task by its full key, or undefined. */
+  readonly getCopy: (
+    accountId: string,
+    listId: string,
+    taskId: string,
+  ) => Effect.Effect<TaskRecord | undefined, SqlError>;
   /**
    * Every task of the given lists as a calendar mirror reads its sources:
    * dated or not, open or completed, whether or not the list is shown on
@@ -70,8 +85,22 @@ export interface TaskRepoShape {
     startDate: string,
     endDate: string,
   ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
+  /**
+   * Keeps Google's copy of these tasks before a local change takes their
+   * rows: each synced row is stored as it is, once (a task already held
+   * keeps the copy it has, and a row Google has not got yet has none).
+   * While a copy exists, pulls and answers write Google's version there
+   * and the row is rebuilt from it and the queued changes.
+   */
+  readonly holdTasks: (
+    accountId: string,
+    listId: string,
+    ids: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SqlError>;
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
+  /** Every copy Google's side of the account's held tasks has, in any list. */
+  readonly listCopies: (accountId: string) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
   /**
    * The tasks of a list under one parent — the top-level ones without
@@ -113,6 +142,8 @@ export interface TaskRepoShape {
     listId: string,
     taskId: string,
   ) => Effect.Effect<void, SqlError>;
+  /** Stores Google's copy of a task, replacing the one held for its key. */
+  readonly putCopy: (task: TaskRecord) => Effect.Effect<void, SqlError>;
   /**
    * Google's order for a list (each task's parent and position), written
    * onto its rows whatever their sync state: a move renumbers its
@@ -136,6 +167,12 @@ export interface TaskRepoShape {
     tempId: string,
     serverId: string,
   ) => Effect.Effect<void>;
+  /** Forgets Google's copies of these tasks: nothing holds them, or Google has them no more. */
+  readonly removeCopies: (
+    accountId: string,
+    listId: string,
+    ids: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SqlError>;
   readonly removeListsMissing: (
     accountId: string,
     keepIds: ReadonlyArray<string>,
@@ -205,6 +242,14 @@ export interface TaskRepoShape {
     readonly status: TaskRecord['status'];
     readonly taskId: string;
   }) => Effect.Effect<void, SqlError>;
+  /**
+   * Google's newer version of tasks, written to the copies that exist
+   * (the held ones); returns those. The rest have no copy: their rows
+   * are Google's and the caller writes them.
+   */
+  readonly updateCopies: (
+    tasks: ReadonlyArray<TaskRecord>,
+  ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /**
    * Optimistic edit. `undefined` leaves a field alone; `null` clears the
    * Reminders-only fields; `listId` in changes moves the row (Reminders).
@@ -346,6 +391,12 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             ORDER BY t.status = 'needsAction' DESC`,
           (rows) => (rows[0] ? taskFromRow(rows[0]) : undefined),
         ),
+      findCopy: (accountId, taskId) =>
+        Effect.map(
+          sql<{ readonly payload: string }>`SELECT payload FROM task_copies
+            WHERE account_id = ${accountId} AND id = ${taskId}`,
+          (rows) => (rows[0] ? taskFromPayload(rows[0].payload) : undefined),
+        ),
       get: (accountId, listId, taskId) =>
         Effect.map(
           sql<TaskRow>`
@@ -364,6 +415,12 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND t.completed_at >= ${startMs} AND t.completed_at < ${endMs}
             ORDER BY t.completed_at, t.title`,
           (rows) => rows.map(taskFromRow),
+        ),
+      getCopy: (accountId, listId, taskId) =>
+        Effect.map(
+          sql<{ readonly payload: string }>`SELECT payload FROM task_copies
+            WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
+          (rows) => (rows[0] ? taskFromPayload(rows[0].payload) : undefined),
         ),
       getMirrorSource: (accountId, listIds) =>
         listIds.length === 0
@@ -418,6 +475,33 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             ORDER BY t.due_date, t.due_time IS NULL, t.due_time, t.title`,
           (rows) => rows.map(taskFromRow),
         ),
+      holdTasks: (accountId, listId, ids) =>
+        Effect.forEach(
+          ids,
+          (id) =>
+            Effect.gen(function* () {
+              const rows = yield* sql<TaskRow>`
+                SELECT t.*, l.provider AS list_provider FROM tasks t
+                JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+                WHERE t.account_id = ${accountId} AND t.list_id = ${listId} AND t.id = ${id}
+                  AND t.sync_status = 'synced'`;
+              const row = rows[0];
+              if (row) {
+                // One copy per task, whatever list it is in (a task keeps
+                // its id across lists). A synced row here is where Google
+                // has the task now: a copy of it in another list (another
+                // device moved it while a change of it waited) is what
+                // Google had before, and this one takes its place.
+                yield* sql`INSERT INTO task_copies (account_id, list_id, id, payload)
+                  VALUES (${accountId}, ${listId}, ${id},
+                          ${JSON.stringify(taskPayloadJson(taskFromRow(row)))})
+                  ON CONFLICT (account_id, id) DO UPDATE
+                    SET list_id = excluded.list_id, payload = excluded.payload
+                    WHERE task_copies.list_id != excluded.list_id`;
+              }
+            }),
+          { discard: true },
+        ),
       insertLocal: (task) =>
         tasksMutation(
           Effect.asVoid(
@@ -435,6 +519,16 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                     ${task.externalId ?? null}, ${task.dueUtc ?? null},
                     ${task.parentId ?? null}, ${task.position ?? null})`,
           ),
+        ),
+      listCopies: (accountId) =>
+        Effect.map(
+          sql<{ readonly payload: string }>`SELECT payload FROM task_copies
+            WHERE account_id = ${accountId} ORDER BY list_id, id`,
+          (rows) =>
+            rows.flatMap((row) => {
+              const task = taskFromPayload(row.payload);
+              return task ? [task] : [];
+            }),
         ),
       listLists: (accountId) =>
         Effect.map(
@@ -489,6 +583,15 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
           ),
         ),
+      putCopy: (task) =>
+        reactivity.mutation(
+          [OPS_KEY],
+          Effect.asVoid(
+            sql`INSERT OR REPLACE INTO task_copies (account_id, list_id, id, payload)
+              VALUES (${task.accountId}, ${task.listId}, ${task.id},
+                      ${JSON.stringify(taskPayloadJson(task))})`,
+          ),
+        ),
       refreshHierarchy: (accountId, listId, entries) =>
         entries.length === 0
           ? Effect.void
@@ -516,15 +619,25 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
           }
         }),
 
+      removeCopies: (accountId, listId, ids) =>
+        ids.length === 0
+          ? Effect.void
+          : Effect.asVoid(
+              sql`DELETE FROM task_copies WHERE account_id = ${accountId}
+                AND list_id = ${listId} AND id IN ${sql.in(ids)}`,
+            ),
       removeListsMissing: (accountId, keepIds) =>
         listsMutation(
           Effect.gen(function* () {
             if (keepIds.length === 0) {
               yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM task_copies WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
               return;
             }
             yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}
+              AND list_id NOT IN ${sql.in(keepIds)}`;
+            yield* sql`DELETE FROM task_copies WHERE account_id = ${accountId}
               AND list_id NOT IN ${sql.in(keepIds)}`;
             yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}
               AND id NOT IN ${sql.in(keepIds)}`;
@@ -637,6 +750,39 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
           ),
         ),
+      updateCopies: (tasks) =>
+        Effect.gen(function* () {
+          const accountId = tasks[0]?.accountId;
+          if (accountId === undefined) {
+            return [];
+          }
+          // Few tasks are held at a time: matched here, not row by row in SQL.
+          const keys = new Set(
+            (yield* sql<{ readonly id: string; readonly list_id: string }>`
+              SELECT list_id, id FROM task_copies WHERE account_id = ${accountId}`).map((row) =>
+              JSON.stringify([row.list_id, row.id]),
+            ),
+          );
+          const held = tasks.filter(
+            (task) =>
+              task.accountId === accountId && keys.has(JSON.stringify([task.listId, task.id])),
+          );
+          if (held.length === 0) {
+            return held;
+          }
+          yield* reactivity.mutation(
+            [OPS_KEY],
+            Effect.forEach(
+              held,
+              (task) =>
+                sql`UPDATE task_copies SET payload = ${JSON.stringify(taskPayloadJson(task))}
+                  WHERE account_id = ${task.accountId} AND list_id = ${task.listId}
+                    AND id = ${task.id}`,
+              { discard: true },
+            ),
+          );
+          return held;
+        }),
       updateLocal: ({ accountId, changes, listId, taskId }) =>
         tasksMutation(
           Effect.gen(function* () {

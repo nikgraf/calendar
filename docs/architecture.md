@@ -197,20 +197,20 @@ Every Google mutation writes SQLite optimistically, then enqueues a
 `PendingOp` and kicks `processPendingOps` (semaphore-serialized, drains
 due ops oldest-first). Kinds:
 
-| kind            | eventId                       | payload/fields                   | remote call                                                                                                                      |
-| --------------- | ----------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `create`        | client-generated id           | full EventRecord                 | events.insert (idempotent — 409 = already landed); attendees included; `sendUpdates=all` when guests exist                       |
-| `update`        | event id / instance id        | EventRecord + `attendeesChanged` | events.patch (If-Match when etag known); attendees only when flagged; `sendUpdates=all` when guests exist or the list was edited |
-| `delete`        | event id / instance id        | EventRecord (the deleted row)    | events.delete (If-Match when etag known); the snapshot names a parked conflict and ties an exception's delete to its series      |
-| `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body; If-Match on the queued etag, resent **without** on a 412 (never parks)                        |
-| `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                           |
-| `move`          | master id (source calendar)   | `targetCalendarId`               | events.move?destination= (same account; organizer only; whole series)                                                            |
-| `createTask`    | temp `local-…` id             | title/notes/due                  | tasks.insert (NOT idempotent — see below)                                                                                        |
-| `updateTask`    | task id                       | title/notes/due                  | tasks.patch                                                                                                                      |
-| `completeTask`  | task id                       | completed flag                   | tasks.patch (status; `completed: null` when un-completing)                                                                       |
-| `deleteTask`    | task id                       | —                                | tasks.delete (404/410 = already gone)                                                                                            |
-| `moveTask`      | task id                       | `targetTaskListId`               | tasks.move?destinationTasklist= (same account; subtasks follow)                                                                  |
-| `reorderTask`   | task id                       | `taskParent` / `taskPrevious`    | tasks.move (same list), then the list's order is read back                                                                       |
+| kind            | eventId                       | payload/fields                   | remote call                                                                                                                       |
+| --------------- | ----------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `create`        | client-generated id           | full EventRecord                 | events.insert (idempotent — 409 = already landed); attendees included; `sendUpdates=all` when guests exist                        |
+| `update`        | event id / instance id        | EventRecord + `attendeesChanged` | events.patch (If-Match when etag known); attendees only when flagged; `sendUpdates=all` when guests exist or the list was edited  |
+| `delete`        | event id / instance id        | EventRecord (the deleted row)    | events.delete (If-Match when etag known); the payload ties an exception's delete to its series                                    |
+| `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body: Google's guests with the answer over them; If-Match, resent **without** on a 412 (never parks) |
+| `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                            |
+| `move`          | master id (source calendar)   | `targetCalendarId`               | events.move?destination= (same account; organizer only; whole series)                                                             |
+| `createTask`    | temp `local-…` id             | title/notes/due                  | tasks.insert (NOT idempotent — see below)                                                                                         |
+| `updateTask`    | task id                       | title/notes/due                  | tasks.patch                                                                                                                       |
+| `completeTask`  | task id                       | completed flag                   | tasks.patch (status; `completed: null` when un-completing)                                                                        |
+| `deleteTask`    | task id                       | —                                | tasks.delete (404/410 = already gone)                                                                                             |
+| `moveTask`      | task id                       | `targetTaskListId`               | tasks.move?destinationTasklist= (same account; subtasks follow)                                                                   |
+| `reorderTask`   | task id                       | `taskParent` / `taskPrevious`    | tasks.move (same list), then the list's order is read back                                                                        |
 
 `PendingOpSummary` in core/backend.ts has its **own kind literal** — extend
 it whenever a kind is added. Rules that keep the queue correct:
@@ -221,7 +221,26 @@ it whenever a kind is added. Rules that keep the queue correct:
   edits; a sent one, stamped `dispatched_at` before the insert, stays
   ahead and the edit follows it); `removeForEvent` deliberately spares
   `rsvp` and `move` ops; `calendarColor` ops coalesce **per account**
-  under the sentinel. A task edit folds into an undispatched `createTask`
+  under the sentinel. An event has one waiting update at most: every
+  edit goes into it, where it stands in the queue (`queuedUpdate`,
+  `enqueue` with `replaces`: one PATCH with everything the user changed
+  since Google last answered), so a series' update stays ahead of the
+  changes of its occurrences made under it. (Replaced at the back of the
+  queue, it went behind them: a delete of an occurrence only its new rule
+  draws met a 404. Kept as several updates sent in turn, a first rule
+  reached Google and dropped exceptions the last one draws.) What
+  Google's own order would decide is settled when the edit is made: a
+  text the series edit sets wins over an occurrence's queued text, as
+  Google copies it onto every exception (`carryOntoQueued`; the
+  occurrence's own comes back if the series edit is given up,
+  `restoreCarriedText`), and a series that is redrawn (a new rule, a new
+  start, a cut) drops the exceptions it no longer draws and the queued
+  changes of those occurrences with them, as Google does (verified
+  live). The drain sends a series' update after the updates of its
+  occurrences made before it, and an occurrence's after the update of
+  its series queued ahead (`seriesOrderGate`). An op
+  that stood back for another is due as soon as that one leaves the queue
+  (`wakeWaiting`), not after its backoff. A task edit folds into an undispatched `createTask`
   and queues as `updateTask` behind a dispatched one; task updates merge
   field by field, one patch per task. Every coalesce-then-enqueue runs in
   one transaction with the drain kicked after commit (`transactional`).
@@ -244,7 +263,7 @@ it whenever a kind is added. Rules that keep the queue correct:
   keeps its etag and meets its 412. A create answered 409 fetches what
   Google has, so the row stops being `pending`. A `delete` answered 404
   or 410 is done like one that landed (`dropPulledCopy`): an occurrence's
-  cancelled override stays, a copy a pull put back meanwhile goes. A create dropped
+  cancelled override stays, a synced copy at its id goes. A create dropped
   for good or discarded takes what was queued behind it on the event
   along, putting nothing back — an edit, an answer, a delete (built on an
   event Google may never have had, a delete discarded later restored it
@@ -252,45 +271,94 @@ it whenever a kind is added. Rules that keep the queue correct:
   what followed that move there, a further move's destination in turn.
   One the create landed after all comes back with the next pull; one that
   landed with an answer that did not decode keeps them.
-- **412 Conflict** (only `update` and `delete` park): the op is **parked**,
-  never dropped — unless Google's copy already yields exactly the PATCH
-  body the update would send (`updateBody`: our own earlier attempt
-  landed), which is done; its followers keep their etag either way. Nor
-  when an update finds only the etag moved (`onlyEtagMoved`): Google's
-  copy equals the op's snapshot of the version its If-Match named in
-  every field we keep, those no PATCH sends included. Then, unless the
-  user discarded or replaced the op meanwhile, what was built on the old
-  etag (the row, and the event's content edits queued after it) moves to
-  Google's, and the op goes again at once on it; a second 412 parks. A
-  delete always parks: it takes along what we do not keep at all
-  (attachments, a color). A series PATCH re-etags every exception, so an
-  occurrence edit queued behind a rename or a new rule met a 412 with
-  nothing changed
-  (`advanceCarried` folds the carried text into its snapshot, and into
-  the payload of an edit queued before the series edit, or of one queued
-  after it in the fields it did not change itself, which would put the
-  old text back otherwise). A guest-list edit always parks: Google
-  replaces the whole list, guest fields we do not keep included. A
-  snapshot a lost answer's landing advanced (`advanceBefore`) names a
-  newer version than the If-Match, so it parks as before. The
-  drain fetches Google's copy (`events.get`; 404/410 = deleted there) and
-  `markConflict` stores it in `server_payload` with `conflict_at` set; a
-  failed fetch is an ordinary retry. `listDue` skips parked ops and the
-  local row stays `pending`, so pulls keep skipping it and the user's
-  version stays on screen. The UI reads the conflict from
-  `listPendingOps` (`PendingOpSummary.conflict`: mine, theirs) — a
-  persistent banner on both apps plus the queue rows — and
-  `resolveConflict` settles it: **mine** unparks with `base_etag` cleared
-  so the re-send overwrites Google (a parked delete also takes the copies
-  a pull re-inserted meanwhile back into its snapshot, a series' master
-  and exceptions alike; an edit of an event Google deleted is
-  re-created under a new id as a standalone event); **theirs** re-fetches
-  Google's _current_ copy (the stored one is a preview) and writes it in
+- **Conflicts** (only `update` and `delete` park). Google's newer
+  version of an event a queued change holds arrives two ways: in a pull's
+  page, or fetched (`events.get`; 404/410 = deleted there) after a write
+  was refused with 412. Either way it becomes the event's copy (see
+  "Google's copy of a held item" below), and since every queued change
+  keeps only what it set, each is laid over it from then on without being
+  rewritten (`heldEvents.ts`): an update's fields over Google's in every
+  other, an RSVP's answers over Google's guests (what it sends is the
+  copy's guest list with those answers, never the row's, which may show a
+  guest-list edit still queued or parked). What is left to decide is who
+  is asked (`clashes`), each change by what it was laid over before and is
+  laid over now — Google's copy with the changes queued ahead of it, so
+  what an earlier change of ours left on Google is no news to a later
+  one. An edit made on the very version that arrives is not asked — a
+  full list names every event, changed or not, and one the user kept,
+  sent without If-Match, counts as made on the copy — and the row is
+  drawn again, still `pending`. A thing the user changed part of
+  stays the user's whole (a time's start with its end): mixed with
+  Google's other half it is a time nobody chose. The reply to a write sent without
+  If-Match (an answer resent after its 412, keep-mine) may hold another
+  device's change too, and is taken the same way by the ops still queued
+  (`take`); so is a move's answer by what is queued behind the move when
+  the event changed meanwhile, and the record that settles a create by
+  what is queued behind it. Advanced to such a reply as it stood, the
+  copy made the fields that device changed read as the user's own, and
+  the next write sent the old values back. Nobody is asked unless both sides changed the
+  same thing to different values — a time (start, end, all-day and zone
+  are one thing), a place (its text and its coordinates), or any other
+  field — or the update edits the guest list and Google's version moved
+  without already holding that edit: Google replaces the whole list,
+  guest fields we do not keep included. Then the op is **parked**
+  (`markConflict` sets `conflict_at`), never dropped, with the user's
+  version on screen. A delete parks whenever the version it names
+  (`base_etag`) is Google's no more: it takes along what we do not keep
+  at all (attachments, a color), so no comparison of the fields we keep
+  can say nothing changed. That includes our own series PATCH, which
+  gives every exception a new etag (verified live): an occurrence
+  deleted after it and before the next pull asks. One the user kept (no
+  If-Match) goes whatever Google has, and one that finds the event
+  already gone or cancelled on Google after its 412 is done (an earlier
+  attempt landed with its answer lost, or another device deleted it too:
+  parked, it asked the user about their own delete). After a 412 three more outcomes:
+  Google's copy already yields exactly the PATCH body the update would
+  send (`updateBody`: our own earlier attempt landed with its answer
+  lost), which is done; an update laid over Google's version without a
+  clash goes again at once on Google's etag, and a second 412 there is a
+  newer change still and meets the same check; a failed fetch is an
+  ordinary retry. What Google answers outside a pull is kept
+  (`learned`): the fetch after a 412 for a change that left the queue
+  meanwhile, and the series a split-off one asks about, are laid under
+  what is queued for the event or, with nothing queued, become the row;
+  the answer of a move that landed after the event moved on again goes
+  to the rows the next move holds (`tellMovedOn`). A series PATCH that changed text lands that text on
+  its exceptions too (`advanceCarried` folds it into their copies, and
+  into the payload of an edit queued before the series edit, or of one
+  queued after it in the fields it did not change itself, which would
+  put the old text back otherwise); until then an exception's queued
+  change is laid over its copy with that text carried onto it
+  (`carriedChangesOf`), so the carried text is never the exception's own
+  and goes with a discarded series edit. What changed on Google is
+  measured against the copy the series edit holds (`carryBase`), so a
+  rename another device made meanwhile is not carried again; a text field
+  an occurrence edit sets itself leaves the series edits' record
+  (`ownFields`) and stays when they are given up, also when it equals
+  the series' text. `listDue` skips parked ops. The UI
+  reads the conflict from `listPendingOps` (`PendingOpSummary.conflict`:
+  mine is Google's version with the op's own fields over it (`ownVersion`:
+  not also what an earlier change still queued for the event set), theirs
+  the event's copy, cancelled or `null` when Google has the event no more) — a persistent banner on both apps plus the
+  queue rows — and `resolveConflict` settles it: **mine** unparks with
+  `base_etag` cleared so the re-send overwrites Google (an edit of an
+  event Google deleted is re-created under a new id as a standalone
+  event; of an occurrence Google cancelled, beside the series, where the
+  occurrence stays cancelled); **theirs** re-fetches Google's _current_ copy and writes it in
   ack mode, then drops the op — a series delete's exceptions come back
   with a live master, and a series gone on Google takes its synced
-  exceptions along. Take-theirs is refused while a move of the
-  series is queued ahead. A new edit of a parked event coalesces as usual
-  and parks again with the newer payload.
+  exceptions along. Take-theirs is refused while a move of the series is
+  queued ahead. What still waits for the event is then laid over that
+  copy and asks in its turn where it clashes (`take`). A change of a
+  series given up — theirs, a discard, or Google's rejection for good
+  (`drop`) — takes along the queued changes of occurrences at a slot the
+  series does not draw without it (`dropUndrawn`: new times, a new rule;
+  Google has no such occurrence, and each met a 404), and puts back the
+  exceptions it held off the table where Google's series draws them
+  (`restoreDropped`). A new edit or delete of a parked event replaces the
+  parked change and stays parked (`inheritedPark`): the row carries
+  Google's etag by then, and sent on it the new change would overwrite,
+  unasked, what the two clashed over.
 - **401**: the op stays queued, the account is flagged `reauth_required`;
   reconnecting (same account id, resolved by email) resets status and the
   queue drains at once.
@@ -343,11 +411,14 @@ it whenever a kind is added. Rules that keep the queue correct:
   — unless the 404 answers a retry whose first attempt landed:
   then the task is in the destination already and the move settles
   there; a destination Google does not answer for keeps the move queued,
-  and one that is gone puts it back. A discard does not ask Google
-  first, as an event move's does: one that landed with its answer lost
-  goes back to the source for good (an open gap, below). An edit,
-  toggle or move of a task whose delete is still queued — the copy a
-  pull put back meanwhile — replaces that delete, as an event edit does.
+  and one that is gone puts it back. A discard of a move that was sent
+  asks Google first, as an event move's does (`settleDiscardedMove`):
+  one that landed with its answer lost settles in the destination, and
+  one Google cannot be asked about stays queued, given up
+  (`PendingOp.discarded`: never sent again, settled once Google says
+  where the task is). A
+  task whose delete is still queued has no row, and a pull writes none
+  (below); an edit or a toggle of it is refused (`TaskNotFoundError`).
   Open: a subtask's parent deleted with it keeps its own delete queued,
   which still takes the subtask along on Google.
   Mirrors count a queued move for both lists. Every other route —
@@ -373,7 +444,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   a provisional `position` at once (core `provisionalPosition`: a key
   strictly between its new neighbours'; Google's are 20-digit ordinals,
   a provisional one may add digits or a `-`, and positions compare code
-  unit by code unit), and the op keeps the row as it was (`beforeTask`).
+  unit by code unit), while Google's copy of the task keeps its place
+  there (`task_copies`).
   One level deep, as Google Tasks draws it (the API takes any depth): a
   task with subtasks never goes under another, nor a task under a
   subtask (`TaskHierarchyError`). A task Google has not created yet is
@@ -460,10 +532,13 @@ it whenever a kind is added. Rules that keep the queue correct:
   instance ids, any calendar of the account) check `earlierInSeries`
   first — a move waits for older edits, an edit waits for an older move,
   and occurrence edits and RSVPs wait for a create queued ahead in their
-  series, and an occurrence's op for a change of the series' rule ahead
-  of it (`dropsFrom`: its landing forgets the exceptions it drops, so an
-  exception made under the new rule must land after it, also when its
-  answer was lost and a backoff let the occurrence's op go first), and an
+  series, and an occurrence's op for every change of its series queued
+  ahead of it — it was made under that change: a new start gives the
+  occurrence another id on Google, changed text is copied onto every
+  exception over an occurrence's own that got there first, and a new
+  rule's landing forgets the exceptions it drops (`dropsFrom`), so an
+  exception made under it must land after it, also when its answer was
+  lost and a backoff let the occurrence's op go first — and an
   exception's delete for one that drops its slot wherever it sits (a
   series edit that replaced the change went to the back of the queue, and
   the deletes went out ahead of it, past taking back), and the create of
@@ -477,7 +552,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   where it is and goes first). A re-queued edit goes without If-Match.
   One made while the move waits keeps the row's etag, and when the move
   lands with nothing else changed on Google (`onlyMoved`: no op parked,
-  every queued snapshot equal to Google's copy) the ops behind it and the
+  the event's copy equal to what the move answered with) the ops behind
+  it and the
   row move to the etag it produced (`advancePastMove`): events.move gives
   the event a new one, and the old one met a 412 and parked a conflict
   nobody caused. With another change on Google they keep it and meet that
@@ -489,16 +565,19 @@ it whenever a kind is added. Rules that keep the queue correct:
   whose body did not decode landed too. A move Google never makes —
   discarded, refused (a 403 for a non-organizer, any other permanent
   4xx), or not in the destination either — puts the rows back in the
-  source with what was queued after it, snapshots re-keyed the same way
-  and rewritten in place, so each keeps its place in the queue
+  source with what was queued after it, the event's copy re-keyed the
+  same way and the ops rewritten in place, so each keeps its place in
+  the queue
   (`releaseMove`, `retarget`). A discard releases the move before
   removing it, so its place is known. One never sent goes at once (the
   drain stamps a move `dispatched_at` in one transaction with checking
   it is still queued); one that was sent may have been made, so under
   the drain's gate it asks the destination first, as a 404 does, and
-  with no answer goes back as the user asked. Left in the
-  destination, an edit or a
-  this-and-following cut's master update and exception deletes would
+  with no answer stays queued, given up (`PendingOp.discarded`: never
+  sent again, settled once Google answers; sent back at once, a move that
+  had landed left the event shown in its source, and a change made there
+  met a 404). Of a move Google never made, an edit or a
+  this-and-following cut's master update left in the destination would
   404 there and be dropped, while the source row showed what Google
   never got. The series' next move out of the destination ends what goes
   back: it now leaves from the source (a move back to the source has
@@ -511,87 +590,122 @@ it whenever a kind is added. Rules that keep the queue correct:
   means the user discarded it (skip), and coalescing rewrites stay
   visible. Each failure is recorded in `last_error`; the unsynced-changes
   list shows it as the row's reason.
-- **An op remembers what it replaced**: `beforePayload` (the event row
-  before the local write; `null` when there was none — an occurrence edit
-  or delete that materialized its override), `beforeOverrides` (a series
-  delete's exception rows, which queue no op of their own, while its
-  master is gone locally — see Sync engine), `beforeTask`
-  and `beforeColorHex`. When a newer edit replaces a queued op it inherits
-  that op's snapshot, so the snapshot always names the last state Google
-  acknowledged, however many edits piled up offline — except that a
-  replaced delete (or answer) hands on Google's copy when a pull put one
-  back while the delete waited (`isPulledCopy`: a delete takes its row or
-  leaves a pending tombstone, and pulls never write over a pending row),
-  and an occurrence edit or delete with no row starts from the live
-  exception a series delete waiting behind the master a pull put back
-  took there (`occurrenceRow`), not the master's slot, which would patch
-  the exception's own changes away; one that replaces the occurrence's
-  own delete (a cut's or a rule change's, which took the row along)
-  inherits that delete's copy, which is Google's until the series update
-  that drops it lands (`dropsFrom`, see Sync engine; then it is `null`,
-  the rule's slot); a move re-keys it to the
-  destination with the op, and back if Google never makes the move. The
-  unsynced-changes list diffs an op against it (`pendingOpDiff`,
-  computed in `listPendingOps` as display lines) and an abandoned op puts it back (`releaseRow`): a discard, a
-  permanent rejection and keep-mine with nothing left all restore the row
-  — an op puts back only the fields it owns (an RSVP the answers it
-  changed; an edit the fields it changed, the guest list only when it
-  edited it, and each guest's answer stays the row's), so it cannot
-  resurrect what another op of the event changed and was discarded
-  meanwhile, keeping the row's own etag; a delete re-inserts the row
-  unless a synced one sits there already (a pull put Google's copy back)
-  and the exceptions a series delete took with it, each only where no row
-  is (the delete owns none there: a pull's copy, or an occurrence edit or
-  delete made since, is newer, and a landed occurrence delete leaves its
-  tombstone, Google's then), and with them what its occurrences' own deletes took
-  (`restoreDropped`); an exception whose series delete waits with the
-  master gone goes into that delete instead (`takeIntoDelete`) — the
-  exception's discarded delete, or its edit undone once only an answer
-  owns the row; a task edit or toggle restores the fields it owns; a color goes back only
-  while the calendar still shows the op's own (calendar-list pulls do not
-  skip a queued color) — and the row stays `pending` while another op of
-  the item, or a queued move of it, still owns it; an abandoned answer
-  leaves a pulled copy at a waiting delete's id as it is (Google's copy
-  never held the answer). A row a pull deleted meanwhile is not
-  resurrected, and a pull that confirms an item deleted
-  upstream (a cancelled occurrence included) clears the queued delete's
-  snapshot (`forgetDeleted`): the sync token has seen the deletion and
-  will never send it again; an exception a pull re-sends over an
-  occurrence delete's pending tombstone, which it skips, becomes that
-  delete's snapshot (`rememberPulled`; both in the page's transaction);
-  a series delete that lands or finds the series gone leaves the queued
-  ops of its occurrences nothing to put back (`forgetSeries`: `null`,
-  so a discard removes their rows instead of an exception without its
-  master). When an op lands while others of the item are queued, every
-  queued snapshot of the item moves to what Google acknowledged (`advanceBefore`, `advanceBeforeTask`; the ones queued
-  earlier never held the landed change either; a pulled copy at a waiting
-  delete's id takes it too), so discarding one of
-  them never undoes it (a landed series edit moves its exceptions' queued
-  snapshots to the carried text as well); a discarded op takes its owned
-  fields out of the other queued snapshots and out of what they send (an
-  RSVP rides in a guest-list edit's attendees, and the other way round);
-  an op replaced while its request was in flight puts nothing back when
-  that request is refused — the replacement owns the row. Known gap: a
-  full re-list after an expired sync token confirms a deletion only by
-  absence, which clears no snapshot. Open gap, found by the sequence test
-  (`queueSequence.test.ts`, its skipped tests): a pull skips a row a
-  queued edit, create or move holds and its token moves past Google's
-  copy, so an op abandoned later — discarded, refused, a move released
-  after a 404, a task move discarded after it landed with its answer
-  lost — leaves its older snapshot, or nothing, as Google's for good: an
-  edit's discard shows the version before another device's change, a
-  landed create's discard hides an event Google has, a released move
-  brings back an event Google deleted. Only a queued delete takes the
-  pulled copy today (`rememberPulled`, `forgetDeleted`). A snapshot
-  built while other ops of the item are replaced, or under a queued
-  series edit, is assembled from theirs (a series delete takes each
-  exception's acknowledged state, an occurrence edit or delete the
-  exception's own text under a queued series rename — `withOwnText` —
-  and a series delete leaves out an exception this device only
-  materialized; a task delete takes each queued op's fields), never from
-  the optimistic rows. Two exceptions keep today's content: a 2xx whose body did
-  not decode (the write landed) and an op without a snapshot (a delete a
-  pull confirmed), which can only be marked synced.
+- **Google's copy of a held item** (`event_copies`, `task_copies`).
+  While a queued change holds an event or a task, its row shows the
+  user's version and Google's lives beside it: once per item, whatever
+  the number of changes queued for it: an event's keyed by its calendar
+  (one id can exist in two calendars of an account; a move re-keys it to
+  the destination with its ops, and back if Google never makes the
+  move), a task's by its id alone, naming the list Google has it in (a
+  task keeps its id across lists; its source list until its move lands),
+  and gone again once nothing queued holds the item
+  (`dropIdleCopies`, `heldTasks.refresh`). A queued update or answer of
+  an event keeps only what its own edit set (`pending_ops.changes`,
+  `EventChanges`: the fields the user set or emptied, a time and a place
+  whole, the guest list when it was edited; an answer the answers alone):
+  measured against the copy with the changes queued ahead of it over it,
+  not against the copy — measured so, an answer given on a row that
+  showed a queued rename kept that title and sent it on after a newer
+  rename had landed. A field stays a change's own at any value
+  (`PendingOp.changed`: the ones of the update it replaces, the guest an
+  answer answers for): a rename back to the title Google has, made while
+  the rename is out, differs from nothing and is the one that counts. An
+  op's version of the event, `PendingOp.payload`, is not stored: it is
+  the copy with the changes queued for the event over it in queue order,
+  up to its own, computed at every read (`basePayload` is the same
+  without its own), so when the copy moves on the rest of the event moves
+  with it, a change that leaves the queue takes only its own fields
+  along, and a later change is never rewritten for an earlier one. The
+  PATCH names only what differs from `basePayload` (`changedBody`), and a
+  field the user did not change is never written from this device. An
+  occurrence Google has no exception for has no copy: its changes are
+  laid over its series drawn at that slot (`projectInstance` of the
+  series' row), so its row follows a pull of the series, its PATCH names
+  only what was changed (Google fills the new exception from the series,
+  verified live), and an exception another device made of it meanwhile is
+  merged or asked about like any newer copy. The copy is written when the first
+  change is queued (the synced row, `enqueue`, `TaskRepo.holdTasks`), by
+  every pull and conflict fetch (Conflicts above; Sync engine), and by
+  answers: when an op lands while others of the item wait, the copy
+  becomes what Google acknowledged (`advanceBefore`, `heldTasks.land`),
+  so discarding one of them never undoes it. Every queued op of an event
+  reads the copy as `beforePayload`; `null` means Google has none — an
+  occurrence edit or delete that materialized its override, an event a
+  pull or a fetch found deleted, an exception a landed rule dropped
+  (`forgetDropped`) or whose series is gone (`forgetSeries`). A queued
+  delete of a series also holds the copies of the exceptions it took off
+  the table with the master, which queue no op of their own
+  (`beforeOverrides`, read from the same table; one whose own delete
+  waits is that delete's). Not copies: `beforeColorHex`, a calendar's
+  previous color, and `carriedText`, the exceptions' own text under a
+  queued series edit that mirrored its text onto their rows.
+  The unsynced-changes list diffs an op against the copy
+  (`pendingOpDiff`, computed in `listPendingOps` as display lines), and
+  an abandoned op puts it back (`releaseRow`): a discard, a permanent
+  rejection and keep-mine with nothing left. With nothing else queued
+  for the event the row is the copy again, whole and synced — Google's
+  version as it is now, another device's change included, not the one
+  the edit started from. While another op still holds the event only the
+  fields this op owns go back (an RSVP the answers it changed; an edit
+  the fields it changed, the guest list only when it edited it), out of
+  the row and out of what the other queued ops send, and the row stays
+  `pending`. An op with no copy (`null`) removes the row it made. A task's
+  row is rebuilt rather than patched: the copy with the queued edits and
+  toggles over it (`heldTasks.refresh`; a to-do Google has not got yet is
+  what its queued create carries with the changes behind it over that;
+  with nothing left queued it is
+  the copy, in Google's list alone — a row a move of its parent took
+  elsewhere goes), shown where its queued moves and reorders leave it (`placeOf`: a move of its own takes it out of its
+  parent, a move of its parent takes it along; `revertTaskMove`,
+  `revertTaskReorder`). A delete's discard re-inserts the copy, and a
+  series delete's the exceptions it holds, each only where no row is (an
+  occurrence edit or delete made since is newer, and a landed occurrence
+  delete leaves its tombstone, Google's then) with a waiting answer laid
+  over it (`putBack`); an update that redraws a series (a cut, a new
+  rule, new times) holds the exceptions it drops the same way, queues
+  nothing for them (Google cancels them with its PATCH), and given up
+  puts them back where Google's series draws them (`restoreDropped`); a
+  series delete that replaces it takes them over; an exception whose
+  series delete waits with
+  the master gone becomes a copy that delete holds instead of a row
+  (`takeIntoDelete`). A color goes back only while the calendar still
+  shows the op's own (calendar-list pulls do not skip a queued color).
+  An op replaced while its request was in flight puts nothing back when
+  that request is refused — the replacement owns the row. A 2xx whose
+  body did not decode (the write landed) keeps the row's content. A full
+  re-list after an expired sync token confirms a deletion only by
+  absence: the copy of a held event the list no longer names goes then
+  too, as a queued move's source is marked gone. The discard of an
+  event's update, delete or answer that was tried before asks Google
+  first (`finishDiscard`): its request may have landed with the answer
+  lost, so what Google has is what shows, as take-theirs does, whether
+  the change had landed or not. It is marked given up at once
+  (`PendingOp.discarded`), so a drain already running does not send it
+  while the discard waits for the gate, and the drain finishes the
+  discard if the app stops in between. Not for an occurrence Google held
+  no exception for: asked by its id, Google answers with the series
+  drawn at that slot, which cannot be told from an exception and is
+  nothing to store, so such a change goes back as never sent and the
+  next pull brings what it made if it had landed. With Google out of
+  reach, a change that takes something away where it lands (a delete; a
+  cut, a new rule or new times, which drop occurrences) stays as it is,
+  given up and never sent again, until Google answers: put back at once,
+  it left on screen what Google might have no more, and a change made to
+  that was refused and dropped. Any other edit goes back at once: had it
+  landed, the next pull brings it and what was made on top is laid over
+  that. A change the user makes meanwhile to what a waiting discard left
+  on screen keeps the given-up change (`PendingOpRepo.keepGivenUp`,
+  called by every Google event mutation, the conversions' and the
+  copy-then-delete moves' included: `standing` in mutations.ts): it is
+  sent after all, since the new change stands on it (one occurrence's
+  only where Google's copy of the series does not draw its slot: it
+  stands without the given-up change otherwise). A pull asks nothing
+  about a given-up change: its discard takes Google's version. The discard reads
+  the change again once Google has answered, in one transaction with
+  what it does: the answer can take a while, and only the drain waits. A move in that state waits the same way,
+  since a change made meanwhile would go to the wrong calendar. A full
+  list forgets no copy of an event whose create is still queued: Google
+  lists it nowhere yet, and its copy is what the create sends.
 
 Rules a change to the queue keeps (each broke once):
 
@@ -610,12 +724,33 @@ Rules a change to the queue keeps (each broke once):
   gate: the undo takes it out in its own transaction and the drain
   decides (a discarded cut, left queued, was sent by a drain already
   waiting). The one exception is a move that was already sent: it stays
-  queued until `settleDiscardedMove` settles it under the gate.
+  queued until `settleDiscardedMove` settles it under the gate, and past
+  that, marked `discarded`, while Google cannot be asked: the drain then
+  asks where the item is and never sends the move again.
 - A fix to one queue path checks every producer of the op it touches,
-  a reviewer's included: cuts and rule changes both produce
+  a reviewer's included: cuts, rule changes and new times all go through
   `dropOverridesFrom`, and a fallback keyed on it broke rule changes.
-- Snapshots rewritten per record inside a page's transaction are
-  quadratic (1,000 exceptions took 1.9 s; batched, 20 ms).
+- While an event's move waits, what waits behind it sends no If-Match:
+  the move gives the event another etag. That holds when the move is
+  queued (`rekey`) and when a pull of the calendar it leaves brings a
+  version meanwhile (`showMoving`): armed with that calendar's etag, an
+  occurrence's delete met a 412 nobody caused and asked the user.
+- A task's changes re-queued for another list go behind the move that
+  takes the task there (a subtask under its parent's waiting move):
+  `created_at` decides the order, and an older change sorted ahead.
+- Nothing is queued that Google does itself with another write: the
+  deletes a cut once queued for the exceptions its PATCH cancels were
+  never meant to be sent, and every path that replaced, discarded or
+  moved the cut had to find and retire them.
+- What a queued op holds, rewritten per record inside a page's
+  transaction, is quadratic (1,000 exceptions took 1.9 s; batched, 20
+  ms): a page's exceptions go to their series' delete in one write per
+  series (`holdPulledExceptions`), and only held items are laid over
+  Google's copy again.
+- A change of how a queued change is stored is judged by the seeded
+  sequences (`QUEUE_SEQUENCE_RUNS=7000`; the `Queue search` workflow
+  runs them nightly), not by the unit suites alone: they found every gap
+  listed above, and what closed them.
 
 ## Sync engine (packages/sync/src/engine.ts)
 
@@ -655,124 +790,141 @@ Rules a change to the queue keeps (each broke once):
   series are never expanded again. Expansion runs under an iteration cap
   and `assembleWindow` skips a master whose rule throws instead of
   blanking the window.
-- **Pulls and pending rows.** Incremental pulls use syncTokens; a 410
+- **Pulls and held items.** Incremental pulls use syncTokens; a 410
   forces a full resync, after which `deleteStale` purges rows the server
   no longer returns (pending rows are protected by sync_status). A page's
   deletions are not: `applyPage` deletes by id whatever the row's status,
   so a pending row with no op for an event Google deleted lasts only
-  until the next pull. Local writes mark their row `pending`; pulls write
-  in `mode: 'pull'`, which skips pending rows, so a queued edit is never
-  clobbered by a page carrying the server's older copy. The push response
-  (ack upsert), an abandoned op (`releaseRow`: the op's snapshot of the
-  row goes back, or `markSynced` when it has none) or a resolved conflict
-  hands the row back. Task rows work the same way (`setStatus`/`updateLocal`
-  mark pending; `upsertTasks(…, { mode: 'pull' })`).
-- **A queued delete leaves no row to skip**: a page answered before it
-  reached Google puts Google's copy back (synced), and the delete removes that copy when
-  it lands or finds the item gone (a live event row, never a cancelled
-  override — an occurrence whose slot its master's rule still draws
-  becomes the cancelled tombstone Google now has, or the slot would show
-  until a pull, and an occurrence delete's own pending tombstone is
-  Google's too once no other op owns it — pending, nothing settled it; a
-  task row only while no op owns it), and a series delete
-  also the synced rows of its exceptions (`dropSeriesExceptions`).
-- **While a series delete waits, Google's copies of its exceptions live
-  in one place** (`takenExceptions.ts`): in the delete's snapshot while the
-  master is gone locally — a pull's copy (where no row sits at its id) or
-  an answer's ack of one goes there, not onto the table, where without its
-  master it would show as an event of its own, and so does one a discard
-  of a cut's delete of it, keep-theirs on that delete, or an occurrence
-  edit undone after keep-mine would write back (`takeIntoDelete`; such an
-  undone edit only once no op but an answer owns the row), and keep-mine on the parked
-  delete takes the pull's copies back there (an exception's own queued
-  delete, a cut's, then puts back that copy too) — and on the table once a
-  pull put the master back: that page puts back what the delete took,
-  where no row is, and the delete holds them no more (pending while an
-  answer or an edit owns one, unless a delete of it waits too — a cut's:
-  then it is Google's copy, synced, for that delete to take). An abandoned
-  answer whose answered row the delete took comes out of its snapshot
-  instead (Google's copy there never held it). The pull that re-sent the
-  master need not have re-sent them (the token sends only what changed);
-  without them a moved occurrence showed at its slot and a cancelled one
-  came back. A page that reports the series deleted on Google takes them
-  away again, as the delete's landing would.
-- **A this-and-following cut, or a rule change, takes the exceptions it
-  drops off the table** and queues a delete of each behind its master
-  update (`dropOverridesFrom`; a rule
-  change drops only those whose slots the new rule no longer draws —
-  Google keeps the others as they are, verified live — and first takes
-  back the deletes an earlier cut or rule change queued for slots it
-  draws again, putting their copies back as Google's: `takeBackDropped`),
-  which outlives a later series
-  delete (it finds no row to take); that delete's snapshot is Google's
-  copy. An occurrence the user deleted keeps its own delete and pending
-  tombstone instead, queued behind the change like the change's own and
-  unparked (ahead, it went out first, and keep-theirs on its 412 showed
-  the occurrence past the cut; abandoned, the change leaves it to meet
-  that 412 again). While the change waits, a pull's live copy of such an
-  exception goes into its delete's snapshot, where no row is
-  (`holdPulledExceptions`): on the table it showed past the cut on its
-  own, or over the new rule. The deletes go with the change that queued
-  them: abandoned — a discard, a rejection for good or keep-theirs of the
-  cut's or rule change's update (from its `dropsFrom` on), or of a series
-  delete that replaced it — the series is back as Google has it, and each
-  delete of one of its exceptions goes but an occurrence delete the user
-  made, whose payload is the tombstone it wrote (`dropChangeDeletes`,
-  after `restoreDropped` below put its copy back; a tombstone keep-mine
-  left gives way to that copy, and a copy an answer waits on shows that
-  answer again, pending); left, they still cancelled those occurrences
-  on Google. The new series of a this-and-following edit goes the same
-  way where Google still has the series uncut (`splitSeries.ts`, see
-  Recurring events). Keep-mine on
-  such a delete while the master on the table draws its slot leaves the
-  delete's own tombstone there, pending (`takeBackPulled`): with the copy
-  gone, the slot showed until a pull. Wherever Google's master is back on
-  the table — a pull wrote it,
-  a discard of the series delete or of the cut's (or rule change's)
-  master update gave Google's rule back, or keep-theirs took Google's
-  master — those copies go back too, synced, where no row is
-  (`restoreDropped`), for each delete still queued (a pull's case) to
-  take when it lands; only where
-  the master's rule draws the slot, and only until the cut or the new rule
-  reaches Google. That series update carries where its drop starts
-  (`dropsFrom`: the cut's occurrence, 0 for a new rule — Google cancels
-  the exceptions whose slots the rule it lands no longer draws; an update
-  replacing it keeps the earlier,
-  and drops nothing more once one it replaced in flight landed the same
-  rule),
-  and however it lands (a 2xx, a lost answer a 412 finds on Google)
-  everything that still holds one of those exceptions — one the landed
-  rule does not draw — forgets it (`forgetDropped`): the occurrence ops'
-  snapshots go to `null` (an edit that replaced a cut's delete included),
-  a waiting series delete lets it go, a synced row (a pull's copy,
-  Google's copy keep-theirs put back, a landed delete's tombstone) goes,
-  and the delete the cut or rule change queued for it goes unsent: Google
-  cancelled it with the PATCH and gave it a new etag, so the delete's
-  If-Match would meet a 412 and park (an occurrence delete the user made
-  owns its pending tombstone: one made before the change is done too, its
-  tombstone Google's; one under a later queued rule that draws the slot
-  again still goes); otherwise a later rule drawing their slots (more
-  days, say) showed them over it, where Google draws plain occurrences. A page that reports the
-  series deleted forgets them too, as it does a series delete's
-  (`dropSeriesExceptions`), or a discard of one would write it back
-  without its master. A copy taken from the row an answer made
-  pending goes back with Google's answers, which the answer's ack then
-  replaces (synced at a waiting delete's id, a row is Google's). Off the
-  table, a moved occurrence showed at its slot, a cancelled one came
-  back, and an occurrence edit was built on the slot.
-- **Acting on a copy a pull put back replaces its delete**: an edit
-  (`supersedeQueued`), an answer
+  until the next pull. Local writes mark their row `pending`, and a pull
+  never overwrites one (`mode: 'pull'`): what Google sends for an item a
+  queued change holds goes to the item's copy instead, and the queued
+  changes are laid over it again in the page's transaction. For an event
+  that is `heldEvents.receive` — an edit of other fields shows beside
+  another device's change at once, and one that clashes with it is
+  parked there, not at its next 412 (Pending-op queue, Conflicts). For a
+  task it is `TaskRepo.updateCopies` and `heldTasks.refresh`: the row is
+  Google's newer copy with the queued edits and toggles over it. So an op
+  abandoned later puts back what Google has now, never the version the
+  change started from. The push response (ack upsert), an abandoned op
+  (`releaseRow`) or a resolved conflict hands the row back to sync.
+- **A page can be the answer a write lost.** The event a queued create
+  inserts, or an event in the calendar its next queued move takes it to
+  once that move was sent, is in a page because that write landed (a move
+  not sent yet cannot have: Google's ids repeat across calendars, and the
+  event there is the destination's own — such a move is refused anyway,
+  `EventAlreadyThereError`): it is settled with
+  the page's record as its answer and leaves the queue, right after the
+  page's transaction and still under the pass's hold on the drain
+  (`landedInPull`, `acknowledge`; such a record is the move's answer and
+  is not taken by what waits behind the move first — the move knows the
+  new etag for its own, and a delete made in the destination would park
+  on it). Left queued, a discard took back what
+  Google has — the created row, or the event back to a calendar Google
+  no longer has it in — for good, the token having moved past. Only an
+  event's first queued move is read this way: a page tells of Google
+  before that move or after it, never of one queued behind it. The
+  source's side of a move: a page that reports the event gone from the
+  calendar its next move takes it out of (or a full list that no longer
+  names it, for a move queued before that pass began) marks the move
+  (`PendingOp.sourceGone`), since the move
+  landed or another device deleted the event. A move Google then turns
+  out never to have made (a 404 in both calendars, a discard) puts
+  nothing back there, and a move of it out of the same calendar queued
+  behind takes the mark on. And a page that reports an event gone from a
+  calendar a queued move brings it back to tells of the earlier move
+  out: the rows there are that move's, and stay. What a page brings for
+  an event (or the exceptions of a series) a queued move takes out of the
+  page's calendar is not written there — Google lists it there until the
+  move lands, and it showed in both calendars — but to its rows where
+  they are, in the calendar its last queued move takes it to, re-keyed
+  (`showMoving`): a row only the move holds takes it and stays pending,
+  and an exception another device made of an occurrence nothing here
+  changed gets a row beside the series', pending like them (left out, it
+  was lost once the move was given up: the page's token is past it).
+  And when a page settles a series' move, the page's records of that
+  series' exceptions are applied again, since their rows were the move's
+  when the page went in.
+- **A queued delete leaves no row, and a pull writes none**: Google's
+  copy of an event or a task whose delete waits goes to its copy (a
+  delete of an event that changed since parks), also when the delete
+  waits behind the event's own create, whose landing the page proves. A deletion a page
+  reports removes the copy: the sync token has seen it and will never
+  send it again, so nothing is left to put back (`forgetDeleted`,
+  `heldTasks.forgetDeleted`; the copy of a task whose queued move shows
+  it in that list too — the move landed with its answer lost — and the
+  row shown elsewhere). A task Google still lists in another list than
+  the one its delete names is not written there either. A delete that
+  lands or finds the item gone removes a synced copy still at its id (a
+  live event row, never a cancelled override — an occurrence whose slot
+  its master's rule still draws becomes the cancelled tombstone Google
+  now has, or the slot would show until a pull, and an occurrence
+  delete's own pending tombstone is Google's too once no other op owns
+  it; a task row only while no op owns it), and a series delete also the
+  synced rows of its exceptions (`dropSeriesExceptions`).
+- **While a series delete waits, Google's copies of its exceptions are
+  copies that delete holds** (`takenExceptions.ts`), not rows: without
+  their master they would show as events of their own. A pull's copy of
+  one (where no row sits at its id) or an answer's ack of one goes there,
+  and so does one that a discard of the user's own delete of that
+  occurrence, keep-theirs on that delete, or an occurrence edit undone
+  after keep-mine would write back (`takeIntoDelete`; such an undone
+  edit only once no op but an answer owns the row). What a cut, a new
+  rule or new times had dropped before the delete replaced them is among
+  those copies. A discard of the series delete puts them back with the
+  master, where no row is, a waiting answer laid over Google's copy
+  (`putBack`). A page that reports the series deleted on Google forgets
+  them, as the delete's landing would.
+- **A series update that redraws the series takes the exceptions it
+  drops off the table and holds Google's copy of each**
+  (`PendingOp.beforeOverrides`, `dropOverridesFrom`): a this-and-following
+  cut the ones from the cut on, a new rule or a new start the ones whose
+  slots the series no longer draws (Google keeps the others as they are,
+  verified live for both). Nothing is queued for them: Google cancels
+  them with the PATCH. An edit that takes the update's place and draws a
+  slot again puts that exception back as Google's (`takeBackDropped`); a
+  series delete that replaces the update takes its copies over. An
+  occurrence the user deleted keeps its own delete and pending tombstone
+  instead, queued behind the change and unparked (ahead, it went out
+  first, and keep-theirs on its 412 showed the occurrence past the cut;
+  abandoned, the change leaves it to meet that 412 again). While the
+  change waits, a pull's copy of an exception it drops becomes the copy
+  the change holds, where no row is (`holdPulledExceptions`): on the
+  table it showed past the cut on its own, or over the new rule. Given
+  up — a discard, a rejection for good or keep-theirs — the series is
+  back as Google has it and the copies go back with it, synced, where no
+  row is and Google's series draws the slot (`restoreDropped`); a copy an
+  answer waits on shows that answer again, pending. The new series of a
+  this-and-following edit goes the same way where Google still has the
+  series uncut (`splitSeries.ts`, see Recurring events). The update
+  carries where its drop starts (`dropsFrom`: the cut's occurrence, 0 for
+  a new rule or new times; an update that takes its place keeps the
+  earlier, and drops nothing more once one it replaced in flight landed
+  the same rule from the same start), and however it lands (a 2xx, a lost answer a 412 finds
+  on Google) everything that still holds one of those exceptions — one
+  the landed series does not draw — forgets it (`forgetDropped`): its
+  copy goes, so nothing is left to put back, a synced row (Google's copy
+  a discard or keep-theirs put back, a landed delete's tombstone) goes,
+  and an occurrence delete the user made is done too, its tombstone
+  Google's (one under a later queued rule that draws the slot again
+  still goes); otherwise a later rule drawing their slots (more days,
+  say) showed them over it, where Google draws plain occurrences. A page
+  that reports the series deleted forgets them too, as it does a series
+  delete's (`dropSeriesExceptions`). Off the table, a moved occurrence
+  showed at its slot, a cancelled one came back, and an occurrence edit
+  was built on the slot.
+- **Acting on Google's copy at a waiting delete's id replaces that
+  delete.** Such a row is Google's copy put back while a delete of the
+  item still waits (a pull writes none). An edit (`supersedeQueued`), an answer
   (`respondToEvent`, which an occurrence sends for its series) or a move
   of it drops the queued delete. Re-queued behind the move, or overtaken
   by an answer sent while it waited out a backoff, the delete removed the
   event on Google after all, and its pending row showed until the next
-  pull reported the deletion. A series delete replaced this way (by a
-  move, an answer, an edit, a cut or another series delete) first puts
-  back whatever exceptions it still holds, where no row is
-  (`restoreTakenExceptions`).
+  pull reported the deletion. A series delete replaced by another change
+  of the series first puts back whatever exceptions it still holds, where
+  no row is (`restoreTakenExceptions`).
 - **Moves and the drain.** A series move still carries an exception's
-  delete (a this-and-following cut) along, one that owns no row too, and moves that exception's pulled
-  copy as synced so the delete takes it when it lands. A page leaves out a
+  delete (a this-and-following cut) along, one that owns no row too, and moves Google's copy of that
+  exception with it, for the delete to take when it lands. A page leaves out a
   series a queued move takes out of its calendar, as a task list's pull
   does a moving task: Google lists it there until the move lands, and a
   copy written then showed it in both calendars, the user's edit or
@@ -793,13 +945,18 @@ Rules a change to the queue keeps (each broke once):
   minus 60s" (clock-skew lag) and queried with
   `showCompleted/showHidden/showDeleted` so completions and deletions
   arrive as tombstones. A daily full pass runs `deleteStale` (only rows
-  with `sync_status='synced'`). Order is read apart from the watermark:
+  with `sync_status='synced'`). A task a queued change holds takes the
+  page into its copy and is rebuilt (`updateCopies`, `heldTasks.refresh`;
+  "Pulls and held items" above). Order is read apart from the watermark:
   Google renumbers the siblings on every insert, delete and move without
   bumping their `updated`, but each of those moves the list's own
   `updated`, which the task-list pass already fetches. When it differs
   from the one stored at the list's last order read (`taskOrder:<list>`
   in `sync_state`), the pass writes Google's order onto the list's rows
-  and replays the queued reorders, as after a landed reorder — from its
+  and onto the copies of the held ones, then replays the queued moves
+  into the list (a task its own move brings back stays out of the parent
+  Google still lists it under) and the queued reorders, as after a landed
+  reorder — from its
   own listing on a full pass, else from one order-only listing
   (`fields=nextPageToken,items(id,parent,position)`); an idle poll reads
   nothing. That listing names every live task of the list, so a synced
@@ -1223,10 +1380,12 @@ details, or Custom), so a calendar can be shared without the details.
     replaces the master's and drops the exceptions whose slots it no
     longer draws, as Google does with the PATCH; one whose slot it still
     draws stays as it is, moved or cancelled (verified live, see
-    docs/google-sync-and-testing.md). One whose slot Google's own rule
-    no longer draws (an earlier cut's tombstone a full pull brought) goes
-    without a delete: Google draws that slot plain once a rule draws it
-    again. `null` ("does not repeat") leaves the master as a single
+    docs/google-sync-and-testing.md). A new start does the same
+    (`redraws`): moved an hour, the series draws none of its old slots,
+    and every exception goes, a deleted day drawn again; a new end alone
+    keeps them. One whose slot Google's own rule no longer draws (an
+    earlier cut's tombstone a full pull brought) simply goes: Google
+    draws that slot plain once a rule draws it again. `null` ("does not repeat") leaves the master as a single
     event at its own start and drops them all.
     Google keeps a rule whose key is absent from a PATCH, so the op
     carries `recurrenceCleared` and the patch sends `recurrence: []`. A
@@ -2217,9 +2376,9 @@ gateway carries all of it. Details, limits and the threat model:
   buttons — a pick moves the event there (`applySlot`; an all-day series
   keeps its kind, so it has no finder). What the save will move or drop
   is not its own busy time (`rescheduledEventExclusion`, read off
-  `updateRecurring`): the row for "This event"; every drawn occurrence
-  for "All events", while a stored exception keeps its times and stays
-  busy; everything from the split for "This and following"; nothing of a
+  `updateRecurring`): the row for "This event"; every occurrence for
+  "All events", stored exceptions too (a new start drops them, as on
+  Google); everything from the split for "This and following"; nothing of a
   series with fixed RDATE dates or a clock-pinning BYHOUR rule (a drawn
   row does not say what placed it, and those stay put through both
   edits), and nothing of a series whose master is not here — an Apple

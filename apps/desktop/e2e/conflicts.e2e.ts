@@ -61,6 +61,8 @@ const parkedUpdate = (id: string, createdAt: number, mine: EventRecord, theirs: 
     accountId: 'acc-e2e',
     attempts: 0,
     baseEtag: '"stale"',
+    // Parked: the copy is Google's newer version.
+    beforePayload: new EventRecord({ ...mine, etag: '"v1"', syncStatus: 'synced', title: theirs }),
     calendarId: 'cal-e2e',
     conflictAt: createdAt,
     createdAt,
@@ -70,7 +72,6 @@ const parkedUpdate = (id: string, createdAt: number, mine: EventRecord, theirs: 
     lastError: 'changed on Google',
     nextAttemptAt: 0,
     payload: mine,
-    serverPayload: new EventRecord({ ...mine, etag: '"v1"', syncStatus: 'synced', title: theirs }),
   });
 
 const theirsRow = localRow('evt-theirs', 'Budget review (mine)');

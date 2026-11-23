@@ -13,11 +13,6 @@ import { SqlClient } from 'effect/sql/SqlClient';
 export const eventPayloadJson = (event: EventRecord): unknown =>
   Schema.encodeSync(EventRecordSchema)(event);
 
-const eventListSchema = Schema.Array(EventRecordSchema);
-
-export const eventListJson = (events: ReadonlyArray<EventRecord>): unknown =>
-  Schema.encodeSync(eventListSchema)(events);
-
 export const taskPayloadJson = (task: TaskRecord): unknown =>
   Schema.encodeSync(TaskRecordSchema)(task);
 

@@ -124,7 +124,7 @@ describe('live Google: attendees', () => {
       const [op] = yield* pendingOps;
       expect(op?.kind).toBe('update');
       expect(op?.conflictAt).toBeDefined();
-      expect(op?.serverPayload?.title).toBe(`${record.title} (server)`);
+      expect(op?.beforePayload?.title).toBe(`${record.title} (server)`);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });

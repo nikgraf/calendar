@@ -50,15 +50,14 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   attendees_changed: 0,
   base_etag: null,
   before_color_hex: null,
-  before_overrides: null,
-  before_payload: null,
-  before_task: null,
   calendar_id: 'cal-1',
   carried_text: null,
+  changes: null,
   color_hex: null,
   conflict_at: null,
   copy_source: null,
   created_at: 0,
+  discarded: 0,
   dispatched_at: null,
   drops_from: null,
   event_id: 'evt',
@@ -70,7 +69,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   payload: null,
   recurrence_cleared: 0,
   reminders_changed: 0,
-  server_payload: null,
+  source_gone: 0,
   split_at: null,
   split_check: 0,
   split_in: null,
@@ -181,20 +180,20 @@ describe('row decoders tolerate what the DB may hold', () => {
     expect(pendingOpFromRow(opRow())?.carriedText).toBeUndefined();
   });
 
-  it('pendingOpFromRow keeps the three states of before_payload apart', () => {
-    // SQL NULL: no snapshot — nothing to put back.
-    expect(pendingOpFromRow(opRow())?.beforePayload).toBeUndefined();
-    // The JSON text null: there was no row before the change.
-    expect(pendingOpFromRow(opRow({ before_payload: 'null' }))?.beforePayload).toBeNull();
+  it('pendingOpFromRow reads what an event op replaces from the event’s joined copy', () => {
+    // No copy: Google has none of the event (an occurrence whose override
+    // the change materialized, an event a pull saw removed).
+    expect(pendingOpFromRow(opRow())?.beforePayload).toBeNull();
     const before = eventFromRow(eventRow({ title: 'Before' }));
+    const copy = JSON.stringify(eventPayloadJson(before));
+    expect(pendingOpFromRow(opRow({ copy_payload: copy }))?.beforePayload?.title).toBe('Before');
+    // A kind that replaces nothing reads none.
     expect(
-      pendingOpFromRow(opRow({ before_payload: JSON.stringify(eventPayloadJson(before)) }))
-        ?.beforePayload?.title,
-    ).toBe('Before');
+      pendingOpFromRow(opRow({ copy_payload: copy, kind: 'create' }))?.beforePayload,
+    ).toBeUndefined();
     // Unreadable JSON degrades like every other JSON column.
-    expect(pendingOpFromRow(opRow({ before_payload: '{not json' }))?.beforePayload).toBeUndefined();
-    expect(pendingOpFromRow(opRow({ before_task: '{"id": 1}' }))?.beforeTask).toBeUndefined();
-    expect(pendingOpFromRow(opRow({ before_overrides: '[1]' }))?.beforeOverrides).toBeUndefined();
+    expect(pendingOpFromRow(opRow({ copy_payload: '{not json' }))?.beforePayload).toBeNull();
+    expect(pendingOpFromRow(opRow({ taken_payload: '[1]' }))?.beforeOverrides).toBeUndefined();
   });
 
   it('pendingOpFromRow skips a row whose op kind nothing could apply', () => {
