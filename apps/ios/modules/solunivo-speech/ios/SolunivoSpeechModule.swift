@@ -5,8 +5,9 @@ import Foundation
 /// Dictation on the iPhone: the microphone (AVAudioEngine) streamed into
 /// the shared speech session (SpeechBridge.swift), whose recognisers'
 /// words go to JS as `onWords` while the phrase is said. JS decides when
-/// the phrase ended (packages/ai `listenForPhrase`) and asks for it read
-/// whole (`finish`). Nothing is written to disk.
+/// a phrase ended (packages/ai `listenForPhrase`) and asks for it read
+/// whole: `read` with the microphone left open (hands-free), `finish` as
+/// it closes. Nothing is written to disk.
 ///
 /// The session's steps are queued as the calls arrive, on Expo's serial
 /// queue for async functions, so they run in the order JS made them.
@@ -102,6 +103,30 @@ public class SolunivoSpeechModule: Module {
           promise.reject("SpeechError", Self.message(error))
         }
       }
+    }
+
+    // The phrase so far, read while the microphone stays open (hands-free:
+    // what is said meanwhile is recorded). `mark`: where its audio ended.
+    AsyncFunction("read") { (session: Int, promise: Promise) in
+      let task = SpeechSessions.shared.read(id: session)
+      Task {
+        do {
+          guard let read = try await task.value else {
+            promise.resolve(nil)
+            return
+          }
+          var json = read.reading.json
+          json["mark"] = Int(read.mark)
+          promise.resolve(json)
+        } catch {
+          promise.reject("SpeechError", Self.message(error))
+        }
+      }
+    }
+
+    // The phrase read up to `mark` landed: its audio goes.
+    Function("cut") { (session: Int, mark: Int) in
+      SpeechSessions.shared.cut(id: session, through: AVAudioFramePosition(mark))
     }
 
     AsyncFunction("finish") { (session: Int, promise: Promise) in

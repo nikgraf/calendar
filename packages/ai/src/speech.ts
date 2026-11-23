@@ -25,6 +25,16 @@ export interface SpeechStart {
   readonly sources: ReadonlyArray<WordsSource>;
 }
 
+/**
+ * A phrase read while listening goes on (`SpeechToText.read`): what it was
+ * heard as (nothing when nothing was said), and where its audio ended,
+ * for `cut` once it landed.
+ */
+export interface PhraseRead {
+  readonly heard: Heard | undefined;
+  readonly mark: number;
+}
+
 /** The device or locale cannot transcribe at all — stop offering it. */
 export class SpeechUnsupportedError extends Data.TaggedError('SpeechUnsupportedError')<{
   readonly message: string;
@@ -36,21 +46,30 @@ export class MicrophoneDeniedError extends Data.TaggedError('MicrophoneDeniedErr
 }> {}
 
 /**
- * On-device speech-to-text, one phrase at a time, the same shape on both
- * platforms (Apple's SpeechAnalyzer behind each: the iOS module, the
+ * On-device speech-to-text, one listening at a time, the same shape on
+ * both platforms (Apple's SpeechAnalyzer behind each: the iOS module, the
  * desktop helper). Listening streams the microphone into two recognisers
- * that write the words as they are said (`onWords`); finishing reads the
- * whole phrase once more, with the recogniser the words were always read
- * with, and returns that, beside it the phrase as the user's other
- * language reads it (`Heard.other`). When the phrase ends is the caller's to decide
- * (`listenForPhrase`, from the words).
+ * that write the words as they are said (`onWords`, everything each wrote
+ * since the listening began); reading takes the phrase so far once more,
+ * whole, with the recogniser the words were always read with, and returns
+ * that, beside it the phrase as the user's other language reads it
+ * (`Heard.other`). A listening holds a phrase after another: `read` leaves
+ * the microphone open, `cut` lets go of a phrase that landed so that the
+ * next reading begins after it, `finish` reads and closes. When a phrase
+ * ends is the caller's to decide (`listenForPhrase`, from the words).
  */
 export interface SpeechToText {
-  /** Abandons the phrase being listened to, keeping nothing of it. */
+  /** Abandons the listening, keeping nothing of it. */
   readonly cancel: () => Promise<void>;
   /**
-   * Stops listening and reads the phrase. Undefined when nothing was
-   * said. The audio is gone afterwards either way.
+   * The phrase read up to `mark` landed: its audio goes, and the next
+   * `read` or `finish` begins after it. Nothing once the listening ended.
+   */
+  readonly cut: (mark: number) => void;
+  /**
+   * Stops listening and reads the phrase (everything since the last
+   * `cut`). Undefined when nothing was said. The audio is gone afterwards
+   * either way.
    */
   readonly finish: () => Promise<Heard | undefined>;
   /**
@@ -74,6 +93,13 @@ export interface SpeechToText {
    * callers should show progress rather than appearing to hang.
    */
   readonly prepare: () => Promise<void>;
+  /**
+   * Reads the phrase so far (everything since the last `cut`) while the
+   * microphone stays open: what is said meanwhile is recorded, and the
+   * next reading takes it in too unless this one is `cut`. Undefined once
+   * the listening ended (finished, cancelled or replaced).
+   */
+  readonly read: () => Promise<PhraseRead | undefined>;
   /**
    * Starts listening, asking for the microphone if needed. Throws
    * MicrophoneDeniedError when refused. `onWords` gets each recogniser's

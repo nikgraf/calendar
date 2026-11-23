@@ -81,6 +81,10 @@ const bridge = () => {
   const audio: Array<{ readonly bytes: number; readonly session: number }> = [];
   const cancelled: Array<number> = [];
   const finished: Array<number> = [];
+  const read: Array<number> = [];
+  const cuts: Array<{ readonly mark: number; readonly session: number }> = [];
+  /** What the helper answers a reading of a phrase no longer its own: no mark. */
+  let readAnswersMark = true;
   const listeners = new Set<(words: { session: number; source: string; text: string }) => void>();
   const losers = new Set<(lost: { session: number }) => void>();
   let sessions = 0;
@@ -107,9 +111,16 @@ const bridge = () => {
       modelSpeechCancel: async (session: number) => {
         cancelled.push(session);
       },
+      modelSpeechCut: (session: number, mark: number) => {
+        cuts.push({ mark, session });
+      },
       modelSpeechFinish: async (session: number) => {
         finished.push(session);
         return other === undefined ? { segments } : { other, segments };
+      },
+      modelSpeechRead: async (session: number) => {
+        read.push(session);
+        return readAnswersMark ? { mark: 16_000 * read.length, segments } : { segments: [] };
       },
       modelSpeechStart: async (locale: string, second: string) => {
         startedWith.push(`${locale} ${second}`);
@@ -133,7 +144,12 @@ const bridge = () => {
   return {
     audio,
     cancelled,
+    cuts,
     finished,
+    /** The helper no longer knows the listening: a reading answers no mark. */
+    forget: () => {
+      readAnswersMark = false;
+    },
     hearNothing: () => {
       segments = [];
     },
@@ -144,6 +160,7 @@ const bridge = () => {
       preparing = until;
     },
     prepared,
+    read,
     startedWith,
     /** Main dropped this phrase: its helper went away. */
     lose: (session: number) => {
@@ -476,5 +493,50 @@ describe('desktopSpeech availability', () => {
       },
     });
     expect(await (await loadSpeech()).isSupported()).toBe(false);
+  });
+});
+
+describe('desktopSpeech reading while listening', () => {
+  it('reads the phrase with every block recorded so far, the microphone left open', async () => {
+    const main = bridge();
+    const speech = await loadSpeech();
+    const start = speech.start({ onWords: noWords });
+    const stream = fakeStream();
+    grants[0]?.(stream);
+    await start;
+    // Less than one 100 ms block: it goes to main with the reading.
+    nodes[0]?.port.onmessage?.({ data: new Float32Array(400) });
+    expect(main.audio).toEqual([]);
+
+    const reading = await speech.read();
+    expect(main.audio).toEqual([{ bytes: 800, session: 1 }]);
+    expect(reading).toEqual({
+      heard: { segments: [{ text: 'Lunch with Anna' }], text: 'Lunch with Anna' },
+      mark: 16_000,
+    });
+    expect(stream.stopped).toBe(false);
+    expect(main.finished).toEqual([]);
+
+    // It landed: main lets its audio go, and the listening goes on.
+    speech.cut(16_000);
+    expect(main.cuts).toEqual([{ mark: 16_000, session: 1 }]);
+    await speech.finish();
+    expect(main.finished).toEqual([1]);
+    expect(stream.stopped).toBe(true);
+  });
+
+  it('reads nothing once the listening ended, here or in the helper', async () => {
+    const main = bridge();
+    const speech = await loadSpeech();
+    expect(await speech.read()).toBeUndefined();
+    speech.cut(1);
+    expect(main.read).toEqual([]);
+    expect(main.cuts).toEqual([]);
+
+    const start = speech.start({ onWords: noWords });
+    grants[0]?.(fakeStream());
+    await start;
+    main.forget();
+    expect(await speech.read()).toBeUndefined();
   });
 });

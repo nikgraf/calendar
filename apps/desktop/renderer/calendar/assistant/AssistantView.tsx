@@ -233,6 +233,7 @@ export function AssistantView({
   const inputRef = useRef<HTMLInputElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const quick = useQuickAddModel({
+    dropPhrase: editor.dropPhrase,
     editKey,
     hold: editor.applying,
     initialText,
@@ -539,11 +540,16 @@ function CardFooter({
 const inputStatus = ({
   busy,
   error,
+  holding,
   voice,
-}: Pick<ReturnType<typeof useQuickAddModel>, 'busy' | 'error' | 'voice'>): {
+}: Pick<ReturnType<typeof useQuickAddModel>, 'busy' | 'error' | 'holding' | 'voice'>): {
   readonly text: string;
   readonly tone: 'error' | 'hint';
 } | null => {
+  // Held: it listens through any pause, until the mouse is let go of.
+  if (holding) {
+    return { text: 'Holding… release to send', tone: 'hint' };
+  }
   if (voice === 'preparing') {
     return { text: 'Preparing dictation…', tone: 'hint' };
   }
@@ -636,6 +642,9 @@ function AssistantInput({
     endVoice,
     handsFree,
     heard,
+    holding,
+    micDown,
+    micUp,
     phrase,
     setPhrase,
     submit,
@@ -745,13 +754,26 @@ function AssistantInput({
                 ? 'bg-danger text-on-danger'
                 : 'bg-primary text-on-primary hover:bg-primary-hover'
             }`}
+            data-holding={holding ? 'true' : undefined}
             data-listening={voice === 'recording' ? (heard ? 'speech' : 'quiet') : undefined}
             data-testid="quick-add-mic"
             // On, it always answers (to stop); off, not while a typed phrase
             // is read or an older step is on show.
             disabled={!handsFree && (working || previewing)}
+            // A click is a press (the keyboard's too); held, it talks until let go of.
             onClick={toggleVoice}
-            title={handsFree ? 'Stop dictating' : 'Dictate'}
+            onPointerCancel={micUp}
+            onPointerDown={(pointer) => {
+              // A disabled button still hears the pointer go down.
+              if (pointer.button !== 0 || pointer.currentTarget.disabled) {
+                return;
+              }
+              // Let go of anywhere, the button hears it.
+              pointer.currentTarget.setPointerCapture(pointer.pointerId);
+              micDown();
+            }}
+            onPointerUp={micUp}
+            title={handsFree ? 'Stop dictating — hold to talk' : 'Dictate — hold to talk'}
             type="button"
           >
             {/* Hearing speech: the microphone breathes. */}

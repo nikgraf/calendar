@@ -1643,14 +1643,16 @@ was cut (pruned 2026-11-17).
   event on a finder turn (it moves to the slot's start, no row). Open:
   the iOS thread's chips and candidates, a centre for the form finder's
   own presets, proposals for several drafts at once.
-- **Hands-free dictation** (2026-10-15, #214) — one press of the microphone
-  listens until the user takes over: a pause sends the phrase and it
-  listens again, the form edited by hand, the field typed into, the
-  microphone or 30 s of silence ends it. Rejected: recording while a
-  phrase is read (words said then would queue against a form still
-  changing). Open: saying "undo". How a pause is heard (the level alone
-  at first, the words since #322): "Dictation ends on its words, and
-  shows them".
+- **Hands-free dictation keeps listening** (2026-11-23, #377; replaces
+  #214's record) — one press opens the microphone until the user takes
+  over (the microphone, the form edited by hand, the field typed into,
+  30 s of silence). A pause sends the phrase as fast as before; words said
+  before it landed join it and the grown phrase is read instead; words
+  after it are the next phrase. Held, the microphone listens through any
+  pause and lifting it sends. Rejected: closing the microphone while a
+  phrase is read (#214: a thinking pause lost the next words); a session
+  per phrase started again at each finish. Open: saying "undo"; an
+  end-of-turn model (Smart Turn) if the pause still cuts.
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a

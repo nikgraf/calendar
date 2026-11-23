@@ -38,9 +38,16 @@ const SCRIPT: ReadonlyArray<{
 const LEAD_MS = 600;
 /** A word about this often, as the quick recogniser writes them. */
 const WORD_MS = 250;
+/** The pause after a phrase before the next one: long enough for it to be read and land. */
+const BETWEEN_MS = 4000;
 
+/** The script's phrases taken so far: the next listening says the one after them. */
 let turn = 0;
-let listening = false;
+/**
+ * The listening: the phrase its next reading begins with, and how many of
+ * the script's phrases it has said whole.
+ */
+let listening: { base: number; said: number } | undefined;
 let timers: Array<ReturnType<typeof setTimeout>> = [];
 
 const clear = () => {
@@ -50,50 +57,79 @@ const clear = () => {
   timers = [];
 };
 
+/** The phrases said since `from`, read as one. */
+const readFrom = (from: number, to: number) =>
+  heardFromSegments(SCRIPT.slice(from, to).flatMap((line) => line.heard));
+
 /**
  * EXPO_PUBLIC_CALENDAR_SPEECH=fixture: dictation on a simulator, which has
- * no speech assets. Each start "says" the script's next phrase a word at a
- * time — the quick recogniser's every word, the accurate one's every
- * third — and then nothing, so the app's own rule ends the phrase; finish
- * answers it as read. Once the script runs out, nothing more is said.
+ * no speech assets. A listening "says" the script's phrases one after
+ * another, a word at a time — the quick recogniser's every word, the
+ * accurate one's every third, everything since the listening began, as
+ * the recognisers write it — with a pause after each, so the app's own
+ * rule ends the phrase; a reading answers the phrases said since the last
+ * cut, as read. Once the script runs out, nothing more is said.
  */
 export const fixtureSpeech: SpeechToText = {
   cancel: async () => {
     clear();
-    listening = false;
+    listening = undefined;
+  },
+  cut: (mark) => {
+    if (listening && mark > listening.base) {
+      listening.base = mark;
+      turn = mark;
+    }
   },
   finish: async () => {
     clear();
-    if (!listening) {
+    const active = listening;
+    listening = undefined;
+    if (!active) {
       return undefined;
     }
-    listening = false;
-    const line = SCRIPT[turn];
-    turn += 1;
-    return line ? heardFromSegments(line.heard) : undefined;
+    turn = active.said;
+    return readFrom(active.base, active.said);
   },
   isSupported: async () => true,
   prepare: async () => undefined,
+  read: async () =>
+    listening
+      ? { heard: readFrom(listening.base, listening.said), mark: listening.said }
+      : undefined,
   start: async ({ onWords, signal }) => {
     clear();
     if (signal?.aborted) {
       return undefined;
     }
-    listening = true;
-    const words = SCRIPT[turn]?.said.split(' ') ?? [];
-    for (const [index] of words.entries()) {
-      timers.push(
-        setTimeout(
-          () => {
-            const text = words.slice(0, index + 1).join(' ');
+    const active = { base: turn, said: turn };
+    listening = active;
+    const words: Array<string> = [];
+    let at = LEAD_MS;
+    for (const [index, line] of SCRIPT.slice(turn).entries()) {
+      const lineWords = line.said.split(' ');
+      for (const [position, word] of lineWords.entries()) {
+        words.push(word);
+        const count = words.length;
+        const last = position === lineWords.length - 1;
+        timers.push(
+          setTimeout(() => {
+            const text = words.slice(0, count).join(' ');
             onWords('quick', text);
-            if (index % 3 === 2 || index === words.length - 1) {
+            if (count % 3 === 0 || last) {
               onWords('accurate', text);
             }
-          },
-          LEAD_MS + index * WORD_MS,
-        ),
+          }, at),
+        );
+        at += WORD_MS;
+      }
+      const phrase = turn + index + 1;
+      timers.push(
+        setTimeout(() => {
+          active.said = phrase;
+        }, at - WORD_MS),
       );
+      at += BETWEEN_MS;
     }
     return { sources: ['accurate', 'quick'] };
   },

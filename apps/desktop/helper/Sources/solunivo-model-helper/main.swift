@@ -5,6 +5,7 @@
 // Methods: status | generateJson {schema,prompt} | prepareSpeech {locale} |
 // transcribe {audioBase64,locale} (a recording, read whole: the bench) |
 // speech.start {session,locale} / speech.audio {session,pcmBase64} /
+// speech.read {session} / speech.cut {session,mark} /
 // speech.finish {session} / speech.cancel {session} (one phrase as it is
 // said, its words as speech.words events: SpeechBridge.swift, shared with
 // the iOS Expo module) | reminders.* (see RemindersBridge.swift,
@@ -285,6 +286,37 @@ func handleSpeechAudio(_ id: Int, _ params: [String: JSONValue]) {
   emitResult(id, [:])
 }
 
+/// The phrase so far, read while the microphone stays open; `mark` is
+/// where its audio ended, for `speech.cut`.
+func handleSpeechRead(_ id: Int, _ params: [String: JSONValue]) {
+  guard let session = sessionId(params) else {
+    emitError(id, HelperError.badRequest("session required").message)
+    return
+  }
+  let task = SpeechSessions.shared.read(id: session)
+  Task.detached {
+    do {
+      guard let read = try await task.value else {
+        emitResult(id, SpeechReading(other: nil, segments: []).json)
+        return
+      }
+      var json = read.reading.json
+      json["mark"] = Int(read.mark)
+      emitResult(id, json)
+    } catch {
+      emitError(id, "transcription failed: \(error.localizedDescription)")
+    }
+  }
+}
+
+/// The phrase read up to `mark` landed: its audio goes.
+func handleSpeechCut(_ id: Int, _ params: [String: JSONValue]) {
+  if let session = sessionId(params), case .number(let mark)? = params["mark"] {
+    SpeechSessions.shared.cut(id: session, through: AVAudioFramePosition(mark))
+  }
+  emitResult(id, [:])
+}
+
 func handleSpeechFinish(_ id: Int, _ params: [String: JSONValue]) {
   guard let session = sessionId(params) else {
     emitError(id, HelperError.badRequest("session required").message)
@@ -418,6 +450,12 @@ func handleLine(_ line: String) {
     return
   case "speech.start":
     handleSpeechStart(request.id, params)
+    return
+  case "speech.read":
+    handleSpeechRead(request.id, params)
+    return
+  case "speech.cut":
+    handleSpeechCut(request.id, params)
     return
   case "speech.finish":
     handleSpeechFinish(request.id, params)

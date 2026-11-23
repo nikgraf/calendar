@@ -188,12 +188,13 @@ const ownedBy = (session: number, sender: WebContents) =>
   listening?.session !== session || listening.owner === sender;
 
 /**
- * Dictation, one phrase at a time: the renderer owns the microphone and
+ * Dictation, one listening at a time: the renderer owns the microphone and
  * streams it here (`model:speech-audio`, 16 kHz mono Int16 blocks); the
  * helper's recognisers write the words as they are said
  * (`model:speech-words`, pushed to the window listening); the renderer
- * decides when the phrase ended and asks for it read whole
- * (`model:speech-finish`). Under the e2e fixture the same calls answer
+ * decides when a phrase ended and asks for it read whole, listening on
+ * (`model:speech-read`, then `model:speech-cut` once it landed) or
+ * closing (`model:speech-finish`). Under the e2e fixture the same calls answer
  * from `microphoneFixture.ts`.
  */
 const registerSpeech = () => {
@@ -277,6 +278,32 @@ const registerSpeech = () => {
       pcmBase64: Buffer.from(bytes).toString('base64'),
       session,
     }).catch(() => undefined);
+  });
+  // A reading while listening goes on: the phrase stays the window's.
+  ipcMain.handle('model:speech-read', (event, session: unknown) => {
+    if (!isSession(session) || listening?.session !== session || listening.owner !== event.sender) {
+      return { segments: [] };
+    }
+    return microphoneFixture
+      ? fixtureListening.read(session)
+      : callHelper('speech.read', { session });
+  });
+  ipcMain.on('model:speech-cut', (event, session: unknown, mark: unknown) => {
+    if (
+      !isSession(session) ||
+      listening?.session !== session ||
+      listening.owner !== event.sender ||
+      typeof mark !== 'number' ||
+      !Number.isSafeInteger(mark) ||
+      mark < 0
+    ) {
+      return;
+    }
+    if (microphoneFixture) {
+      fixtureListening.cut(session, mark);
+      return;
+    }
+    callHelper('speech.cut', { mark, session }).catch(() => undefined);
   });
   ipcMain.handle('model:speech-finish', (event, session: unknown) => {
     if (!isSession(session) || !ownedBy(session, event.sender)) {

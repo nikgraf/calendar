@@ -17,7 +17,8 @@ const BLOCK_MS = 100;
  * Desktop dictation: the renderer owns the microphone (getUserMedia +
  * an inline AudioWorklet collecting mono PCM) and streams it to the Swift
  * helper as it is recorded; the helper's recognisers send the words back
- * as they are said, and read the phrase whole when it is finished. Same
+ * as they are said, and read each phrase whole when it ends, listening on
+ * (`read`) or closing the microphone with it (`finish`). Same
  * seam as apps/ios/src/appleSpeech.ts: availability is decided by
  * attempting prepare, and the audio never outlives the phrase.
  */
@@ -91,6 +92,12 @@ export const desktopSpeech: SpeechToText = {
     }
   },
 
+  cut: (mark) => {
+    if (listening) {
+      window.calendarBridge.modelSpeechCut(listening.session, mark);
+    }
+  },
+
   finish: async () => {
     const active = listening;
     listening = null;
@@ -122,6 +129,20 @@ export const desktopSpeech: SpeechToText = {
   },
 
   prepare: () => prepareIn(dictationLocale(), secondLanguage.get()),
+
+  read: async () => {
+    const active = listening;
+    if (!active) {
+      return undefined;
+    }
+    // What was recorded up to now is in the reading.
+    active.flush();
+    const result = await window.calendarBridge.modelSpeechRead(active.session);
+    // No mark: the listening is no longer the helper's (dropped, or replaced).
+    return result.mark === undefined
+      ? undefined
+      : { heard: heardFromSegments(result.segments, result.other), mark: result.mark };
+  },
 
   start: async ({ onLost, onWords, signal }) => {
     const locale = dictationLocale();

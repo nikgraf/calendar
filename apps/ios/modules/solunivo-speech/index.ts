@@ -17,6 +17,8 @@ export interface SolunivoSpeechNative {
   ) => { readonly remove: () => void };
   /** Drops the phrase and closes the microphone; nothing when `session` is not the current one. */
   readonly cancel: (session: number) => Promise<void>;
+  /** The phrase read up to `mark` landed: its audio goes, and the next reading begins after it. */
+  readonly cut: (session: number, mark: number) => void;
   /**
    * Closes the microphone and reads the phrase whole. Null when `session`
    * is not the current one (dropped, or replaced by a newer start).
@@ -50,6 +52,18 @@ export interface SolunivoSpeechNative {
    * "unsupported: …" where the locale never will.
    */
   readonly prepare: (locale: string, other: string) => Promise<void>;
+  /**
+   * Reads the phrase so far whole, the microphone left open; `mark` is
+   * where its audio ended. Null when `session` is not the current one.
+   */
+  readonly read: (session: number) => Promise<{
+    readonly mark: number;
+    readonly other?: string;
+    readonly segments: ReadonlyArray<{
+      readonly alternatives: ReadonlyArray<string>;
+      readonly text: string;
+    }>;
+  } | null>;
   /** Asks for the microphone if iOS has not yet; whether it may be used. */
   readonly requestMicrophone: () => Promise<boolean>;
   /** Opens the microphone for a phrase; a newer start replaces it. Answers the recognisers that listen. */

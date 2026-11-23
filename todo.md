@@ -193,7 +193,9 @@ was written; re-verify before starting one.
       match learned from phrases already said); Siri as a way in (an
       App Shortcut that asks for the phrase; iOS 27's calendar schema
       where Siri AI is available, not in the EU nor in German as of
-      2026-10); Parakeet TDT v3 as a recogniser arm on the Mac bench.
+      2026-10); Parakeet TDT v3 as a recogniser arm on the Mac bench;
+      keep listening and hold to talk on an iPhone (#377: the live
+      reading beside the listening, a sheet's pan taking a hold).
 - [ ] The Assistant's own model, follow-ups (#307, v2 in #321) — search
       sentences and capture still need Apple's model (data and a tuned
       prompt each, in the next version's one training run); they have no

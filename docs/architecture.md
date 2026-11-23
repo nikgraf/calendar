@@ -147,9 +147,15 @@ which also lets iOS apply the Mic Mode picked for the app) unless
 Settings › Dictation turns it off, a choice kept on the device.
 Two recognisers write the words as they are said — DictationTranscriber
 ("quick", word by word) and SpeechTranscriber ("accurate", in bursts) —
-and they come back as `speech.words` events (the module's `onWords`);
-finishing reads the phrase once more, whole, with plain
-SpeechTranscriber, alternatives kept: each segment of the reading comes
+and they come back as `speech.words` events (the module's `onWords`),
+each recogniser's text everything it wrote since the listening began;
+a phrase is read once more, whole, with plain SpeechTranscriber,
+alternatives kept, either with the microphone left open (`read`, which
+answers a `mark` where its audio ended; `cut` with that mark lets go of
+the phrase once it landed, and the next reading begins after it) or as
+it closes (`finish`, everything since the last cut). Before a phrase's
+first words the session keeps only 8 s of the room, so a long wait is
+not read again; past 90 s the oldest audio goes. Each reading: each segment of the reading comes
 with the readings the recogniser weighed for it (the first is the
 segment itself), and the dictated phrase goes to the thread with them
 (`Heard`), for the place lookup below. Beside it the phrase is read in
@@ -170,14 +176,29 @@ audio stays in memory and goes with the phrase. The phrase ends on its words, no
 quick words have stood still for 900 ms, or, while the accurate ones
 are ahead of them, when those have for 1,200 ms; until then the words
 show in the thread's pending line (`pendingLine`). Dictation is
-hands-free: `useQuickAddModel`
-sends each phrase when its words stop and listens again (`voiceLoop.ts`) once
-the form has taken the last one in (`useThreadEditor().applying`), until
-the microphone is pressed (which sends what was recorded, heard or
-not), the field is typed into, the form is edited
-by hand (`userEdits`, counted by the setters the forms receive and a
-picked free slot, never by a turn's own fills), 30 s pass with nobody
-speaking or an older step is put on show.
+hands-free: `useQuickAddModel` opens the microphone once and keeps it
+open. Each phrase is read (`read`) and sent when its words stop; words
+that follow before it landed (`grewSince`: a new quick word, or the
+accurate one past both counts at the pause) drop that reading — the
+thread lets its answer go (`dropPhrase`, the thread's `drop`) — and the
+grown phrase is read when they stop; once it landed (the thread
+answered) it is cut, and the words after it are the next phrase, each
+recogniser's counted after the landed ones (`phraseWords`). A phrase is
+sent only once the form has taken the last one in
+(`useThreadEditor().applying`). It ends when the microphone is pressed
+(`micPress`: what was said since the last phrase landed is read and
+sent, heard or not; a phrase on its way with nothing after it just
+lands), the field is typed into, the form is edited by hand
+(`userEdits`, counted by the setters the forms receive and a picked
+free slot, never by a turn's own fills), 30 s pass with nobody speaking
+or an older step is put on show. The microphone held down for 350 ms
+(`micDown` / `micUp`) is hold to talk: no pause ends the phrase (one on
+its way joins it), and letting go reads and sends everything since the
+last phrase landed (`finish`); a tap still starts hands-free, listening
+from the moment the finger went down. A release acts as a tap only once
+its click comes (`micClick`; on iOS a tap under 130 ms clicks before it
+lifts): a touch that never becomes one, such as a swipe of the sheet that
+began on the microphone, undoes the listening it started (`tapNeverCame`).
 
 **Native bridges** (`packages/reminders`, `packages/apple-calendar`,
 `packages/contacts`, `packages/geo`): each is one JSON protocol spoken by

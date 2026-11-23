@@ -1082,14 +1082,17 @@ with the scopes asked for, no browser. The `reminders` and `appleCalendar` fixtu
 writes can be held (`App.holdEventKitWrites`, a marker file under the
 profile) so a spec acts while a save or delete waits for EventKit.
 `microphone` stands in for the page's
-`getUserMedia` with a Web Audio loop of quiet room and a phrase-long
-tone (Chromium's fake audio device never opens under Electron; the
-stand-in ignores the constraints, voice processing included), and
-under `CALENDAR_MICROPHONE=fixture` main answers the audio streamed to
-it: while the tone plays, the spec's next phrase comes back word by
-word as both recognisers' words, and finishing reads it as that phrase
-(a phrase given as segments, as them, each with the other readings the
-spec gives it), nothing asked or installed. `camera` likewise: the
+`getUserMedia` with a Web Audio loop of quiet room and phrase-long
+tones (`loop`: one tone by default; each open starts it from its
+beginning, counted on `<html data-microphone-opens>`; Chromium's fake
+audio device never opens under Electron; the stand-in ignores the
+constraints, voice processing included), and under
+`CALENDAR_MICROPHONE=fixture` main answers the audio streamed to it:
+while a tone plays, the spec's next phrase comes back word by word as
+both recognisers' words (everything since the listening began), and a
+reading answers the phrases said since the last one that landed,
+joined, after `readMs` (a phrase given as segments, as them, each with
+the other readings the spec gives it), nothing asked or installed. `camera` likewise: the
 page's `getUserMedia` answers a drawn canvas stream, the camera counts as
 granted with no TCC prompt (`CALENDAR_CAMERA=fixture`, else `off`: no
 camera, the paste field only), and every frame reads as the spec's code
@@ -1103,12 +1106,14 @@ screen privacy in the settings window, the capture hint, the inspector
 and inline editor);
 `capture` (paste-to-drafts on the fixture model); `handsFree` (one
 click of the microphone: the first phrase's words show while it is
-said, two phrases land when their words stop, the form
-brought forward does not end the dictation, a typed title does, the
-next phrase keeps that title, an older step put on show ends it too;
-Settings › Dictation reduces background noise until it is switched off,
-a choice both windows read, and picks the language and the second one,
-Automatic's second following the first);
+said, two phrases land when their words stop on one microphone open
+throughout, the form brought forward does not end the dictation, a
+typed title does, the next phrase keeps that title, an older step put
+on show ends it too; words after a pause said before the phrase landed
+join it as one turn; held, the microphone listens through a pause and
+sends when let go of; Settings › Dictation reduces background noise
+until it is switched off, a choice both windows read, and picks the
+language and the second one, Automatic's second following the first);
 `assistantView` (the editor's two views:
 a phrase answered with the item as a card, a change marked with the old
 value struck through, two questions asked one at a time and numbered,
