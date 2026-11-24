@@ -587,5 +587,43 @@ describe('appleSpeech', () => {
         text: 'Lunch with Sarah',
       });
     });
+
+    it('opens nothing again over a newer start begun while the phrase was read', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const release = holdFinish();
+      const read = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const newer = speech.start({ onWords: noWords });
+      release();
+      await read;
+      await expect(newer).resolves.toEqual({ sources: ['accurate'] });
+      expect(startCalls()).toEqual([
+        'start 1 processed',
+        'read 1',
+        'finish 1',
+        'start 2 processed',
+      ]);
+      native.finishQueue.push(phrase('Dinner'));
+      await expect(speech.finish()).resolves.toMatchObject({ text: 'Dinner' });
+    });
+
+    it('cancels a reopened listening in the module, with no reading left over', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      await speech.read();
+      speech.cut(0);
+      await speech.cancel();
+      expect(startCalls()).toEqual([
+        'start 1 processed',
+        'read 1',
+        'finish 1',
+        'start 2 processed',
+        'cut 2 0',
+        'cancel 2',
+      ]);
+    });
   });
 });

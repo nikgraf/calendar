@@ -77,6 +77,8 @@ type Said = Record<WordsSource, string>;
  * goes on from.
  */
 interface Listening {
+  /** Which start opened it (`starts`): a fallback opens nothing again once a newer one began. */
+  readonly epoch: number;
   /** The session is being read the fallback way (`readAfresh`): its phrase, once read. */
   fallback?: Promise<SpeechRead | undefined> | undefined;
   readonly onLost: (() => void) | undefined;
@@ -96,6 +98,8 @@ interface Listening {
 
 let current: Listening | undefined;
 let sessions = 0;
+/** Starts asked for so far, counted as each begins: before its microphone has opened. */
+let starts = 0;
 
 const nothingSaid = (): Said => ({ accurate: '', quick: '' });
 
@@ -195,10 +199,17 @@ const later = (lost: (() => void) | undefined) => {
  * `read` undefined: the module no longer held the session.
  */
 const reopen = async (native: Native, active: Listening, read: SpeechRead | undefined) => {
+  // Given up, finished or replaced; or a newer start is on its way, whose
+  // session a reopened one would replace in the module.
+  const superseded = () => current !== active || starts !== active.epoch;
   if (current !== active) {
     return;
   }
   active.remove();
+  if (superseded()) {
+    current = undefined;
+    return;
+  }
   if (read === undefined) {
     // The module let the listening go: nothing will end it now.
     current = undefined;
@@ -207,8 +218,8 @@ const reopen = async (native: Native, active: Listening, read: SpeechRead | unde
   }
   try {
     const next = await openSession(native, active.onWords, active.said);
-    if (current === active) {
-      current = { ...active, ...next, fallback: undefined, uncut: read };
+    if (!superseded()) {
+      current = { ...active, ...next, fallback: undefined, reading: undefined, uncut: read };
     } else {
       next.remove();
       await native.cancel(next.session).catch(() => undefined);
@@ -352,6 +363,8 @@ export const appleSpeech: SpeechToText = {
     return result ? { heard: heardIn(after(active.uncut, result)), mark: result.mark } : undefined;
   },
   start: async ({ onLost, onWords, signal }) => {
+    starts += 1;
+    const epoch = starts;
     const native = loadSpeechModule();
     if (!native) {
       throw unsupported();
@@ -388,6 +401,7 @@ export const appleSpeech: SpeechToText = {
     // The module dropped the phrase before when this one started.
     current?.remove();
     current = {
+      epoch,
       onLost,
       onWords,
       remove: opened.remove,
