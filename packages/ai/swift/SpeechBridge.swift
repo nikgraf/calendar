@@ -348,51 +348,44 @@ final class SpeechListening: @unchecked Sendable {
   }
 
   /// Reads the phrase so far, the microphone left open: its audio, and
-  /// `mark`, where it ended. Its audio stays until `cut`. Its audio is
+  /// `mark`, where it ended. Its audio stays until `cut`. The audio is
   /// taken now, in the order of the calls, so a finish or cancel after it
-  /// cannot take it first; behind a reading still under way, once that
-  /// one is done. Nil once the listening was closed.
+  /// cannot take it first; the reading runs once one still under way is
+  /// done. Nil once the listening was closed.
   func read() -> Task<Read?, Error> {
     lock.withLock {
       guard open else { return Task { nil } }
+      reading = true
+      let audio = KeptAudio(buffers: kept.map(\.buffer))
+      let mark = total
       let before = pending
-      let taken = before == nil ? takeForReading() : nil
       let task = Task { () -> Read? in
-        if let taken { return try await self.read(taken) }
         _ = try? await before?.value
-        guard let later = self.lock.withLock({ self.open ? self.takeForReading() : nil }) else {
-          return nil
-        }
-        return try await self.read(later)
+        return try await self.read(audio, mark: mark)
       }
       pending = task
       return task
     }
   }
 
-  private typealias Taken = (
-    audio: KeptAudio, mark: AVAudioFramePosition, stopped: LiveRecognisers,
-    stream: AsyncStream<AnalyzerInput>
-  )
-
-  /// Called under the lock. The phrase's audio, and the microphone's from
-  /// here on kept for the live recognisers that come next, at once: no
-  /// block is in neither.
-  private func takeForReading() -> Taken {
-    reading = true
-    input.finish()
-    let (stream, next) = AsyncStream<AnalyzerInput>.makeStream()
-    input = next
-    return (KeptAudio(buffers: kept.map(\.buffer)), total, live, stream)
-  }
-
-  private func read(_ taken: Taken) async throws -> Read {
-    await taken.stopped.stop()
-    // A recogniser that lagged will not write the rest of the phrase now:
-    // its next word is a new one, as the other's is.
-    for (source, text) in written.level() { onWords(source, text) }
-    let reading = try await readAll(taken.audio.buffers) { try await self.resume(taken.stream) }
-    return (reading, taken.mark)
+  private func read(_ audio: KeptAudio, mark: AVAudioFramePosition) async throws -> Read {
+    // The microphone's audio from here on goes to the live recognisers
+    // that come next; closed meanwhile, none come, but the live ones still
+    // stop before the reading (the finish or cancel waits for it).
+    let swapped = lock.withLock { () -> (LiveRecognisers, AsyncStream<AnalyzerInput>?) in
+      guard open else { return (live, nil) }
+      input.finish()
+      let (stream, next) = AsyncStream<AnalyzerInput>.makeStream()
+      input = next
+      return (live, stream)
+    }
+    await swapped.0.stop()
+    guard let stream = swapped.1 else { return (try await readAll(audio.buffers), mark) }
+    // The accurate recogniser, a burst behind, will not write the rest of
+    // the phrase now: its next word is a new one, as the quick one's is.
+    if let raised = written.levelAccurate() { onWords("accurate", raised) }
+    let reading = try await readAll(audio.buffers) { try await self.resume(stream) }
+    return (reading, mark)
   }
 
   /// The live recognisers again, on the audio that came while the phrase
@@ -623,19 +616,19 @@ private final class Written: @unchecked Sendable {
     lock.withLock { texts[source] = text }
   }
 
-  /// Every recogniser that wrote any words is brought up to the one that
-  /// wrote the most (the accurate one writes in bursts, behind the quick
-  /// one); answers the ones raised.
-  func level() -> [(String, String)] {
+  /// The accurate recogniser, when it wrote fewer words than the quick
+  /// one, is brought up to the quick one's (it writes in bursts, behind
+  /// it); answers its new text. Never the quick one: one that heard less
+  /// (deaf in a loud room) has not lagged, and raising it would read as
+  /// words said after the pause.
+  func levelAccurate() -> String? {
     lock.withLock {
       let count = { (text: String) in text.split(whereSeparator: \.isWhitespace).count }
-      guard let longest = texts.values.max(by: { count($0) < count($1) }) else { return [] }
-      var raised: [(String, String)] = []
-      for (source, text) in texts where !text.isEmpty && count(text) < count(longest) {
-        texts[source] = longest
-        raised.append((source, longest))
-      }
-      return raised
+      let accurate = texts["accurate"] ?? ""
+      let quick = texts["quick"] ?? ""
+      guard !accurate.isEmpty, count(accurate) < count(quick) else { return nil }
+      texts["accurate"] = quick
+      return quick
     }
   }
 }

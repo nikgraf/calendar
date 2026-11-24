@@ -99,6 +99,9 @@ vi.mock('expo', () => ({
         if (native.readError) {
           throw native.readError;
         }
+        if (native.gone.has(session)) {
+          return null;
+        }
         return native.finishes ? { ...native.finishes, mark: 48_000 } : native.finishes;
       },
       requestMicrophone: async () => native.microphone,
@@ -641,6 +644,39 @@ describe('appleSpeech', () => {
         'accurate: Lunch with Sarah',
         'accurate: Lunch with Sarah Tomorrow',
       ]);
+    });
+
+    it('never raises the quick recogniser when it heard less than the accurate one', async () => {
+      const speech = await loadSpeech();
+      const heard: Array<string> = [];
+      await speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) });
+      say({ session: 1, source: 'accurate', text: 'Lunch at 3 PM' });
+      say({ session: 1, source: 'quick', text: 'Lunch at 3PM' });
+      native.finishQueue.push(phrase('Lunch at 3 PM'));
+      await speech.read();
+      say({ session: 2, source: 'quick', text: 'Tomorrow' });
+      expect(heard).toEqual([
+        'accurate: Lunch at 3 PM',
+        'quick: Lunch at 3PM',
+        'quick: Lunch at 3PM Tomorrow',
+      ]);
+    });
+
+    it('gives the phrase to a read the module answered with nothing once ended as a finish', async () => {
+      native.readError = undefined;
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      let release: (() => void) | undefined;
+      native.readHeld = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const read = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await speech.cancel();
+      // The module answers the read with nothing: its finish took the session.
+      release?.();
+      await expect(read).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' }, mark: 0 });
     });
   });
 });

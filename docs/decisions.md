@@ -1680,8 +1680,7 @@ was cut (pruned 2026-11-17).
   moment later. If a reading still fails, the iPhone adapter finishes the
   session and opens a new one; the module's error shows in Diagnostics.
   Rejected: closing the microphone for the reading (the fallback alone:
-  words said meanwhile went unheard, up to Parakeet's 4 s). Open: the cap
-  itself, not documented.
+  words said meanwhile went unheard, up to Parakeet's 4 s).
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a

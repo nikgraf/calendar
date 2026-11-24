@@ -191,19 +191,17 @@ const SOURCES = ['accurate', 'quick'] as const;
 const wordsOf = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
 /**
- * The words before a reopened session, the same number for each
- * recogniser that wrote any: the one that lagged when the session closed
- * (the accurate one writes in bursts) will never write the rest of that
- * phrase, and its first word in the new session must count as a new
- * word, as the other's does, not as a late one of the phrase just read.
+ * The words before a reopened session: the accurate recogniser, when it
+ * lagged the quick one as the session closed (it writes in bursts), is
+ * brought up to the quick one's words, since it will never write the rest
+ * of that phrase and its first word in the new session must count as a
+ * new one. Never the quick one: one that heard less (deaf in a loud
+ * room) has not lagged, and raising it would read as words after the pause.
  */
-const levelled = (said: Said): Said => {
-  const longest = SOURCES.map((source) => said[source]).reduce((a, b) =>
-    wordsOf(b) > wordsOf(a) ? b : a,
-  );
-  const level = (text: string) => (text === '' ? text : longest);
-  return { accurate: level(said.accurate), quick: level(said.quick) };
-};
+const levelled = (said: Said): Said =>
+  said.accurate !== '' && wordsOf(said.accurate) < wordsOf(said.quick)
+    ? { ...said, accurate: said.quick }
+    : said;
 
 /** Told a moment later: after the phrase read with it reached the caller, so its message stays. */
 const later = (lost: (() => void) | undefined) => {
@@ -284,6 +282,9 @@ const readAfresh = (native: Native, active: Listening): Promise<SpeechRead | und
   })();
   return active.fallback;
 };
+
+/** The listening's fallback reading under way, if one began. */
+const fallbackOf = (listening: Listening) => listening.fallback;
 
 /** A fallback reading as the phrase read: the new session holds nothing of it, so there is nothing to cut. */
 const phraseIn = (read: SpeechRead | undefined): PhraseRead | undefined =>
@@ -377,8 +378,8 @@ export const appleSpeech: SpeechToText = {
     try {
       result = await reading;
     } catch (error) {
-      // On the iPhone the reading beside the live recognisers can fail
-      // where the Mac's does not: the phrase is still read and sent.
+      // Should the module still fail to read (iOS caps the recognisers an
+      // app runs at once), the phrase is read and sent all the same.
       recordDictationError('read', error);
       return phraseIn(await readAfresh(native, active));
     } finally {
@@ -386,7 +387,13 @@ export const appleSpeech: SpeechToText = {
         active.reading = undefined;
       }
     }
-    return result ? { heard: heardIn(after(active.uncut, result)), mark: result.mark } : undefined;
+    if (!result) {
+      // Ended meanwhile as a finish (`cancel` during a read): the phrase is in its reading.
+      // Read anew: the narrowing from the start of this read is stale after the await.
+      const fallback = fallbackOf(active);
+      return fallback ? phraseIn(await fallback) : undefined;
+    }
+    return { heard: heardIn(after(active.uncut, result)), mark: result.mark };
   },
   start: async ({ onLost, onWords, signal }) => {
     starts += 1;
