@@ -36,16 +36,21 @@ const HEARD: Readonly<Record<string, string>> = {
 const setup = (over: Partial<SpeechSpikeDeps> = {}) => {
   const log: Array<string> = [];
   let footprint = 100;
+  let loaded = false;
   const parakeet: ParakeetPort = {
     load: async (version, vocabulary, onProgress) => {
       log.push(`load ${version} [${vocabulary.join(', ')}]`);
       onProgress(0.5);
       footprint += 50;
+      loaded = true;
       return { loadMs: 1200 };
     },
     release: async () => {
       log.push('release');
-      footprint -= 50;
+      if (loaded) {
+        footprint -= 50;
+        loaded = false;
+      }
     },
     transcribe: async (uri) => {
       log.push(`transcribe ${uri}`);
@@ -123,6 +128,8 @@ describe('createSpeechSpikeStore', () => {
       'fetch places/place-en-07.m4a',
       'fetch turns/turn-16.m4a',
       'release assistant',
+      // Dictation's Parakeet goes too: the baseline is the app without either model.
+      'release',
       'assistant',
       'load ultra [Jörg Hofstätter, Sarah]',
       'transcribe file:///places/place-en-07.m4a',

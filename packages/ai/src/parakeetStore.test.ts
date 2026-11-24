@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { NetworkReading } from './assistantModel.ts';
 import type { ParakeetChoice } from './parakeetModel.ts';
-import { createParakeetStore, type ParakeetPort } from './parakeetStore.ts';
+import { createParakeetStore, ParakeetNeedsWifi, type ParakeetPort } from './parakeetStore.ts';
 
 const WIFI: NetworkReading = { constrained: false, expensive: false, satisfied: true };
 const MOBILE: NetworkReading = { constrained: false, expensive: true, satisfied: true };
@@ -251,6 +251,22 @@ describe('createParakeetStore', () => {
     // The first download's late end is neither the answer nor a failure: the second runs on.
     expect(store.getState().files.kind).toBe('downloading');
     expect(fake.downloads()).toBe(2);
+  });
+
+  it('waits for Wi-Fi when the platform stopped the download before its path event arrived', async () => {
+    const fake = fakePort();
+    const stopped = {
+      ...fake.port,
+      download: async (_onProgress: (fraction: number) => void, wifiOnly: boolean) => {
+        expect(wifiOnly).toBe(true);
+        throw new ParakeetNeedsWifi();
+      },
+    };
+    const store = createParakeetStore({ port: stopped, supported: true });
+    await store.boot();
+    await store.download('wifi');
+    await tick();
+    expect(store.getState().files).toEqual({ for: 'wifi', kind: 'waiting', progress: 0 });
   });
 
   it('does nothing where the build has no Parakeet', async () => {

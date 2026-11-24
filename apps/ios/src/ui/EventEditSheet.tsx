@@ -607,9 +607,24 @@ const runModelAction = (download: AssistantDownload, action: 'download' | 'mobil
  */
 const runOffer = (
   download: AssistantDownload,
-  kind: 'both' | 'decline' | 'decline-parakeet' | 'download' | 'mobile' | 'parakeet' | 'retry',
+  kind:
+    | 'both'
+    | 'decline'
+    | 'decline-parakeet'
+    | 'download'
+    | 'mobile'
+    | 'parakeet'
+    | 'parakeet-mobile'
+    | 'parakeet-retry'
+    | 'retry',
 ) => {
   switch (kind) {
+    case 'parakeet-mobile':
+      void parakeet().allowMobileData();
+      return;
+    case 'parakeet-retry':
+      void parakeet().retry();
+      return;
     case 'both':
       void download.agree('wifi');
       void parakeet().download('wifi');
@@ -659,7 +674,13 @@ function LessonFrame({
           size: assistantBytes,
         });
   const copy =
-    id === 'create' ? lessonOffer(own, parakeetState, { assistantBytes, device: 'iPhone' }) : own;
+    id === 'create'
+      ? lessonOffer(own, parakeetState, {
+          assistantBytes,
+          device: 'iPhone',
+          network: parakeet().network(),
+        })
+      : own;
   const offer = copy?.action;
   const declined = offer?.kind === 'both' ? 'decline' : 'decline-parakeet';
   return (

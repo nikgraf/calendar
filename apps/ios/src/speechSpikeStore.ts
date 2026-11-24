@@ -294,6 +294,8 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
       // A model an earlier run, or the Assistant, left loaded goes first: the
       // reading before is a baseline, and "alone" means alone.
       await deps.assistant?.release();
+      // And dictation's Parakeet, loaded as a phrase started or after its download.
+      await parakeet.release();
       watch = memoryWatch(deps.memory);
       const before = watch.sample()?.footprint;
       let afterAssistant: number | undefined;

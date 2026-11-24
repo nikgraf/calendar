@@ -68,10 +68,25 @@ const demoReader = tunedReader(lessonDemoModel);
  * and switches Parakeet off.
  */
 const runModelAction = (
-  kind: 'both' | 'decline' | 'decline-parakeet' | 'download' | 'mobile' | 'parakeet' | 'retry',
+  kind:
+    | 'both'
+    | 'decline'
+    | 'decline-parakeet'
+    | 'download'
+    | 'mobile'
+    | 'parakeet'
+    | 'parakeet-mobile'
+    | 'parakeet-retry'
+    | 'retry',
 ) => {
   const bridge = window.calendarBridge;
   switch (kind) {
+    case 'parakeet-mobile':
+      void bridge.parakeetDownload();
+      return;
+    case 'parakeet-retry':
+      void bridge.parakeetRetry();
+      return;
     case 'both':
       void bridge.assistantDownload();
       void bridge.parakeetDownload();

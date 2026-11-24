@@ -20,8 +20,12 @@ export interface ParakeetPort {
   /** Whether the app is in front: a download that fails behind it goes on once it is back. */
   readonly active?: () => boolean;
   readonly cancel: () => void;
-  /** Fetches what is missing of both models; rejects after `cancel`. */
-  readonly download: (onProgress: (fraction: number) => void) => Promise<void>;
+  /**
+   * Fetches what is missing of both models; rejects after `cancel`, and
+   * with `ParakeetNeedsWifi` when `wifiOnly` and the network turned to
+   * mobile data or Low Data Mode (the platform stops it at once).
+   */
+  readonly download: (onProgress: (fraction: number) => void, wifiOnly: boolean) => Promise<void>;
   readonly files: () => Promise<{ readonly bytes: number; readonly here: boolean }>;
   /** The iPhone's network: without it the download never waits for Wi-Fi (the Mac). */
   readonly network?: {
@@ -68,6 +72,19 @@ export interface ParakeetStore {
 
 /** What every action does where the build has no Parakeet. */
 const nothing = async (): Promise<void> => undefined;
+
+/** The platform stopped a Wi-Fi-only download: the network turned to mobile data or Low Data Mode. */
+export class ParakeetNeedsWifi extends Error {
+  constructor() {
+    super('Parakeet downloads on Wi-Fi only.');
+    this.name = 'ParakeetNeedsWifi';
+  }
+}
+
+const needsWifi = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  (error as { readonly name?: unknown }).name === 'ParakeetNeedsWifi';
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -173,11 +190,18 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
         if (mine === current && state.files.kind === 'downloading') {
           set({ files: { kind: 'downloading', progress: fraction } });
         }
-      })
+      }, choice.download === 'wifi')
       .then(
         () => (mine === current ? settle() : undefined),
         (error: unknown) => {
           if (mine !== current) {
+            return;
+          }
+          // Stopped for the network (by the platform, before its path event
+          // arrived here): a wait, not a failure.
+          const waitFor = blockedBy() ?? (needsWifi(error) ? ('wifi' as const) : undefined);
+          if (waitFor !== undefined) {
+            set({ files: { for: waitFor, kind: 'waiting', progress: progressOf(state.files) } });
             return;
           }
           if (port.active !== undefined && !port.active()) {

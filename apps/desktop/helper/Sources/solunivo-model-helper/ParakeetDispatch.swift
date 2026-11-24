@@ -19,7 +19,7 @@ enum ParakeetDispatch {
     case "parakeet.download":
       // Progress goes out as `parakeet.progress` events while it runs.
       try await downloads.start {
-        try await ParakeetEngine.shared.download { fraction in
+        try await ParakeetEngine.shared.download(wifiOnly: false) { fraction in
           emit(["event": "parakeet.progress", "fraction": fraction])
         }
       }.value

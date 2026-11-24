@@ -49,6 +49,30 @@ describe('lessonOffer', () => {
     }
   });
 
+  it('keeps Parakeet’s wait and failure in the lesson once the Assistant’s model is here', () => {
+    const options = {
+      assistantBytes: ASSISTANT_BYTES,
+      device: 'iPhone',
+      network: { constrained: false, expensive: true, satisfied: true },
+    } as const;
+    expect(
+      lessonOffer(
+        undefined,
+        { files: { for: 'wifi', kind: 'waiting', progress: 0 }, on: true },
+        options,
+      ),
+    ).toEqual({
+      action: { kind: 'parakeet-mobile', label: 'Use Mobile Data (712 MB)' },
+      more: 'Parakeet downloads when this iPhone is on Wi-Fi.',
+    });
+    expect(
+      lessonOffer(undefined, { files: { kind: 'failed', message: 'Offline.' }, on: true }, options),
+    ).toEqual({
+      action: { kind: 'parakeet-retry', label: 'Try Again' },
+      more: 'The download did not finish: Offline.',
+    });
+  });
+
   it('says how far Parakeet is while it downloads', () => {
     const ready = { text: 'The Assistant is ready, on this iPhone.' };
     expect(

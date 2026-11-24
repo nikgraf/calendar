@@ -18,14 +18,17 @@
 import AVFoundation
 import FluidAudio
 import Foundation
+import Network
 
 enum ParakeetBridgeError: Error, CustomStringConvertible {
+  case needsWifi
   case notConfigured
   case notHere
   case unknownVersion(String)
 
   var description: String {
     switch self {
+    case .needsWifi: return "Parakeet downloads on Wi-Fi only."
     case .notConfigured: return "Parakeet has no folder yet."
     case .notHere: return "Parakeet is not on this device."
     case .unknownVersion(let name): return "Unknown Parakeet version: \(name)."
@@ -106,6 +109,8 @@ actor ParakeetEngine {
   private var ctc: CtcModels?
   private var session: VocabularyBoostingSession?
   private var warming: Task<Void, Never>?
+  /// The Speech Spike page's run owns the engine: dictation leaves it alone.
+  private var spikeHolds = false
   /// The one load of the model under way: every phrase that needs it waits for it.
   private var loading: (version: AsrModelVersion, generation: Int, task: Task<Void, Error>)?
   /// The one build of the vocabulary's spotter under way.
@@ -125,18 +130,19 @@ actor ParakeetEngine {
     // Loads never fetch: FluidAudio would otherwise delete a model that fails
     // to load and download it again, outside the person's Wi-Fi choice.
     // Only `download`, which the store gates, goes online.
-    if !downloading { ModelHub.offlineMode = true }
+    if downloads == 0 { ModelHub.offlineMode = true }
   }
 
-  /// A download under way: the one time FluidAudio may go online.
-  private var downloading = false
+  /// Downloads under way (a cancelled one may still be winding down beside
+  /// its replacement): FluidAudio goes online while there is one.
+  private var downloads = 0
 
   private func online<T>(_ work: () async throws -> T) async rethrows -> T {
-    downloading = true
+    downloads += 1
     ModelHub.offlineMode = false
     defer {
-      downloading = false
-      ModelHub.offlineMode = true
+      downloads -= 1
+      if downloads == 0 { ModelHub.offlineMode = true }
     }
     return try await work()
   }
@@ -163,18 +169,36 @@ actor ParakeetEngine {
   /// Fetches what is missing of both models (a file already here is kept).
   /// The store prepares them right after (`prepare`), so the first phrase
   /// does not wait for Core ML.
-  func download(progress: @escaping @Sendable (Double) -> Void) async throws {
+  /// `wifiOnly`: the download stops the moment the device is on mobile data
+  /// or in Low Data Mode (FluidAudio's session would go on), rejecting with
+  /// `ParakeetBridgeError.needsWifi`; the store waits for Wi-Fi then.
+  func download(wifiOnly: Bool, progress: @escaping @Sendable (Double) -> Void) async throws {
     let (asr, ctc) = try paths()
     let share = Self.ultraShare
-    try await online {
-      _ = try await AsrModels.download(to: asr, version: .ultra) { step in
-        progress(step.fractionCompleted * share)
-      }
-      try Task.checkCancellation()
-      _ = try await CtcModels.download(to: ctc, variant: .ctc110m) { step in
-        progress(share + step.fractionCompleted * (1 - share))
+    let work = Task {
+      try await self.online {
+        _ = try await AsrModels.download(to: asr, version: .ultra) { step in
+          progress(step.fractionCompleted * share)
+        }
+        try Task.checkCancellation()
+        _ = try await CtcModels.download(to: ctc, variant: .ctc110m) { step in
+          progress(share + step.fractionCompleted * (1 - share))
+        }
       }
     }
+    let watch = wifiOnly ? WifiWatch(stopping: work) : nil
+    defer { watch?.stop() }
+    do {
+      try await withTaskCancellationHandler {
+        try await work.value
+      } onCancel: {
+        work.cancel()
+      }
+    } catch {
+      if watch?.tripped == true { throw ParakeetBridgeError.needsWifi }
+      throw error
+    }
+    if watch?.tripped == true { throw ParakeetBridgeError.needsWifi }
     progress(1)
   }
 
@@ -223,7 +247,7 @@ actor ParakeetEngine {
   /// after a download the Neural Engine prepares them once, which takes
   /// half a minute, so it starts long before a phrase needs them.
   private func warm() {
-    guard warming == nil, (try? ready(.ultra)) == nil else { return }
+    guard !spikeHolds, warming == nil, (try? ready(.ultra)) == nil else { return }
     warming = Task {
       _ = try? await self.prepare(.ultra)
       self.warming = nil
@@ -314,7 +338,7 @@ actor ParakeetEngine {
   /// and the models are here: nil otherwise, and nil on any failure (the
   /// answer goes on with Apple's reading then).
   func readPhrase(_ buffers: [AVAudioPCMBuffer], locale: Locale) async -> ParakeetReading? {
-    guard on, !buffers.isEmpty, Self.reads(locale),
+    guard on, !spikeHolds, !buffers.isEmpty, Self.reads(locale),
       let model = try? await prepare(.ultra),
       let samples = try? Self.samples(of: buffers), !samples.isEmpty
     else { return nil }
@@ -425,6 +449,7 @@ actor ParakeetEngine {
     }
     guard let folder else { throw ParakeetBridgeError.notConfigured }
     releaseModels()
+    spikeHolds = true
     let started = Date()
     let (_, ctc) = try paths()
     try await online {
@@ -470,9 +495,10 @@ actor ParakeetEngine {
       rescoreMs: done.timeIntervalSince(heard) * 1000)
   }
 
-  /// Lets the Speech Spike page's model go.
+  /// Lets the Speech Spike page's model go, and the engine back to dictation.
   func spikeRelease() {
     releaseModels()
+    spikeHolds = false
   }
 }
 
@@ -512,4 +538,27 @@ private final class ParakeetOnce: @unchecked Sendable {
 /// A finished phrase's audio, no longer written to: safe to hand to the engine.
 struct ParakeetAudio: @unchecked Sendable {
   let buffers: [AVAudioPCMBuffer]
+}
+
+/// Stops a Wi-Fi-only download the moment the path turns expensive or
+/// constrained, before JavaScript hears of it.
+private final class WifiWatch: @unchecked Sendable {
+  private let monitor = NWPathMonitor()
+  private let lock = NSLock()
+  private var stopped = false
+
+  var tripped: Bool { lock.withLock { stopped } }
+
+  init(stopping work: Task<Void, Error>) {
+    monitor.pathUpdateHandler = { [weak self] path in
+      guard path.isExpensive || path.isConstrained, let self else { return }
+      self.lock.withLock { self.stopped = true }
+      work.cancel()
+    }
+    monitor.start(queue: DispatchQueue(label: "solunivo.parakeet.wifi"))
+  }
+
+  func stop() {
+    monitor.cancel()
+  }
 }

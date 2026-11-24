@@ -50,8 +50,12 @@ export interface SolunivoParakeetNative {
     listener: (event: { readonly fraction: number }) => void,
   ) => { readonly remove: () => void };
   readonly parakeetCancel: () => void;
-  /** Fetches what is missing of the files; rejects "cancelled" after `parakeetCancel`. */
-  readonly parakeetDownload: () => Promise<void>;
+  /**
+   * Fetches what is missing of the files; rejects "cancelled" after
+   * `parakeetCancel`, and with the code `ParakeetNeedsWifi` when `wifiOnly`
+   * and the path turned expensive or constrained (stopped natively).
+   */
+  readonly parakeetDownload: (wifiOnly: boolean) => Promise<void>;
   /** As a phrase starts: the models load in the background when dictation reads with Parakeet. */
   readonly parakeetPrepare: () => Promise<void>;
   /** The app left the screen: the models go, the switch stays. */

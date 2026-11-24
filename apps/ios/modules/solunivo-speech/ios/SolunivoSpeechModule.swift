@@ -163,10 +163,12 @@ public class SolunivoSpeechModule: Module {
     // Fetches what is missing of Parakeet's files, reporting
     // `onParakeetProgress`; a second call while one runs waits for it.
     // Rejects "cancelled" after `parakeetCancel`.
-    AsyncFunction("parakeetDownload") { (promise: Promise) in
+    // `wifiOnly`: stopped natively the moment the path is expensive or
+    // constrained (rejects "needsWifi").
+    AsyncFunction("parakeetDownload") { (wifiOnly: Bool, promise: Promise) in
       let module = WeakModule(self)
       let task = self.downloads.start {
-        try await Self.engine().download { fraction in
+        try await Self.engine().download(wifiOnly: wifiOnly) { fraction in
           module.value?.sendEvent("onParakeetProgress", ["fraction": fraction])
         }
       }
@@ -176,6 +178,8 @@ public class SolunivoSpeechModule: Module {
           promise.resolve(nil)
         } catch is CancellationError {
           promise.reject("ParakeetError", "cancelled")
+        } catch ParakeetBridgeError.needsWifi {
+          promise.reject("ParakeetNeedsWifi", "needsWifi")
         } catch {
           promise.reject("ParakeetError", "\(error)")
         }

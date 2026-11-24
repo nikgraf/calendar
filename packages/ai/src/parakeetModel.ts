@@ -145,7 +145,15 @@ export const parakeetCopy = (
 export interface LessonOffer {
   /** `both`: the Assistant's model and Parakeet; `parakeet`: Parakeet alone; else the Assistant's own. */
   readonly action?: {
-    readonly kind: 'both' | 'download' | 'mobile' | 'parakeet' | 'retry';
+    /** `parakeet-mobile` / `parakeet-retry`: Parakeet's own wait or failure, once the Assistant's model is here. */
+    readonly kind:
+      | 'both'
+      | 'download'
+      | 'mobile'
+      | 'parakeet'
+      | 'parakeet-mobile'
+      | 'parakeet-retry'
+      | 'retry';
     readonly label: string;
   };
   /** Parakeet is offered: "Without Parakeet" switches it off (Settings › Dictation can switch it on again). */
@@ -176,20 +184,51 @@ export const lessonOffer = (
       }
     | undefined,
   parakeet: ParakeetState,
-  { assistantBytes, device }: { readonly assistantBytes: number; readonly device: AssistantDevice },
+  {
+    assistantBytes,
+    device,
+    network,
+  }: {
+    readonly assistantBytes: number;
+    readonly device: AssistantDevice;
+    /** The iPhone's network, for the wording of a wait for Wi-Fi. */
+    readonly network?: NetworkReading | undefined;
+  },
 ): LessonOffer | undefined => {
   const wanted = parakeet.on && parakeet.files.kind === 'absent';
   const line = `Dictation can also read with Parakeet, a speech model on this ${device} that writes the names and places you say better: ${sizeLabel(PARAKEET_BYTES)} more.`;
   const decline = 'Without Parakeet';
+  const pending =
+    parakeet.on &&
+    (parakeet.files.kind === 'downloading' ||
+      parakeet.files.kind === 'waiting' ||
+      parakeet.files.kind === 'failed');
   if (assistant === undefined) {
     // The lesson's own hint stays: what to try comes first, the offer after it.
-    return wanted
-      ? {
-          action: { kind: 'parakeet', label: `Download Parakeet (${sizeLabel(PARAKEET_BYTES)})` },
-          decline,
-          more: line,
-        }
-      : undefined;
+    if (wanted) {
+      return {
+        action: { kind: 'parakeet', label: `Download Parakeet (${sizeLabel(PARAKEET_BYTES)})` },
+        decline,
+        more: line,
+      };
+    }
+    if (!pending) {
+      return undefined;
+    }
+    // Asked for here: where it stands, and its one action (mobile data, try again).
+    const copy = parakeetCopy(parakeet.files, { device, network });
+    return {
+      ...(copy.action === undefined || copy.action.kind === 'download'
+        ? {}
+        : {
+            action: {
+              kind: copy.action.kind === 'mobile' ? 'parakeet-mobile' : 'parakeet-retry',
+              label: copy.action.label,
+            },
+          }),
+      more: copy.line,
+      ...(copy.progress === undefined ? {} : { progress: copy.progress }),
+    };
   }
   if (wanted && assistant.action?.kind === 'download') {
     return {
@@ -216,6 +255,13 @@ export const lessonOffer = (
       ...assistant,
       ...(assistant.progress === undefined ? { progress } : {}),
       text: `${assistant.text} Parakeet: ${String(progress)} %.`,
+    };
+  }
+  if (pending) {
+    // Waiting or failed: said beside the Assistant's offer; Settings › Dictation acts on it.
+    return {
+      ...assistant,
+      text: `${assistant.text} ${parakeetCopy(parakeet.files, { device, network }).line}`,
     };
   }
   return assistant;

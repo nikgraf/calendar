@@ -1,6 +1,7 @@
 import {
   createParakeetStore,
   type ParakeetChoice,
+  ParakeetNeedsWifi,
   type ParakeetPort,
   type ParakeetState,
   type ParakeetStore,
@@ -98,12 +99,16 @@ const devicePort = (): ParakeetPort | undefined => {
   return {
     active: () => appState === undefined || appState.currentState === 'active',
     cancel: () => native.parakeetCancel(),
-    download: async (onProgress) => {
+    download: async (onProgress, wifiOnly) => {
       const listening = native.addListener('onParakeetProgress', ({ fraction }) =>
         onProgress(fraction),
       );
       try {
-        await native.parakeetDownload();
+        await native.parakeetDownload(wifiOnly);
+      } catch (error) {
+        throw (error as { code?: unknown }).code === 'ParakeetNeedsWifi'
+          ? new ParakeetNeedsWifi()
+          : error;
       } finally {
         listening.remove();
       }
