@@ -185,6 +185,12 @@ export function SettingsRoot() {
             testID="settings-row-advanced"
             title="Advanced"
           />
+          <NavRow
+            href="/settings/acknowledgements"
+            leading={<IconTile color={colors['text-secondary']} name="text.book.closed.fill" />}
+            testID="settings-row-acknowledgements"
+            title="Acknowledgements"
+          />
         </Section>
 
         <Section

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-11-18_
+_Last updated: 2026-11-24_
 
 Solunivo is a calendar and task app for macOS and iOS. It has no server
 of its own: the app talks directly from your device to Google and Apple,
@@ -60,13 +60,20 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   reads its sentence with it too; for search sentences, dictation, reading
   events out of a pasted text or a shared screenshot, and find a time until
   the Assistant's model is downloaded, the app uses Apple's on-device
-  models and text recognition by default. Your voice and images never
-  leave the device for this, and the text is sent only to a model server
-  you choose on the Mac (next point).
+  models and text recognition by default. Dictation also reads each phrase
+  with Parakeet, a speech model that runs on your device, once you
+  downloaded it; it listens for the names of the people and places in your
+  calendar and contacts, which it reads there and never sends anywhere.
+  Your voice and images never leave the device for this, and the text is
+  sent only to a model server you choose on the Mac (next point).
 - **The Assistant's model is downloaded once.** The app asks before it
   downloads it (about 800 MB; on the iPhone over Wi-Fi unless you allow
   mobile data) from GitHub, which sees the request for the file, not your
   data. Nothing you say is sent anywhere to use it.
+- **Parakeet is downloaded once, if you want it.** The app asks before it
+  downloads it (about 700 MB; on the iPhone over Wi-Fi unless you allow
+  mobile data) from Hugging Face, which sees the requests for the files,
+  not your data. Settings › Dictation switches it off or deletes it.
 - **Goes to a model server you choose (Mac only).** Under Settings → AI
   Model you can pick Ollama or any OpenAI-compatible server instead of
   Apple's models for search and capture, and for find a time until the
@@ -84,8 +91,8 @@ Calendar, Apple Reminders and your address book, for the same purposes.
 We do not run analytics, crash reporting or advertising, and we do not
 sell, share or transfer your data to anyone. We have no servers that
 could receive it. App updates for iOS are downloaded from Expo's update
-service, and the Assistant's model from GitHub; each sees only the
-request for the file, not your data.
+service, the Assistant's model from GitHub and Parakeet from Hugging
+Face; each sees only the request for the file, not your data.
 
 ## Google API data
 

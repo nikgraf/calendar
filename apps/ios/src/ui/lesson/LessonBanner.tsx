@@ -17,14 +17,20 @@ const HINTS: Partial<Record<LessonId, string>> = {
  */
 export function LessonBanner({
   action,
+  decline,
   id,
+  more,
   note,
   onSkip,
   progress,
 }: {
   /** What the note asks for (the Create lesson's download of the Assistant's model). */
   action?: { readonly label: string; readonly onPress: () => void } | undefined;
+  /** Beside the action, quieter: what goes without an optional part of it ("Without Parakeet"). */
+  decline?: { readonly label: string; readonly onPress: () => void } | undefined;
   id: LessonId;
+  /** After the hint: an offer that leaves it in place (Parakeet, once the Assistant's model is here). */
+  more?: string | undefined;
   /** In place of the hint: the Create lesson without the Assistant's model, and the demo standing in. */
   note?: string | undefined;
   /** Absent once the lesson was tried: the hint stays, Skip has nothing left to skip. */
@@ -45,6 +51,11 @@ export function LessonBanner({
         <Text style={styles.hint} testID="lesson-banner-note">
           {note ?? HINTS[id] ?? copy.intro}
         </Text>
+        {more === undefined ? null : (
+          <Text style={styles.hint} testID="lesson-banner-more">
+            {more}
+          </Text>
+        )}
         {progress === undefined ? null : (
           <View
             accessibilityLabel={`${String(progress)} percent downloaded`}
@@ -56,14 +67,27 @@ export function LessonBanner({
           </View>
         )}
         {action === undefined ? null : (
-          <Pressable
-            accessibilityRole="button"
-            onPress={action.onPress}
-            style={({ pressed }) => [styles.action, pressed && styles.pressed]}
-            testID="lesson-model-action"
-          >
-            <Text style={styles.actionLabel}>{action.label}</Text>
-          </Pressable>
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={action.onPress}
+              style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+              testID="lesson-model-action"
+            >
+              <Text style={styles.actionLabel}>{action.label}</Text>
+            </Pressable>
+            {decline === undefined ? null : (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={decline.onPress}
+                style={({ pressed }) => [styles.decline, pressed && styles.pressed]}
+                testID="lesson-model-decline"
+              >
+                <Text style={styles.declineLabel}>{decline.label}</Text>
+              </Pressable>
+            )}
+          </View>
         )}
       </View>
       {onSkip ? (
@@ -99,6 +123,10 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
       fontWeight: '600',
     },
+    /** The download, and the way without its optional part under it. */
+    actions: {
+      alignItems: 'flex-start',
+    },
     banner: {
       alignItems: 'flex-start',
       backgroundColor: colors.surface,
@@ -109,6 +137,15 @@ const makeStyles = (colors: ThemeColors) =>
       marginHorizontal: 16,
       paddingHorizontal: 14,
       paddingVertical: 10,
+    },
+    decline: {
+      justifyContent: 'center',
+      minHeight: 44,
+      paddingHorizontal: 4,
+    },
+    declineLabel: {
+      color: colors.primary,
+      fontSize: 15,
     },
     fill: {
       backgroundColor: colors.primary,

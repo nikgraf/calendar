@@ -58,10 +58,14 @@ module.exports = {
     // solunivo-cli is the agent relay's wrapper script (a sealed resource,
     // not a Mach-O: nothing to sign). It execs the app's own binary with
     // ELECTRON_RUN_AS_NODE, so the RunAsNode fuse must stay enabled.
+    // THIRD_PARTY_NOTICES.md carries the licence texts of what the app ships
+    // and downloads (llama.cpp, FluidAudio, the models: the About panel
+    // credits them).
     extraResource: [
       'helper/.build/release/solunivo-model-helper',
       'llama/.build/llama-server',
       'resources/solunivo-cli',
+      '../../THIRD_PARTY_NOTICES.md',
     ],
     // CFBundleVersion; CI sets the short commit SHA so testers can identify
     // builds. Undefined locally — packager skips it.

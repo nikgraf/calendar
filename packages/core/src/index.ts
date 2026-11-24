@@ -13,6 +13,7 @@ export * from './layout/monthCellLabel.ts';
 export * from './color.ts';
 export * from './contacts/email.ts';
 export * from './contacts/search.ts';
+export * from './contacts/vocabulary.ts';
 export * from './format.ts';
 export * from './editor/attendees.ts';
 export * from './editor/conflict.ts';

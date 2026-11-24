@@ -10,12 +10,21 @@ export interface TranscriptSegment {
 /** What a phrase was heard as, once it was read in full. */
 export interface Heard {
   /**
+   * The whole phrase as Apple's recogniser wrote it, when Parakeet read it
+   * too and its reading is `text` (Settings › Dictation › Read With
+   * Parakeet). Never the phrase that is sent: the place lookup reads it
+   * (`appleReading`), and a turn that changed nothing offers it as
+   * another reading.
+   */
+  readonly apple?: string | undefined;
+  /**
    * The whole phrase as the recogniser of the user's other language wrote
    * it (German on an English device in Austria), when there is one: a name
    * said that language's way stands in it as itself. Never the phrase
    * that is sent: only the place lookup reads it (`otherLanguageReading`).
    */
   readonly other?: string | undefined;
+  /** Apple's recogniser's reading, segment by segment, with the alternatives it weighed. */
   readonly segments: ReadonlyArray<TranscriptSegment>;
   readonly text: string;
 }
@@ -139,16 +148,25 @@ export const transcriptFromSegments = (
   return text || undefined;
 };
 
-/** A finished phrase from the recogniser's segments; undefined for silence. */
+/**
+ * A finished phrase from the recogniser's segments; undefined for silence
+ * (Apple's recogniser decides that). With Parakeet's reading (`parakeet`)
+ * that reading is the phrase, and Apple's goes along as `apple`, its
+ * segments kept with their alternatives: where both read a place alike,
+ * Apple's alternatives for it are still searched.
+ */
 export const heardFromSegments = (
   segments: ReadonlyArray<TranscriptSegment>,
   other?: string,
+  parakeet?: string,
 ): Heard | undefined => {
-  const text = transcriptFromSegments(segments);
-  if (text === undefined) {
+  const apple = transcriptFromSegments(segments);
+  if (apple === undefined) {
     return undefined;
   }
-  return other === undefined || other.trim() === ''
-    ? { segments, text }
-    : { other, segments, text };
+  const withOther = other === undefined || other.trim() === '' ? {} : { other };
+  const read = parakeet === undefined ? undefined : transcriptFromSegments([{ text: parakeet }]);
+  return read === undefined
+    ? { ...withOther, segments, text: apple }
+    : { apple, ...withOther, segments, text: read };
 };

@@ -56,14 +56,17 @@ struct SpeechSegment: Sendable {
 
 /// A phrase as finally read: in the language listened in, and, when the
 /// user has another one, the whole of it as that language's recogniser
-/// wrote it.
+/// wrote it; and as Parakeet read it, when dictation reads with it
+/// (ParakeetBridge.swift) and it answered in time.
 struct SpeechReading: Sendable {
   let other: String?
+  var parakeet: ParakeetReading? = nil
   let segments: [SpeechSegment]
 
   var json: [String: Any] {
     var json: [String: Any] = ["segments": segments.map(\.json)]
     if let other { json["other"] = other }
+    if let parakeet { json["parakeet"] = parakeet.json }
     return json
   }
 }
@@ -379,16 +382,21 @@ final class SpeechListening: @unchecked Sendable {
     return try await readAll(audio)
   }
 
-  /// Reads audio once more, whole, and in the other language beside it.
-  /// No segments when nothing was said.
+  /// Reads audio once more, whole, in the other language beside it, and
+  /// with Parakeet when dictation reads with it. No segments when nothing
+  /// was said.
   func readAll(_ audio: [AVAudioPCMBuffer]) async throws -> SpeechReading {
     guard !audio.isEmpty else { return SpeechReading(other: nil, segments: []) }
-    // Both passes only read the audio, at the same time.
+    // The passes only read the audio, at the same time.
     let kept = KeptAudio(buffers: audio)
     async let second = Self.readOther(kept, than: locale, chosen: other, format: format)
+    async let third = readWithParakeet(kept.buffers, locale: locale)
     let segments = try await Self.read(kept, locale: locale)
     let other = await second
-    return SpeechReading(other: segments.isEmpty ? nil : other, segments: segments)
+    let parakeet = await third
+    guard !segments.isEmpty else { return SpeechReading(other: nil, segments: []) }
+    return SpeechReading(
+      other: other, parakeet: parakeet?.text.isEmpty == false ? parakeet : nil, segments: segments)
   }
 
   /// Stops listening and drops the phrase.

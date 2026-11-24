@@ -1,5 +1,9 @@
 import { alternativesFor, type Heard } from '@calendar/ai';
 
+/** Words compared as a reading: case and spacing aside. */
+const sameWords = (a: string, b: string): boolean =>
+  a.toLowerCase().split(/\s+/u).join(' ') === b.toLowerCase().split(/\s+/u).join(' ');
+
 /**
  * Another reading of dictated words that changed nothing, which would
  * change something: offered under the answer, never taken unasked.
@@ -24,7 +28,8 @@ export interface ReadingOutcome {
 
 /**
  * The other readings of dictated words that changed nothing, which would
- * change the draft: the recogniser's own, the likeliest first
+ * change the draft: Apple's whole phrase when Parakeet's reading was sent
+ * (`Heard.apple`), then the recogniser's own, the likeliest first
  * (`alternativesFor`), each read as the words were (`would`: what it would
  * do, or undefined when it changes nothing either). Two that would leave
  * the draft the same are offered once; two that only read alike ("adds a
@@ -46,7 +51,11 @@ export const otherReadings = async ({
 }): Promise<ReadonlyArray<OtherReading>> => {
   const offered: Array<OtherReading> = [];
   const effects = new Set<string>();
-  for (const text of alternativesFor(heard, utterance, READINGS_TRIED)) {
+  const apple = heard.apple === undefined || sameWords(heard.apple, utterance) ? [] : [heard.apple];
+  for (const text of [...apple, ...alternativesFor(heard, utterance, READINGS_TRIED)].slice(
+    0,
+    READINGS_TRIED,
+  )) {
     if (!stillAsked() || offered.length >= READINGS_OFFERED) {
       break;
     }

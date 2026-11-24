@@ -105,7 +105,9 @@ export const appleSpeech: SpeechToText = {
     }
     active.remove();
     const result = await native.finish(active.session);
-    return result ? heardFromSegments(result.segments, result.other) : undefined;
+    return result
+      ? heardFromSegments(result.segments, result.other, result.parakeet?.text)
+      : undefined;
   },
   isPrepared: () => {
     const native = loadSpeechModule();
@@ -131,7 +133,10 @@ export const appleSpeech: SpeechToText = {
     }
     const result = await native.read(active.session);
     return result
-      ? { heard: heardFromSegments(result.segments, result.other), mark: result.mark }
+      ? {
+          heard: heardFromSegments(result.segments, result.other, result.parakeet?.text),
+          mark: result.mark,
+        }
       : undefined;
   },
   start: async ({ onWords, signal }) => {
@@ -149,6 +154,11 @@ export const appleSpeech: SpeechToText = {
     if (signal?.aborted) {
       return undefined;
     }
+    // Parakeet's names for this phrase, read meanwhile: the phrase is read
+    // seconds later. Loaded on first use: it reaches the backend.
+    void import('./parakeetRuntime.ts')
+      .then(({ beforeListening }) => beforeListening())
+      .catch(() => undefined);
     sessions += 1;
     const session = sessions;
     // Subscribed before the microphone opens: no word arrives unheard.

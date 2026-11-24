@@ -291,6 +291,31 @@ export const useFinder = (): FinderChoice => {
 };
 
 /**
+ * Puts the Assistant's model in the app's memory by asking it one small
+ * question, for the Speech Spike page, which reads the memory with both
+ * models in. Rejects where the model is not here.
+ */
+export const loadAssistantModel = async (): Promise<void> => {
+  if (modelFixture || statusOf(stateNow()) !== 'ready') {
+    throw new Error(
+      'The Assistant’s model is not on this iPhone: get it in the Create lesson first.',
+    );
+  }
+  await runtime().model.generateJson({
+    jsonSchema: {
+      additionalProperties: false,
+      properties: { ok: { type: 'boolean' } },
+      required: ['ok'],
+      type: 'object',
+    },
+    prompt: 'Answer with {"ok": true}.',
+  });
+};
+
+/** Takes the Assistant's model out of the app's memory, as leaving the screen does; the next question loads it again. */
+export const releaseAssistantModel = (): Promise<void> => runtime().model.leave();
+
+/**
  * At launch (from CalendarScreen): picks up a transfer and a file the last
  * launch left, once the app is in front; lets the model go when the app
  * leaves the screen, and when iOS warns of memory. Nothing is asked here:

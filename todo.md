@@ -166,12 +166,12 @@ was written; re-verify before starting one.
       the Assistant's model keeps the name as heard). The final reading's
       alternatives are searched too since #324, and the phrase as the
       user's other language reads it (place bench, Nik's recordings).
-      Left: the venues and surnames neither language has as a word
-      (Kaffemik, Kleinod, Karpfeneder) and street addresses, for which
-      the readings go to the model with past places and contacts,
-      measured there, or to a recogniser that takes a list of names (a
-      bench arm first); vocabulary itself reaches only
-      DictationTranscriber, whose words are shown, not sent.
+      Since #378 Parakeet reads each phrase with the calendar's people
+      and places as its vocabulary, once downloaded. Left: the venues
+      and surnames neither language has as a word that the calendar has
+      never named (Kaffemik before the first event there) and street
+      addresses; Parakeet's wrong replacements from a real list
+      (measured with the clips' places: "nach acht" → "Naschmarkt").
       MapKit's structured city/region/country fields in a native build.
 - [ ] Dictation follow-ups (`docs/decisions.md` → AI, "Dictation ends
       on its words, and shows them"; measured on synthetic phrases
@@ -193,8 +193,7 @@ was written; re-verify before starting one.
       match learned from phrases already said); Siri as a way in (an
       App Shortcut that asks for the phrase; iOS 27's calendar schema
       where Siri AI is available, not in the EU nor in German as of
-      2026-10); Parakeet TDT v3 as a recogniser arm on the Mac bench;
-      keep listening and hold to talk on an iPhone (#377: the live
+      2026-10); keep listening and hold to talk on an iPhone (#377: the live
       reading beside the listening, a sheet's pan taking a hold).
 - [ ] The Assistant's own model, follow-ups (#307, v2 in #321) — search
       sentences and capture still need Apple's model (data and a tuned

@@ -40,6 +40,7 @@ import { Clock, Effect, Queue, Stream } from 'effect';
 import { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
+import { loadDictationVocabulary } from './dictationVocabulary.ts';
 import { loadEventsInRange, loadEventsInRangeOrFail } from './eventsInRange.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import {
@@ -266,6 +267,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const mutations = yield* EventMutations;
       yield* mutations.deleteTask(params);
     }),
+
+  dictationVocabulary: () => loadDictationVocabulary,
 
   discardPendingOp: ({ opId }) =>
     Effect.gen(function* () {

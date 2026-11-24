@@ -828,6 +828,17 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { name: Schema.String },
     success: Schema.Array(Contact),
   }),
+  /**
+   * The names dictation's Parakeet listens for (`dictationVocabulary`):
+   * the people and places of a year of events, the contacts after them.
+   */
+  Rpc.make('dictationVocabulary', {
+    error: BackendError,
+    success: Schema.Struct({
+      people: Schema.Array(Schema.String),
+      places: Schema.Array(Schema.String),
+    }),
+  }),
   /** Invitee typeahead: device + cached Google contacts, ranked, deduped by email. */
   Rpc.make('searchContacts', {
     error: BackendError,

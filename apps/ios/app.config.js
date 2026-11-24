@@ -69,11 +69,12 @@ module.exports = ({ config }) => {
       // `exp+solunivo://` in every build. The production app has no dev
       // launcher to answer it, and next to the dev variant it would
       // compete for the links Expo CLI opens. llama.rn's pod compiles from
-      // source (see the plugin). Listed first: the local notifications
-      // plugin has to stay last.
+      // source, and FluidAudio comes pinned from git (see the plugins).
+      // Listed first: the local notifications plugin has to stay last.
       plugins: [
         ['expo-dev-client', { addGeneratedScheme: false }],
         './plugins/withLlamaFromSource.cjs',
+        './plugins/withFluidAudioPod.cjs',
         ...(config.plugins ?? []),
       ],
     };
@@ -87,9 +88,14 @@ module.exports = ({ config }) => {
       icon: './assets/icon-dev.png',
     },
     name: 'Solunivo Dev',
-    // llama.rn's pod compiles from source in both variants (see the
-    // plugin). Listed first: the local notifications plugin has to stay last.
-    plugins: ['./plugins/withLlamaFromSource.cjs', ...(config.plugins ?? [])],
+    // llama.rn's pod compiles from source in both variants, and FluidAudio
+    // comes pinned from git in both (see the plugins). Listed first: the
+    // local notifications plugin has to stay last.
+    plugins: [
+      './plugins/withLlamaFromSource.cjs',
+      './plugins/withFluidAudioPod.cjs',
+      ...(config.plugins ?? []),
+    ],
     scheme: ['solunivo-dev', reversedClientId(DEV_GOOGLE_IOS_CLIENT_ID)],
   };
 };

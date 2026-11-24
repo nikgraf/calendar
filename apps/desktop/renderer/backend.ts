@@ -6,7 +6,7 @@ import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
 import { RpcClient, RpcSerialization } from 'effect/rpc';
 import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import type { SettingsPaneId } from './settingsPanes.ts';
-import type { AssistantModelState, WordsSource } from '@calendar/ai';
+import type { AssistantModelState, ParakeetState, WordsSource } from '@calendar/ai';
 
 export interface PrivacyState {
   readonly mode: 'hidden' | 'visible';
@@ -108,6 +108,8 @@ declare global {
       modelSpeechCut: (session: number, mark: number) => void;
       modelSpeechFinish: (session: number) => Promise<{
         other?: string;
+        /** The phrase as Parakeet read it, when dictation reads with it (ParakeetBridge.swift). */
+        parakeet?: { text: string };
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
       modelSpeechLanguages: (
@@ -116,6 +118,7 @@ declare global {
       modelSpeechRead: (session: number) => Promise<{
         mark?: number;
         other?: string;
+        parakeet?: { text: string };
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
       modelSpeechStart: (
@@ -133,6 +136,8 @@ declare global {
       onModelProviderChanged: (listener: (view: ModelProviderView) => void) => () => void;
       /** Clicked event reminders, the one waiting first; decode with `parseNotificationTarget`. */
       onNotificationOpen: (listener: (target: unknown) => void) => () => void;
+      /** Where Parakeet stands: the state now, then every change. */
+      onParakeet: (listener: (state: ParakeetState) => void) => () => void;
       /** True while a screen capture runs that leaves the windows out. */
       onPrivacyCapture: (listener: (capturing: boolean) => void) => () => void;
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
@@ -146,6 +151,14 @@ declare global {
       openLesson: (id: LessonId) => Promise<void>;
       /** Opens the settings window (or focuses it), on `pane` when given. */
       openSettings: (pane?: SettingsPaneId) => Promise<void>;
+      /** Fetches Parakeet and switches it on. */
+      parakeetDownload: () => Promise<void>;
+      /** Deletes Parakeet's files; the switch stays. */
+      parakeetRemove: () => Promise<void>;
+      parakeetRetry: () => Promise<void>;
+      parakeetSetOn: (on: boolean) => Promise<void>;
+      /** A phrase starts: main hands Parakeet the names to listen for and loads it. */
+      parakeetVocabulary: () => Promise<void>;
       privacyGet: () => Promise<PrivacyState>;
       privacySet: (choice: 'hidden' | 'pause10m' | 'visible') => Promise<PrivacyState>;
       remindersStatus: () => Promise<string>;

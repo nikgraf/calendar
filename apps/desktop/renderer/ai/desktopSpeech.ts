@@ -107,7 +107,7 @@ export const desktopSpeech: SpeechToText = {
     active.flush();
     close(active);
     const result = await window.calendarBridge.modelSpeechFinish(active.session);
-    return heardFromSegments(result.segments, result.other);
+    return heardFromSegments(result.segments, result.other, result.parakeet?.text);
   },
 
   isPrepared: () => preparedFor === `${dictationLocale()} ${secondLanguage.get()}`,
@@ -141,7 +141,10 @@ export const desktopSpeech: SpeechToText = {
     // No mark: the listening is no longer the helper's (dropped, or replaced).
     return result.mark === undefined
       ? undefined
-      : { heard: heardFromSegments(result.segments, result.other), mark: result.mark };
+      : {
+          heard: heardFromSegments(result.segments, result.other, result.parakeet?.text),
+          mark: result.mark,
+        };
   },
 
   start: async ({ onLost, onWords, signal }) => {
@@ -155,6 +158,11 @@ export const desktopSpeech: SpeechToText = {
     if (signal?.aborted) {
       return undefined;
     }
+    // Parakeet's names for this phrase, read meanwhile: the phrase is read
+    // seconds later. Loaded on first use: it reaches the backend's rpc.
+    void import('./parakeetModel.ts')
+      .then(({ beforeListening }) => beforeListening())
+      .catch(() => undefined);
     let stream: MediaStream;
     // Chromium's own voice processing, as Settings › Dictation asks.
     const processed = noiseReduction.get();

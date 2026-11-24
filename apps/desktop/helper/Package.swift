@@ -18,9 +18,17 @@ let package = Package(
   // the rest link normally and no code path is guarded by OS version.
   // Building needs Xcode 27 (the macOS 27 SDK; `.v27` is swift-tools 6.4).
   platforms: [.macOS(.v27)],
+  dependencies: [
+    // Parakeet (ParakeetBridge.swift), at the commit the measurements ran
+    // (#378), as the iOS Podfile pins it (apps/ios/plugins/withFluidAudioPod.cjs).
+    .package(
+      url: "https://github.com/FluidInference/FluidAudio.git",
+      revision: "eb280cede001a9a35f2187d4a117537777eca756")
+  ],
   targets: [
     .executableTarget(
       name: "solunivo-model-helper",
+      dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
       exclude: ["Info.plist"],
       linkerSettings: [
         .unsafeFlags([

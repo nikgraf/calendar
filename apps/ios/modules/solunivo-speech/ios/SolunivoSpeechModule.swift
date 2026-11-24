@@ -11,14 +11,21 @@ import Foundation
 ///
 /// The session's steps are queued as the calls arrive, on Expo's serial
 /// queue for async functions, so they run in the order JS made them.
+///
+/// Parakeet (ParakeetBridge.swift) reads each finished phrase once more
+/// when dictation reads with it: its files live in the app's caches, the
+/// download reports `onParakeetProgress`, and `parakeetUse` switches the
+/// reading on with the names the user is likely to say.
 public class SolunivoSpeechModule: Module {
   /// Off once the module is torn down: a start still on its way is refused.
   private let alive = Alive()
+  private let downloads = ParakeetDownloads()
 
   public func definition() -> ModuleDefinition {
     Name("SolunivoSpeech")
 
-    Events("onWords")
+    Events("onWords", "onParakeetProgress")
+
 
     // JS reloaded (or the app's host went away) mid-phrase: nothing is
     // left to finish it, so the microphone closes and the phrase goes, and
@@ -147,6 +154,97 @@ public class SolunivoSpeechModule: Module {
         promise.resolve(nil)
       }
     }
+
+    // Whether Parakeet's files are here in full, and the room they take.
+    AsyncFunction("parakeetState") { () async -> [String: Any] in
+      await Self.engine().state().json
+    }
+
+    // Fetches what is missing of Parakeet's files, reporting
+    // `onParakeetProgress`; a second call while one runs waits for it.
+    // Rejects "cancelled" after `parakeetCancel`.
+    // `wifiOnly`: stopped natively the moment the path is expensive or
+    // constrained (rejects "needsWifi").
+    AsyncFunction("parakeetDownload") { (wifiOnly: Bool, promise: Promise) in
+      let module = WeakModule(self)
+      let task = self.downloads.start {
+        try await Self.engine().download(wifiOnly: wifiOnly) { fraction in
+          module.value?.sendEvent("onParakeetProgress", ["fraction": fraction])
+        }
+      }
+      Task {
+        do {
+          try await task.value
+          promise.resolve(nil)
+        } catch is CancellationError {
+          promise.reject("ParakeetError", "cancelled")
+        } catch ParakeetBridgeError.needsWifi {
+          promise.reject("ParakeetNeedsWifi", "needsWifi")
+        } catch {
+          promise.reject("ParakeetError", "\(error)")
+        }
+      }
+    }
+
+    Function("parakeetCancel") { [downloads] in
+      downloads.cancel()
+    }
+
+    AsyncFunction("parakeetRemove") { [downloads] () async throws in
+      downloads.cancel()
+      try await Self.engine().remove()
+    }
+
+    // Dictation reads with Parakeet, with these names as its vocabulary
+    // (the models load in the background), or no longer does.
+    AsyncFunction("parakeetUse") { (on: Bool, vocabulary: [String]) async in
+      await Self.engine().use(on: on, vocabulary: vocabulary)
+    }
+
+    // As a phrase starts: the models load in the background while it is
+    // said, when dictation reads with Parakeet.
+    AsyncFunction("parakeetPrepare") { () async in
+      await Self.engine().prepare()
+    }
+
+    // The app left the screen: the models go, the switch stays.
+    AsyncFunction("parakeetRelieve") { () async in
+      await Self.engine().relieve()
+    }
+
+    // The Speech Spike page (Settings › Advanced): any version, any
+    // vocabulary, a file; `onParakeetProgress` while the model downloads.
+    AsyncFunction("parakeetSpikeLoad") {
+      (version: String, vocabulary: [String]) async throws -> [String: Any] in
+      let module = WeakModule(self)
+      let loadMs = try await Self.engine().spikeLoad(
+        version: version, vocabulary: vocabulary
+      ) { progress in
+        module.value?.sendEvent(
+          "onParakeetProgress", ["fraction": progress.fractionCompleted])
+      }
+      return ["loadMs": loadMs]
+    }
+
+    AsyncFunction("parakeetSpikeTranscribe") { (uri: String) async throws -> [String: Any] in
+      try await Self.engine().spikeTranscribe(uri: uri).json
+    }
+
+    AsyncFunction("parakeetSpikeRelease") { () async in
+      await Self.engine().spikeRelease()
+    }
+  }
+
+  /// Parakeet's engine, its files in the app's caches: set before every
+  /// call, so none can reach it before it knows where they are.
+  private static func engine() async -> ParakeetEngine {
+    if let caches = try? FileManager.default.url(
+      for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+    {
+      await ParakeetEngine.shared.configure(
+        folder: caches.appendingPathComponent("parakeet", isDirectory: true))
+    }
+    return ParakeetEngine.shared
   }
 
   private static func message(_ error: Error) -> String {
@@ -232,5 +330,41 @@ private final class WeakModule: @unchecked Sendable {
 
   init(_ value: SolunivoSpeechModule?) {
     self.value = value
+  }
+}
+
+/// The one Parakeet download at a time: a second call joins it, a cancel
+/// stops it. A cancelled one that winds down after the next started leaves
+/// that one's slot alone, so a later cancel still stops it.
+private final class ParakeetDownloads: @unchecked Sendable {
+  private let lock = NSLock()
+  private var current: (id: Int, task: Task<Void, Error>)?
+  private var started = 0
+
+  func start(_ work: @escaping @Sendable () async throws -> Void) -> Task<Void, Error> {
+    lock.withLock {
+      if let current { return current.task }
+      started += 1
+      let id = started
+      let task = Task {
+        defer { self.finished(id) }
+        try await work()
+      }
+      current = (id, task)
+      return task
+    }
+  }
+
+  private func finished(_ id: Int) {
+    lock.withLock {
+      if current?.id == id { current = nil }
+    }
+  }
+
+  func cancel() {
+    lock.withLock {
+      current?.task.cancel()
+      current = nil
+    }
   }
 }

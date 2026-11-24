@@ -44,6 +44,7 @@ import {
   type AssistantModelState,
   lessonDemoModel,
   lessonModelCopy,
+  lessonOffer,
   type ModelStatus,
   PUBLISHED_MODEL,
   statusOf,
@@ -57,6 +58,7 @@ import {
   useFinder,
 } from '../assistantRuntime.ts';
 import { modelFixture } from '../model.ts';
+import { parakeet, useParakeetState } from '../parakeetRuntime.ts';
 import { AssistantBar, type BarDemo, demoHoldsBar } from './assistant/AssistantBar.tsx';
 import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
 import { AssistantView } from './assistant/AssistantView.tsx';
@@ -599,10 +601,55 @@ const runModelAction = (download: AssistantDownload, action: 'download' | 'mobil
 };
 
 /**
+ * The lesson's offer, pressed: the Assistant's model, Parakeet beside it
+ * (`both`), or Parakeet alone; "Without Parakeet" (`decline`) still fetches
+ * the Assistant's model when it was offered too, and switches Parakeet off.
+ */
+const runOffer = (
+  download: AssistantDownload,
+  kind:
+    | 'both'
+    | 'decline'
+    | 'decline-parakeet'
+    | 'download'
+    | 'mobile'
+    | 'parakeet'
+    | 'parakeet-mobile'
+    | 'parakeet-retry'
+    | 'retry',
+) => {
+  switch (kind) {
+    case 'parakeet-mobile':
+      void parakeet().allowMobileData();
+      return;
+    case 'parakeet-retry':
+      void parakeet().retry();
+      return;
+    case 'both':
+      void download.agree('wifi');
+      void parakeet().download('wifi');
+      return;
+    case 'parakeet':
+      void parakeet().download('wifi');
+      return;
+    case 'decline':
+      void download.agree('wifi');
+      void parakeet().setOn(false);
+      return;
+    case 'decline-parakeet':
+      void parakeet().setOn(false);
+      return;
+    default:
+      runModelAction(download, kind);
+  }
+};
+
+/**
  * A lesson's frame, over either view. In the Create lesson without the
  * model (`model`, its state, given then and once the model came during
  * the demo) it says what the Assistant is and offers the download, the
- * demo standing in; once the model is here, that it is.
+ * demo standing in; once the model is here, that it is. Parakeet is
+ * offered beside it (`lessonOffer`) while it is on and not here.
  */
 function LessonFrame({
   download,
@@ -615,24 +662,41 @@ function LessonFrame({
   readonly model: AssistantModelState | undefined;
   readonly onSkip: (() => void) | undefined;
 }) {
-  const copy =
+  const parakeetState = useParakeetState();
+  // The release's own size where the download cannot say (a build without the module).
+  const assistantBytes = download.size() ?? PUBLISHED_MODEL.bytes;
+  const own =
     model === undefined
       ? undefined
       : lessonModelCopy(model, {
           device: 'iPhone',
           network: download.network(),
-          // The release's own size where the download cannot say (a build without the module).
-          size: download.size() ?? PUBLISHED_MODEL.bytes,
+          size: assistantBytes,
         });
+  const copy =
+    id === 'create'
+      ? lessonOffer(own, parakeetState, {
+          assistantBytes,
+          device: 'iPhone',
+          network: parakeet().network(),
+        })
+      : own;
   const offer = copy?.action;
+  const declined = offer?.kind === 'both' ? 'decline' : 'decline-parakeet';
   return (
     <LessonBanner
       action={
         offer === undefined
           ? undefined
-          : { label: offer.label, onPress: () => runModelAction(download, offer.kind) }
+          : { label: offer.label, onPress: () => runOffer(download, offer.kind) }
+      }
+      decline={
+        copy !== undefined && 'decline' in copy && copy.decline !== undefined
+          ? { label: copy.decline, onPress: () => runOffer(download, declined) }
+          : undefined
       }
       id={id}
+      more={copy !== undefined && 'more' in copy ? copy.more : undefined}
       note={copy?.text}
       onSkip={onSkip}
       progress={copy?.progress}

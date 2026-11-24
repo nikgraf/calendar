@@ -1,10 +1,19 @@
-import { AUTOMATIC, OFF, secondLanguageNow } from '@calendar/ai';
+import { AUTOMATIC, OFF, parakeetCopy, secondLanguageNow } from '@calendar/ai';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { AppState } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import { type MicrophoneMode, loadSpeechModule } from '../../../modules/solunivo-speech/index.ts';
 import { secondLanguage } from '../../dictationLanguages.ts';
+import { parakeet, useParakeetState } from '../../parakeetRuntime.ts';
 import { voiceProcessing } from '../../voiceProcessing.ts';
-import { Footer, NavRow, Row, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
+import {
+  ActionRow,
+  Footer,
+  NavRow,
+  Row,
+  Section,
+  SettingsPage,
+  SwitchRow,
+} from '../GroupedList.tsx';
 import { languageLabel, useDictationLocale, useSpeechLanguages } from './DictationLanguagePage.tsx';
 
 const MODE_LABELS: Record<MicrophoneMode, string> = {
@@ -48,6 +57,80 @@ const secondValue = (
   }
   return second === undefined ? 'None' : languageLabel(second);
 };
+
+/** Asks before the files go: getting them back is the download again. */
+const confirmDelete = () => {
+  Alert.alert(
+    'Delete Parakeet?',
+    'Its 712 MB leave this iPhone. Dictation uses Apple’s recogniser until you download it again.',
+    [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: () => void parakeet().remove(), style: 'destructive', text: 'Delete' },
+    ],
+  );
+};
+
+/**
+ * Read With Parakeet: the switch (on from the start), where the files
+ * stand, and the one action that state offers (download, mobile data, try
+ * again), with Delete once it is here. Nothing while this build has none.
+ */
+function ParakeetSection() {
+  const { files, on } = useParakeetState();
+  if (files.kind === 'unsupported') {
+    return null;
+  }
+  const copy = parakeetCopy(files, { device: 'iPhone', network: parakeet().network() });
+  const act = () => {
+    const store = parakeet();
+    switch (copy.action?.kind) {
+      case 'download':
+        void store.download('wifi');
+        return;
+      case 'mobile':
+        void store.allowMobileData();
+        return;
+      case 'retry':
+        void store.retry();
+        return;
+      default:
+    }
+  };
+  return (
+    <Section
+      footer={
+        <>
+          <Footer testID="parakeet-status">{copy.line}</Footer>
+          <Footer>
+            Parakeet reads each phrase again on this iPhone, listening for the names of the people
+            and places in your calendar and contacts, and writes names and places better. Off, or
+            until it is here, dictation uses Apple’s recogniser alone. NVIDIA’s Parakeet, as
+            moondream’s Ultra, CC BY 4.0.
+          </Footer>
+        </>
+      }
+      header="Parakeet"
+    >
+      <SwitchRow
+        onValueChange={(next) => void parakeet().setOn(next)}
+        switchTestID="read-with-parakeet"
+        title="Read With Parakeet"
+        value={on}
+      />
+      {copy.action === undefined ? null : (
+        <ActionRow onPress={act} testID="parakeet-action" title={copy.action.label} />
+      )}
+      {files.kind === 'ready' ? (
+        <ActionRow
+          onPress={confirmDelete}
+          testID="parakeet-delete"
+          title="Delete Parakeet"
+          tone="destructive"
+        />
+      ) : null}
+    </Section>
+  );
+}
 
 /**
  * Dictation: how the microphone records (voice processing, on by default,
@@ -119,6 +202,7 @@ export function DictationPage() {
           />
         </Section>
       )}
+      <ParakeetSection />
     </SettingsPage>
   );
 }

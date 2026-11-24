@@ -51,8 +51,28 @@ describe('heardFromSegments', () => {
     });
   });
 
+  it('is Parakeet’s reading when it read the phrase, Apple’s beside it', () => {
+    const segments = [{ alternatives: ['Thomas Karp'], text: 'Coffee with Thomas Kapmeader' }];
+    expect(
+      heardFromSegments(segments, 'Kaffee mit Thomas', ' Coffee with  Thomas Karpfeneder '),
+    ).toEqual({
+      apple: 'Coffee with Thomas Kapmeader',
+      other: 'Kaffee mit Thomas',
+      // Apple's segments stay, with what it weighed for them.
+      segments,
+      text: 'Coffee with Thomas Karpfeneder',
+    });
+    // Parakeet wrote nothing: Apple's reading is the phrase, as without it.
+    expect(heardFromSegments(segments, undefined, '  ')).toEqual({
+      segments,
+      text: 'Coffee with Thomas Kapmeader',
+    });
+  });
+
   it('is nothing for silence', () => {
     expect(heardFromSegments([{ text: '  ' }])).toBeUndefined();
     expect(heardFromSegments([{ text: '  ' }], 'Hm')).toBeUndefined();
+    // Apple's recogniser decides silence: Parakeet's words alone are no phrase.
+    expect(heardFromSegments([{ text: '  ' }], undefined, 'Hm')).toBeUndefined();
   });
 });

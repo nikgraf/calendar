@@ -14,7 +14,9 @@
 // calendar.* (AppleCalendarBridge.swift: EventKit calendars and events) |
 // capture.watch {on} (CaptureWatch.swift: screen captures under way, as
 // capture.started / capture.ended events) | barcode.readQr {imageBase64}
-// (BarcodeReader.swift: the QR codes in a camera frame).
+// (BarcodeReader.swift: the QR codes in a camera frame) | parakeet.* {folder}
+// (ParakeetDispatch.swift: Parakeet's files and whether dictation reads
+// with it; `parakeet.progress` events while it downloads).
 // Version 2.
 import AVFoundation
 import Foundation
@@ -509,6 +511,16 @@ func handleLine(_ line: String) {
         emitError(request.id, error.message)
       } catch {
         emitError(request.id, "contacts failed: \(error.localizedDescription)")
+      }
+    case let method where method.hasPrefix("parakeet."):
+      do {
+        emitResult(request.id, try await ParakeetDispatch.invoke(method: method, params: params))
+      } catch let error as HelperError {
+        emitError(request.id, error.message)
+      } catch is CancellationError {
+        emitError(request.id, "cancelled")
+      } catch {
+        emitError(request.id, "parakeet failed: \(error)")
       }
     case let method where method.hasPrefix("calendar."):
       do {

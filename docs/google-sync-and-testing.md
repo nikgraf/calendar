@@ -1067,7 +1067,9 @@ tests' data (relative assertions, unique titles). The harness always
 sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
 `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off`,
 `CALENDAR_CAPTURE_WATCH=off`, `CALENDAR_NOTIFICATIONS=off`,
-`CALENDAR_ONBOARDING=off` and `CALENDAR_ASSISTANT_MODEL=off`, points `CALENDAR_SETTINGS_FILE` and
+`CALENDAR_ONBOARDING=off`, `CALENDAR_ASSISTANT_MODEL=off` and `CALENDAR_PARAKEET=off`
+(a spec's `parakeet: 'fixture'` keeps it in memory, its download done at once
+and nothing loaded), points `CALENDAR_SETTINGS_FILE` and
 `CALENDAR_AGENT_SOCKET` under the temp profile, sets
 `CALENDAR_E2E_INPUT=cdp`, and passes Chromium's `--use-mock-keychain`, so
 `safeStorage` (tokens, a served model's key) never touches the login

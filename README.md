@@ -32,7 +32,10 @@ map, the commands and the rules; the deep docs are listed at its end.
 Inter fonts, color tokens, and `pnpm brand:build` exports. **Privacy:**
 [PRIVACY.md](PRIVACY.md); the desktop window can be hidden from screen shares
 and recordings (Settings → Screen Sharing, off by default), and then says so on screen
-when a screenshot leaves it out. **Website:** `apps/web` is solunivo.com, a static
+when a screenshot leaves it out. **Credits:** [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+lists the models and libraries the apps ship or download (Parakeet, FluidAudio,
+Qwen3.5, llama.cpp, llama.rn, Inter) with their licences; the apps show the same
+list (iOS: Settings › Acknowledgements; Mac: About Solunivo). **Website:** `apps/web` is solunivo.com, a static
 page plus the privacy policy, built with `pnpm --filter @calendar/web build`
 (see `docs/distribution.md` → Website).
 
@@ -49,8 +52,9 @@ there is no native-module rebuild step.
 
 Optional, for the desktop AI features and the Apple bridges (Reminders,
 Calendar, Contacts, Maps): build the Swift helper once (requires Xcode 27,
-for the macOS 27 SDK; search sentences, capture and find a time's
-fallback need Apple Silicon with Apple Intelligence enabled at runtime),
+for the macOS 27 SDK, and it fetches FluidAudio from GitHub for Parakeet;
+search sentences, capture and find a time's fallback need Apple Silicon
+with Apple Intelligence enabled at runtime),
 and `llama-server` for the Assistant's own model (needs CMake, e.g.
 `brew install cmake`; the script fetches llama.cpp from GitHub):
 

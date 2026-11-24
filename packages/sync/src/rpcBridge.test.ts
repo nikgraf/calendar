@@ -63,6 +63,7 @@ const stubHandlers: BackendHandlers = {
   deleteMirror: notStubbed,
   deleteRecurring: () => Effect.void,
   deleteTask: () => Effect.void,
+  dictationVocabulary: () => Effect.succeed({ people: [], places: [] }),
   discardPendingOp: () => Effect.void,
   exportSettings: () => Effect.succeed({ version: 1 as const }),
   getBirthdayReminderOverrides: () => Effect.succeed([]),

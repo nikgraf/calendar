@@ -1571,6 +1571,16 @@ was cut (pruned 2026-11-17).
   may hold 3.5 GB, so Gemma 4 E2B (4 GB) does not load. Rejected: the
   package's prebuilt binary, a memory entitlement, scoring on the phone.
   Open: Apple's six hung calls, the prompt read again on every call.
+- **Dictation reads each phrase with Parakeet** (2026-11-24, #378) — once
+  downloaded (the Create lesson's Download Both, Settings › Dictation) and
+  on (from the start), moondream's Parakeet Ultra reads the finished phrase
+  with the user's people and places as its vocabulary, on iOS and the Mac;
+  Apple's recogniser still shows the words live, ends the phrase and goes
+  to the place lookup. Measured on an iPhone 16 (Speech Spike page): with
+  the clips' names 7–16 % of words wrong against Apple's 16–30 %, 770 MB.
+  Rejected: Parakeet only as a place reading (the names never reach the
+  Assistant), v3 (worse turns), Redux. Open: a real list's wrong
+  replacements ("nach acht" → "Naschmarkt" with every place listed).
 - **The draft thread** (2026-10-12, #183) — a new item is
   a thread of drafts, not a one-shot prefill: the first phrase makes the
   draft(s), every later phrase in the same field changes them, Undo takes

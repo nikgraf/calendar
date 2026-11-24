@@ -17,14 +17,20 @@ const HINTS: Partial<Record<LessonId, string>> = {
  */
 export function LessonBanner({
   action,
+  decline,
   id,
+  more,
   note,
   onSkip,
   progress,
 }: {
   /** What the note asks for (the Create lesson's download of the Assistant's model). */
   action?: { readonly label: string; readonly onClick: () => void } | undefined;
+  /** Beside the action, quieter: what goes without an optional part of it ("Without Parakeet"). */
+  decline?: { readonly label: string; readonly onClick: () => void } | undefined;
   id: LessonId;
+  /** After the hint: an offer that leaves it in place (Parakeet, once the Assistant's model is here). */
+  more?: string | undefined;
   /** In place of the hint: the Create lesson without the Assistant's model, and the demo standing in. */
   note?: string | undefined;
   /** Absent once the lesson was tried: the hint stays, Skip has nothing left to skip. */
@@ -47,6 +53,11 @@ export function LessonBanner({
         <p className="mt-0.5 text-xs text-ink-secondary" data-testid="lesson-banner-note">
           {note ?? HINTS[id] ?? copy.intro}
         </p>
+        {more === undefined ? null : (
+          <p className="mt-1 text-xs text-ink-secondary" data-testid="lesson-banner-more">
+            {more}
+          </p>
+        )}
         {progress === undefined ? null : (
           <div
             aria-label={`${String(progress)} percent downloaded`}
@@ -64,15 +75,26 @@ export function LessonBanner({
           </div>
         )}
         {action === undefined ? null : (
-          <Button
-            className="mt-2"
-            data-testid="lesson-model-action"
-            onClick={action.onClick}
-            size="sm"
-            variant="primary"
-          >
-            {action.label}
-          </Button>
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              data-testid="lesson-model-action"
+              onClick={action.onClick}
+              size="sm"
+              variant="primary"
+            >
+              {action.label}
+            </Button>
+            {decline === undefined ? null : (
+              <Button
+                data-testid="lesson-model-decline"
+                onClick={decline.onClick}
+                size="sm"
+                variant="ghost"
+              >
+                {decline.label}
+              </Button>
+            )}
+          </div>
         )}
       </div>
       {onSkip ? (

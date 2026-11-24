@@ -46,6 +46,13 @@ const TIMEOUTS_MS: Record<string, number> = {
   'geo.snapshot': 20_000,
   // Vision on a full-resolution screenshot; local, but a document pass is not instant.
   'ocr.recognizeText': 60_000,
+  // Parakeet's two models, 712 MB from Hugging Face: a slow line takes long, a stall still ends.
+  'parakeet.download': 3_600_000,
+  'parakeet.prepare': 30_000,
+  'parakeet.remove': 30_000,
+  'parakeet.state': 30_000,
+  // The models load in the background: the call itself answers at once.
+  'parakeet.use': 30_000,
   prepareSpeech: 600_000,
   // A phrase as it is said: the recognisers load on the first, then answer at once.
   'reminders.create': 15_000,
