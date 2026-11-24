@@ -86,7 +86,10 @@ declare global {
       modelGenerate: (schema: unknown, prompt: string) => Promise<{ json: string }>;
       modelHelperStatus: () => Promise<{ helper: boolean }>;
       modelInfo: () => Promise<{ contextTokens?: number; name: string }>;
-      modelPrepareSpeech: (locale: string) => Promise<{ denied?: boolean; prepared?: boolean }>;
+      modelPrepareSpeech: (
+        locale: string,
+        other: string,
+      ) => Promise<{ denied?: boolean; prepared?: boolean }>;
       modelProviderGet: () => Promise<ModelProviderView>;
       modelProviderSet: (changes: {
         apiKey?: string | null;
@@ -102,12 +105,22 @@ declare global {
       modelRecognizeText: (imageBase64: string) => Promise<{ text: string }>;
       modelSpeechAudio: (session: number, pcm: Uint8Array) => void;
       modelSpeechCancel: (session: number) => Promise<unknown>;
+      modelSpeechCut: (session: number, mark: number) => void;
       modelSpeechFinish: (session: number) => Promise<{
+        other?: string;
+        segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
+      }>;
+      modelSpeechLanguages: (
+        locale: string,
+      ) => Promise<{ automatic?: string; available: ReadonlyArray<string> }>;
+      modelSpeechRead: (session: number) => Promise<{
+        mark?: number;
         other?: string;
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
       modelSpeechStart: (
         locale: string,
+        other: string,
       ) => Promise<{ session: number; sources: ReadonlyArray<WordsSource> }>;
       modelStatus: () => Promise<ModelStatusReply>;
       onAgentsChanged: (listener: () => void) => () => void;

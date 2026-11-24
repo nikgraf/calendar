@@ -5,6 +5,7 @@
 // Methods: status | generateJson {schema,prompt} | prepareSpeech {locale} |
 // transcribe {audioBase64,locale} (a recording, read whole: the bench) |
 // speech.start {session,locale} / speech.audio {session,pcmBase64} /
+// speech.read {session} / speech.cut {session,mark} /
 // speech.finish {session} / speech.cancel {session} (one phrase as it is
 // said, its words as speech.words events: SpeechBridge.swift, shared with
 // the iOS Expo module) | reminders.* (see RemindersBridge.swift,
@@ -204,14 +205,25 @@ func handleGenerate(_ id: Int, _ params: [String: JSONValue]) async {
 
 func handlePrepareSpeech(_ id: Int, _ params: [String: JSONValue]) async {
   let localeId = params["locale"]?.stringValue ?? Locale.current.identifier
+  let other = params["other"]?.stringValue ?? SpeechAssets.automatic
   do {
-    try await SpeechAssets.prepare(locale: localeId)
+    try await SpeechAssets.prepare(locale: localeId, other: other)
     emitResult(id, ["prepared": true])
   } catch let error as SpeechBridgeError {
     emitError(id, HelperError.unavailable(error.message).message)
   } catch {
     emitError(id, "prepare failed: \(error.localizedDescription)")
   }
+}
+
+/// The languages dictation may listen in, and the second language
+/// Automatic comes to for the one asked about (Settings › Dictation).
+func handleSpeechLanguages(_ id: Int, _ params: [String: JSONValue]) async {
+  let localeId = params["locale"]?.stringValue ?? Locale.current.identifier
+  let (available, automatic) = await SpeechAssets.languages(for: localeId)
+  var result: [String: Any] = ["available": available]
+  if let automatic { result["automatic"] = automatic }
+  emitResult(id, result)
 }
 
 /// The renderer's microphone: 16 kHz mono Int16 little-endian, as
@@ -232,7 +244,9 @@ func handleSpeechStart(_ id: Int, _ params: [String: JSONValue]) {
     return
   }
   let localeId = params["locale"]?.stringValue ?? Locale.current.identifier
-  let task = SpeechSessions.shared.start(id: session, locale: localeId) { source, text in
+  let other = params["other"]?.stringValue ?? SpeechAssets.automatic
+  let task = SpeechSessions.shared.start(id: session, locale: localeId, other: other) {
+    source, text in
     emit(["event": "speech.words", "session": session, "source": source, "text": text])
   }
   Task.detached {
@@ -269,6 +283,37 @@ func handleSpeechAudio(_ id: Int, _ params: [String: JSONValue]) {
     _ = bytes.copyBytes(to: UnsafeMutableRawBufferPointer(start: channel, count: Int(frames) * 2))
   }
   SpeechSessions.shared.append(id: session, buffer)
+  emitResult(id, [:])
+}
+
+/// The phrase so far, read while the microphone stays open; `mark` is
+/// where its audio ended, for `speech.cut`.
+func handleSpeechRead(_ id: Int, _ params: [String: JSONValue]) {
+  guard let session = sessionId(params) else {
+    emitError(id, HelperError.badRequest("session required").message)
+    return
+  }
+  let task = SpeechSessions.shared.read(id: session)
+  Task.detached {
+    do {
+      guard let read = try await task.value else {
+        emitResult(id, SpeechReading(other: nil, segments: []).json)
+        return
+      }
+      var json = read.reading.json
+      json["mark"] = Int(read.mark)
+      emitResult(id, json)
+    } catch {
+      emitError(id, "transcription failed: \(error.localizedDescription)")
+    }
+  }
+}
+
+/// The phrase read up to `mark` landed: its audio goes.
+func handleSpeechCut(_ id: Int, _ params: [String: JSONValue]) {
+  if let session = sessionId(params), case .number(let mark)? = params["mark"] {
+    SpeechSessions.shared.cut(id: session, through: AVAudioFramePosition(mark))
+  }
   emitResult(id, [:])
 }
 
@@ -406,6 +451,12 @@ func handleLine(_ line: String) {
   case "speech.start":
     handleSpeechStart(request.id, params)
     return
+  case "speech.read":
+    handleSpeechRead(request.id, params)
+    return
+  case "speech.cut":
+    handleSpeechCut(request.id, params)
+    return
   case "speech.finish":
     handleSpeechFinish(request.id, params)
     return
@@ -420,6 +471,7 @@ func handleLine(_ line: String) {
     case "status": handleStatus(request.id)
     case "generateJson": await handleGenerate(request.id, params)
     case "prepareSpeech": await handlePrepareSpeech(request.id, params)
+    case "speech.languages": await handleSpeechLanguages(request.id, params)
     case "transcribe": await handleTranscribe(request.id, params)
     case "capture.watch":
       do {

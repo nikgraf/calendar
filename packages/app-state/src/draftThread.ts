@@ -2065,6 +2065,11 @@ export const useDraftThread = ({
       abandon();
       setState(EMPTY_THREAD);
     },
+    /**
+     * The phrase being read is let go of: its answer does not land (the
+     * words it was said in grew, and are read again as a whole).
+     */
+    drop: abandon,
     /** A choice settled by hand: a contact picked (the form took the guest) or the name let go. */
     dropChoice: (index: number, name: string) =>
       setState((latest) => dropInviteeChoice(latest, index, name)),

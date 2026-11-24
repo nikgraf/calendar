@@ -1,9 +1,11 @@
+import { AUTOMATIC, OFF, secondLanguageNow } from '@calendar/ai';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { type MicrophoneMode, loadSpeechModule } from '../../../modules/solunivo-speech/index.ts';
-import { dictationLocale } from '../../appleSpeech.ts';
+import { secondLanguage } from '../../dictationLanguages.ts';
 import { voiceProcessing } from '../../voiceProcessing.ts';
-import { Footer, Row, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
+import { Footer, NavRow, Row, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
+import { languageLabel, useDictationLocale, useSpeechLanguages } from './DictationLanguagePage.tsx';
 
 const MODE_LABELS: Record<MicrophoneMode, string> = {
   standard: 'Standard',
@@ -30,16 +32,39 @@ const useMicrophoneMode = (): MicrophoneMode | undefined => {
 };
 
 /**
+ * What Second Language shows: Off, the language it comes to, None; and
+ * nothing while Automatic's is not known yet.
+ */
+const secondValue = (
+  chosen: string,
+  second: string | undefined,
+  known: boolean,
+): string | undefined => {
+  if (chosen === OFF) {
+    return 'Off';
+  }
+  if (chosen === AUTOMATIC && !known) {
+    return undefined;
+  }
+  return second === undefined ? 'None' : languageLabel(second);
+};
+
+/**
  * Dictation: how the microphone records (voice processing, on by default,
  * and iOS's Mic Mode on top of it, shown but chosen in Control Center while
- * dictating, where iOS offers it), and the language it listens in, which
- * is the iPhone's own.
+ * dictating, where iOS offers it), and the two languages: the one it
+ * listens in and the second a phrase is read in for places, each
+ * Automatic until picked (`DictationLanguagePage`). A binary built before
+ * the module could list its languages shows the language only.
  */
 export function DictationPage() {
   const reduceNoise = useSyncExternalStore(voiceProcessing.subscribe, voiceProcessing.get);
   const mode = useMicrophoneMode();
   const native = loadSpeechModule();
-  const locale = dictationLocale();
+  const locale = useDictationLocale();
+  const chosenSecond = useSyncExternalStore(secondLanguage.subscribe, secondLanguage.get);
+  const languages = useSpeechLanguages(locale);
+  const second = secondLanguageNow(chosenSecond, languages?.automatic, locale);
 
   return (
     <SettingsPage testID="settings-page-dictation">
@@ -72,13 +97,28 @@ export function DictationPage() {
           />
         ) : null}
       </Section>
-      <Section footer="Dictation listens in this iPhone’s language. Change it in the Settings app, under General › Language & Region.">
-        <Row
-          testID="dictation-language"
-          title="Language"
-          value={native?.languageName?.(locale) ?? locale}
-        />
-      </Section>
+      {native?.languages === undefined ? (
+        <Section footer="Dictation listens in this iPhone’s language. Change it in the Settings app, under General › Language & Region.">
+          <Row testID="dictation-language" title="Language" value={languageLabel(locale)} />
+        </Section>
+      ) : (
+        <Section footer="Dictation listens in the language. Each phrase is read in the second language too, so a place said that language’s way is found, such as a German place in an English sentence.">
+          <NavRow
+            href="/settings/dictation-language"
+            testID="dictation-language"
+            title="Language"
+            value={languageLabel(locale)}
+            valueTestID="dictation-language-value"
+          />
+          <NavRow
+            href="/settings/dictation-second-language"
+            testID="dictation-second-language"
+            title="Second Language"
+            value={secondValue(chosenSecond, second, languages?.settled === true)}
+            valueTestID="dictation-second-language-value"
+          />
+        </Section>
+      )}
     </SettingsPage>
   );
 }

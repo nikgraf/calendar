@@ -5,7 +5,7 @@ import {
   SpeechUnsupportedError,
   type SpeechToText,
 } from '@calendar/ai';
-import { dictationLocale, noiseReduction } from './dictationSettings.ts';
+import { dictationLocale, noiseReduction, secondLanguage } from './dictationSettings.ts';
 import { toPcm16 } from './pcm16.ts';
 
 /** What the helper's recognisers take: 16 kHz mono. */
@@ -17,7 +17,8 @@ const BLOCK_MS = 100;
  * Desktop dictation: the renderer owns the microphone (getUserMedia +
  * an inline AudioWorklet collecting mono PCM) and streams it to the Swift
  * helper as it is recorded; the helper's recognisers send the words back
- * as they are said, and read the phrase whole when it is finished. Same
+ * as they are said, and read each phrase whole when it ends, listening on
+ * (`read`) or closing the microphone with it (`finish`). Same
  * seam as apps/ios/src/appleSpeech.ts: availability is decided by
  * attempting prepare, and the audio never outlives the phrase.
  */
@@ -63,6 +64,24 @@ const join = (chunks: ReadonlyArray<Float32Array>, length: number): Float32Array
   return joined;
 };
 
+/**
+ * The languages last prepared: a phrase in others (picked in Settings
+ * while an editor stayed open) prepares them first, since only preparing
+ * installs a language's assets.
+ */
+let preparedFor: string | undefined;
+
+const prepareIn = async (locale: string, second: string) => {
+  const result = await window.calendarBridge.modelPrepareSpeech(locale, second);
+  if (result.denied) {
+    throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
+  }
+  if (!result.prepared) {
+    throw new SpeechUnsupportedError({ message: 'Dictation assets are unavailable.' });
+  }
+  preparedFor = `${locale} ${second}`;
+};
+
 export const desktopSpeech: SpeechToText = {
   cancel: async () => {
     const active = listening;
@@ -70,6 +89,12 @@ export const desktopSpeech: SpeechToText = {
     if (active) {
       close(active);
       await window.calendarBridge.modelSpeechCancel(active.session).catch(() => undefined);
+    }
+  },
+
+  cut: (mark) => {
+    if (listening) {
+      window.calendarBridge.modelSpeechCut(listening.session, mark);
     }
   },
 
@@ -84,6 +109,8 @@ export const desktopSpeech: SpeechToText = {
     const result = await window.calendarBridge.modelSpeechFinish(active.session);
     return heardFromSegments(result.segments, result.other);
   },
+
+  isPrepared: () => preparedFor === `${dictationLocale()} ${secondLanguage.get()}`,
 
   isSupported: async () => {
     // Same reasoning as iOS: readiness flags are false before first use;
@@ -101,17 +128,33 @@ export const desktopSpeech: SpeechToText = {
     }
   },
 
-  prepare: async () => {
-    const result = await window.calendarBridge.modelPrepareSpeech(dictationLocale());
-    if (result.denied) {
-      throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
+  prepare: () => prepareIn(dictationLocale(), secondLanguage.get()),
+
+  read: async () => {
+    const active = listening;
+    if (!active) {
+      return undefined;
     }
-    if (!result.prepared) {
-      throw new SpeechUnsupportedError({ message: 'Dictation assets are unavailable.' });
-    }
+    // What was recorded up to now is in the reading.
+    active.flush();
+    const result = await window.calendarBridge.modelSpeechRead(active.session);
+    // No mark: the listening is no longer the helper's (dropped, or replaced).
+    return result.mark === undefined
+      ? undefined
+      : { heard: heardFromSegments(result.segments, result.other), mark: result.mark };
   },
 
   start: async ({ onLost, onWords, signal }) => {
+    const locale = dictationLocale();
+    const second = secondLanguage.get();
+    // Before the microphone opens: a language picked meanwhile may take a
+    // download, and a start given up during it must leave nothing on.
+    if (preparedFor !== `${locale} ${second}`) {
+      await prepareIn(locale, second);
+    }
+    if (signal?.aborted) {
+      return undefined;
+    }
     let stream: MediaStream;
     // Chromium's own voice processing, as Settings › Dictation asks.
     const processed = noiseReduction.get();
@@ -138,7 +181,7 @@ export const desktopSpeech: SpeechToText = {
         // Given up while the worklet loaded: starting a session now would
         // drop a newer caller's in the helper.
         if (!signal?.aborted) {
-          started = await window.calendarBridge.modelSpeechStart(dictationLocale());
+          started = await window.calendarBridge.modelSpeechStart(locale, second);
         }
       }
     } catch (error) {

@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { maySay, micPress, pendingLine, shouldListen } from './voiceLoop.ts';
+import {
+  CLICK_AFTER_UP_MS,
+  grewSince,
+  landedWords,
+  micClick,
+  maySay,
+  micDown,
+  micPress,
+  micUp,
+  pendingLine,
+  phraseWords,
+  sendPress,
+  shouldListen,
+  tapNeverCame,
+  wordCount,
+} from './voiceLoop.ts';
 
 describe('micPress', () => {
   it('starts hands-free when dictation is off', () => {
@@ -66,5 +81,176 @@ describe('maySay', () => {
     // Stopped before a word showed: the phrase is still on its way.
     expect(maySay({ busy: false, live: '', voice: 'transcribing' })).toBe(false);
     expect(maySay({ busy: true, live: '', voice: 'idle' })).toBe(false);
+  });
+});
+
+describe('micDown', () => {
+  it('listens as the finger goes down when dictation is off: a tap or a hold, the first words are kept', () => {
+    expect(micDown({ handsFree: false, voice: 'idle' })).toBe('listen');
+  });
+
+  it('does nothing yet while on or busy: what the press is shows when it lifts', () => {
+    expect(micDown({ handsFree: true, voice: 'recording' })).toBe('none');
+    expect(micDown({ handsFree: true, voice: 'preparing' })).toBe('none');
+    expect(micDown({ handsFree: false, voice: 'transcribing' })).toBe('none');
+  });
+});
+
+describe('micUp', () => {
+  it('a hold sends what was said, however long it paused', () => {
+    expect(
+      micUp({ clicked: false, handsFree: true, held: true, listened: true, voice: 'recording' }),
+    ).toBe('send');
+    // Held while hands-free was already on: the hold sends too.
+    expect(
+      micUp({ clicked: false, handsFree: true, held: true, listened: false, voice: 'recording' }),
+    ).toBe('send');
+  });
+
+  it('a hold let go of before the microphone opened ends it: nothing was recorded', () => {
+    expect(
+      micUp({ clicked: false, handsFree: true, held: true, listened: true, voice: 'preparing' }),
+    ).toBe('end');
+  });
+
+  it('a tap that started listening keeps listening: hands-free', () => {
+    expect(
+      micUp({ clicked: true, handsFree: true, held: false, listened: true, voice: 'preparing' }),
+    ).toBe('keep');
+    expect(
+      micUp({ clicked: true, handsFree: true, held: false, listened: true, voice: 'recording' }),
+    ).toBe('keep');
+  });
+
+  it('any other tap is a press', () => {
+    expect(
+      micUp({ clicked: true, handsFree: true, held: false, listened: false, voice: 'recording' }),
+    ).toBe('send');
+    expect(
+      micUp({ clicked: true, handsFree: true, held: false, listened: false, voice: 'preparing' }),
+    ).toBe('end');
+  });
+
+  it('a release without its click waits for it: a swipe that began on the microphone is no tap', () => {
+    expect(
+      micUp({ clicked: false, handsFree: true, held: false, listened: true, voice: 'recording' }),
+    ).toBe('wait');
+    expect(
+      micUp({ clicked: false, handsFree: true, held: false, listened: false, voice: 'recording' }),
+    ).toBe('wait');
+  });
+});
+
+describe('tapNeverCame', () => {
+  it('undoes the listening the touch started, and nothing else', () => {
+    expect(tapNeverCame({ listened: true })).toBe('end');
+    expect(tapNeverCame({ listened: false })).toBe('none');
+  });
+});
+
+describe('phraseWords', () => {
+  it('is what the recogniser wrote after the phrases that landed', () => {
+    expect(phraseWords('Lunch tomorrow at one make it two', 4)).toBe('make it two');
+    expect(phraseWords('Lunch tomorrow', 0)).toBe('Lunch tomorrow');
+  });
+
+  it('is nothing until a word follows them', () => {
+    expect(phraseWords('Lunch tomorrow ', 2)).toBe('');
+    expect(phraseWords('', 0)).toBe('');
+  });
+
+  it('counts words as it drops them', () => {
+    expect(wordCount('  Lunch   tomorrow at one ')).toBe(4);
+    expect(phraseWords('  Lunch   tomorrow at one ', wordCount('Lunch tomorrow'))).toBe('at one');
+  });
+});
+
+describe('grewSince', () => {
+  const none = { accurate: 0, quick: 0 };
+  const atPause = { accurate: 3, quick: 4 };
+
+  it('a new word of the quick recogniser is the phrase going on', () => {
+    expect(grewSince({ atPause, landed: none, now: { accurate: 3, quick: 5 } })).toBe(true);
+  });
+
+  it('the accurate one catching up with the quick one after the pause is not', () => {
+    expect(grewSince({ atPause, landed: none, now: { accurate: 4, quick: 4 } })).toBe(false);
+  });
+
+  it('the accurate one going past both is', () => {
+    expect(grewSince({ atPause, landed: none, now: { accurate: 5, quick: 4 } })).toBe(true);
+  });
+
+  it('without the quick one, any word of the accurate one is', () => {
+    const alone = { accurate: 3, quick: 0 };
+    expect(grewSince({ atPause: alone, landed: none, now: { accurate: 4, quick: 0 } })).toBe(true);
+    expect(grewSince({ atPause: alone, landed: none, now: alone })).toBe(false);
+  });
+
+  it('a punctuation pass or a revision that drops a word is not', () => {
+    expect(grewSince({ atPause, landed: none, now: { accurate: 2, quick: 4 } })).toBe(false);
+  });
+
+  it('counts the phrase’s own words: the recognisers wrote the earlier phrases differently', () => {
+    // Earlier phrases landed as 8 quick words and 6 accurate ones; this one
+    // is two words in both, and the accurate recogniser hears a third.
+    const landed = { accurate: 6, quick: 8 };
+    expect(
+      grewSince({ atPause: { accurate: 8, quick: 10 }, landed, now: { accurate: 9, quick: 10 } }),
+    ).toBe(true);
+    expect(
+      grewSince({ atPause: { accurate: 8, quick: 10 }, landed, now: { accurate: 8, quick: 10 } }),
+    ).toBe(false);
+  });
+});
+
+describe('sendPress', () => {
+  it('lets a phrase on its way land when nothing followed it', () => {
+    expect(sendPress({ inFlight: true, saidSince: false })).toBe('land');
+  });
+
+  it('reads it again with what followed', () => {
+    expect(sendPress({ inFlight: true, saidSince: true })).toBe('read');
+  });
+
+  it('reads what is being said when no phrase is on its way', () => {
+    expect(sendPress({ inFlight: false, saidSince: true })).toBe('read');
+    expect(sendPress({ inFlight: false, saidSince: false })).toBe('read');
+  });
+});
+
+describe('micClick', () => {
+  const never = Number.POSITIVE_INFINITY;
+
+  it('is a press from the keyboard or VoiceOver: no press down, none let go of lately', () => {
+    expect(micClick({ pressing: false, sinceUpMs: never, waiting: false })).toBe('press');
+    expect(micClick({ pressing: false, sinceUpMs: CLICK_AFTER_UP_MS, waiting: false })).toBe(
+      'press',
+    );
+  });
+
+  it('marks the press as a tap while it is down: an iOS tap under 130 ms clicks before it lifts', () => {
+    expect(micClick({ pressing: true, sinceUpMs: never, waiting: false })).toBe('mark');
+  });
+
+  it('confirms a release waiting for it', () => {
+    expect(micClick({ pressing: false, sinceUpMs: 5, waiting: true })).toBe('confirm');
+  });
+
+  it('belongs to a press already handled', () => {
+    expect(micClick({ pressing: false, sinceUpMs: 5, waiting: false })).toBe('ignore');
+  });
+});
+
+describe('landedWords', () => {
+  const atPause = { accurate: 40, quick: 42 };
+  const now = { accurate: 45, quick: 47 };
+
+  it('a phrase that ended on its pause takes every word written by the time it landed', () => {
+    expect(landedWords({ atPause, forced: false, now })).toEqual(now);
+  });
+
+  it('a phrase the cap cut keeps only its own: the words after it begin the next phrase', () => {
+    expect(landedWords({ atPause, forced: true, now })).toEqual(atPause);
   });
 });
