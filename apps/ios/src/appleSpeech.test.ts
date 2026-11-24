@@ -625,5 +625,22 @@ describe('appleSpeech', () => {
         'cancel 2',
       ]);
     });
+
+    it('counts the lagging recogniser’s first word after reopening as a new one', async () => {
+      const speech = await loadSpeech();
+      const heard: Array<string> = [];
+      await speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) });
+      say({ session: 1, source: 'accurate', text: 'Lunch' });
+      say({ session: 1, source: 'quick', text: 'Lunch with Sarah' });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      await speech.read();
+      say({ session: 2, source: 'accurate', text: 'Tomorrow' });
+      expect(heard).toEqual([
+        'accurate: Lunch',
+        'quick: Lunch with Sarah',
+        'accurate: Lunch with Sarah',
+        'accurate: Lunch with Sarah Tomorrow',
+      ]);
+    });
   });
 });

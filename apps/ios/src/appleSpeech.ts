@@ -186,6 +186,25 @@ const after = (before: SpeechRead | undefined, read: SpeechRead): SpeechRead => 
   };
 };
 
+const SOURCES = ['accurate', 'quick'] as const;
+
+const wordsOf = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+/**
+ * The words before a reopened session, the same number for each
+ * recogniser that wrote any: the one that lagged when the session closed
+ * (the accurate one writes in bursts) will never write the rest of that
+ * phrase, and its first word in the new session must count as a new
+ * word, as the other's does, not as a late one of the phrase just read.
+ */
+const levelled = (said: Said): Said => {
+  const longest = SOURCES.map((source) => said[source]).reduce((a, b) =>
+    wordsOf(b) > wordsOf(a) ? b : a,
+  );
+  const level = (text: string) => (text === '' ? text : longest);
+  return { accurate: level(said.accurate), quick: level(said.quick) };
+};
+
 /** Told a moment later: after the phrase read with it reached the caller, so its message stays. */
 const later = (lost: (() => void) | undefined) => {
   if (lost) {
@@ -216,10 +235,17 @@ const reopen = async (native: Native, active: Listening, read: SpeechRead | unde
     later(active.onLost);
     return;
   }
+  const before = levelled(active.said);
   try {
-    const next = await openSession(native, active.onWords, active.said);
+    const next = await openSession(native, active.onWords, before);
     if (!superseded()) {
       current = { ...active, ...next, fallback: undefined, reading: undefined, uncut: read };
+      for (const source of SOURCES) {
+        // Not heard anew yet: the recogniser that lagged is told it caught up.
+        if (before[source] !== active.said[source] && next.said[source] === before[source]) {
+          active.onWords(source, before[source]);
+        }
+      }
     } else {
       next.remove();
       await native.cancel(next.session).catch(() => undefined);
