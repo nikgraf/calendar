@@ -153,6 +153,11 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
         : { kind: 'failed', message: 'Not every file of Parakeet arrived.' },
     });
     await apply();
+    // The Neural Engine prepares a new download once, for half a minute:
+    // now, not while the first phrase waits.
+    if (readsWithParakeet(state)) {
+      await port.prepare?.().catch(() => undefined);
+    }
   };
 
   const run = (): Promise<void> => {
@@ -224,6 +229,13 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
         set({ files: { for: waitFor, kind: 'waiting', progress: progressOf(state.files) } });
       } else if (waitFor === undefined && state.files.kind === 'waiting') {
         void run();
+      } else if (
+        waitFor !== undefined &&
+        state.files.kind === 'waiting' &&
+        state.files.for !== waitFor
+      ) {
+        // Online now, on mobile data: it waits for Wi-Fi, and mobile data can be allowed.
+        set({ files: { ...state.files, for: waitFor } });
       }
     });
   };

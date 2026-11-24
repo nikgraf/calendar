@@ -20,12 +20,14 @@ describe('lessonOffer', () => {
   });
 
   it('offers Parakeet alone once the Assistant’s model is here or under way', () => {
-    expect(
-      lessonOffer(undefined, absent, { assistantBytes: ASSISTANT_BYTES, device: 'Mac' })?.action,
-    ).toEqual({
-      kind: 'parakeet',
-      label: 'Download Parakeet (712 MB)',
+    // The lesson's hint stays in place: the offer goes after it.
+    const alone = lessonOffer(undefined, absent, {
+      assistantBytes: ASSISTANT_BYTES,
+      device: 'Mac',
     });
+    expect(alone?.action).toEqual({ kind: 'parakeet', label: 'Download Parakeet (712 MB)' });
+    expect(alone?.text).toBeUndefined();
+    expect(alone?.more).toContain('Dictation can also read with Parakeet');
     const downloading = { progress: 40, text: 'Downloading the Assistant’s model · 40 %.' };
     expect(
       lessonOffer(downloading, absent, { assistantBytes: ASSISTANT_BYTES, device: 'Mac' }),

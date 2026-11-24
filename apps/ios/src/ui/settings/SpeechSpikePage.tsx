@@ -5,6 +5,7 @@ import { loadParakeet, type ParakeetVersion } from '../../../modules/solunivo-sp
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
 import { loadAssistantModel, releaseAssistantModel } from '../../assistantRuntime.ts';
 import { backendClient } from '../../backend.ts';
+import { holdParakeetForSpike } from '../../parakeetRuntime.ts';
 import { llamaHolder } from '../../llamaOwner.ts';
 import { SPIKE_CLIPS, SPIKE_PEOPLE, SPIKE_PLACES } from '../../speechSpikeClips.ts';
 import {
@@ -97,6 +98,7 @@ const parakeetPort = (): ParakeetPort | undefined => {
   }
   return {
     load: async (version, vocabulary, onProgress) => {
+      holdParakeetForSpike(true);
       const listening = native.addListener('onParakeetProgress', ({ fraction }) =>
         onProgress(fraction),
       );
@@ -106,7 +108,10 @@ const parakeetPort = (): ParakeetPort | undefined => {
         listening.remove();
       }
     },
-    release: () => native.parakeetSpikeRelease(),
+    release: async () => {
+      await native.parakeetSpikeRelease();
+      holdParakeetForSpike(false);
+    },
     transcribe: (uri) => native.parakeetSpikeTranscribe(uri),
   };
 };
@@ -194,8 +199,9 @@ function GroupScores({ scores }: { scores: SpeechSpikeReport['scores'] }) {
  * recordings: fetch the clips, load the Assistant's model beside it if
  * asked, load Parakeet, transcribe every clip and score it against the
  * sheet, reading the app's memory throughout. For internal measuring
- * only, listed where the binary has the module: no dictation uses
- * Parakeet, and nothing here touches the calendar.
+ * only, listed where the binary has the module: a run takes dictation's
+ * Parakeet over until it ends (`holdParakeetForSpike`), and nothing here
+ * touches the calendar.
  */
 export function SpeechSpikePage() {
   const styles = useStyles(makeStyles);
@@ -228,7 +234,8 @@ export function SpeechSpikePage() {
             <Footer>
               Measures Parakeet inside this app on Nik’s recordings, fetched once from the
               repository. The first load fetches the model from Hugging Face and prepares it for
-              this iPhone, which takes minutes. For internal testing: no dictation uses it.
+              this iPhone, which takes minutes. For internal testing: a run takes over dictation’s
+              Parakeet until it ends.
             </Footer>
             {notice ? (
               <Footer selectable testID="speech-spike-notice" tone="danger">

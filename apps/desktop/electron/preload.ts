@@ -194,8 +194,8 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   parakeetSetOn: (on: boolean) => ipcRenderer.invoke('parakeet:set-on', on),
   /** The names dictation listens for as a phrase starts. */
   openSettings: (pane?: string) => ipcRenderer.invoke('settings:open', pane),
-  parakeetVocabulary: (terms: ReadonlyArray<string>) =>
-    ipcRenderer.invoke('parakeet:vocabulary', terms),
+  /** A phrase starts: main hands Parakeet the names to listen for and loads it. */
+  parakeetVocabulary: () => ipcRenderer.invoke('parakeet:vocabulary'),
   privacyGet: () => ipcRenderer.invoke('privacy:get'),
   privacySet: (choice: string) => ipcRenderer.invoke('privacy:set', choice),
   remindersStatus: () => ipcRenderer.invoke('reminders:status'),

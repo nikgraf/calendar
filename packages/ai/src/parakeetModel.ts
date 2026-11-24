@@ -150,8 +150,11 @@ export interface LessonOffer {
   };
   /** Parakeet is offered: "Without Parakeet" switches it off (Settings › Dictation can switch it on again). */
   readonly decline?: string;
+  /** After the lesson's own hint, when the note leaves it in place (`text` absent). */
+  readonly more?: string;
   readonly progress?: number;
-  readonly text: string;
+  /** In place of the lesson's hint: what the Assistant's model is, and Parakeet beside it. */
+  readonly text?: string;
 }
 
 /**
@@ -179,11 +182,12 @@ export const lessonOffer = (
   const line = `Dictation can also read with Parakeet, a speech model on this ${device} that writes the names and places you say better: ${sizeLabel(PARAKEET_BYTES)} more.`;
   const decline = 'Without Parakeet';
   if (assistant === undefined) {
+    // The lesson's own hint stays: what to try comes first, the offer after it.
     return wanted
       ? {
           action: { kind: 'parakeet', label: `Download Parakeet (${sizeLabel(PARAKEET_BYTES)})` },
           decline,
-          text: line,
+          more: line,
         }
       : undefined;
   }

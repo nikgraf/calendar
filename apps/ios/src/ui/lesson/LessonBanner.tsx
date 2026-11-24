@@ -19,6 +19,7 @@ export function LessonBanner({
   action,
   decline,
   id,
+  more,
   note,
   onSkip,
   progress,
@@ -28,6 +29,8 @@ export function LessonBanner({
   /** Beside the action, quieter: what goes without an optional part of it ("Without Parakeet"). */
   decline?: { readonly label: string; readonly onPress: () => void } | undefined;
   id: LessonId;
+  /** After the hint: an offer that leaves it in place (Parakeet, once the Assistant's model is here). */
+  more?: string | undefined;
   /** In place of the hint: the Create lesson without the Assistant's model, and the demo standing in. */
   note?: string | undefined;
   /** Absent once the lesson was tried: the hint stays, Skip has nothing left to skip. */
@@ -48,6 +51,11 @@ export function LessonBanner({
         <Text style={styles.hint} testID="lesson-banner-note">
           {note ?? HINTS[id] ?? copy.intro}
         </Text>
+        {more === undefined ? null : (
+          <Text style={styles.hint} testID="lesson-banner-more">
+            {more}
+          </Text>
+        )}
         {progress === undefined ? null : (
           <View
             accessibilityLabel={`${String(progress)} percent downloaded`}

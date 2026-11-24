@@ -157,8 +157,8 @@ declare global {
       parakeetRemove: () => Promise<void>;
       parakeetRetry: () => Promise<void>;
       parakeetSetOn: (on: boolean) => Promise<void>;
-      /** The names dictation listens for as a phrase starts. */
-      parakeetVocabulary: (terms: ReadonlyArray<string>) => Promise<void>;
+      /** A phrase starts: main hands Parakeet the names to listen for and loads it. */
+      parakeetVocabulary: () => Promise<void>;
       privacyGet: () => Promise<PrivacyState>;
       privacySet: (choice: 'hidden' | 'pause10m' | 'visible') => Promise<PrivacyState>;
       remindersStatus: () => Promise<string>;

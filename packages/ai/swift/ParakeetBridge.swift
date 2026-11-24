@@ -143,8 +143,9 @@ actor ParakeetEngine {
     return ParakeetFiles(bytes: folder.map(Self.size(of:)) ?? 0, here: here)
   }
 
-  /// Fetches what is missing of both models (a file already here is kept),
-  /// then prepares them, so the first phrase does not wait for Core ML.
+  /// Fetches what is missing of both models (a file already here is kept).
+  /// The store prepares them right after (`prepare`), so the first phrase
+  /// does not wait for Core ML.
   func download(progress: @escaping @Sendable (Double) -> Void) async throws {
     let (asr, ctc) = try paths()
     let share = Self.ultraShare
@@ -156,7 +157,6 @@ actor ParakeetEngine {
       progress(share + step.fractionCompleted * (1 - share))
     }
     progress(1)
-    if on { warm() }
   }
 
   /// Lets go of the models and deletes their files.

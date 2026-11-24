@@ -6,6 +6,7 @@ import {
   type ParakeetPort,
   type ParakeetStore,
   readParakeetChoice,
+  readsWithParakeet,
 } from '@calendar/ai';
 import { BrowserWindow, ipcMain } from 'electron';
 import { callHelper, helperAvailable, onHelperEvent } from './helperProcess.ts';
@@ -15,8 +16,10 @@ import { callHelper, helperAvailable, onHelperEvent } from './helperProcess.ts';
  * files under the profile's `parakeet/` folder, kept by the helper
  * (`parakeet.*`, ParakeetBridge.swift), the switch and the download asked
  * for in `parakeet.json` beside them. Dictation in the helper reads each
- * phrase with it once it is here and the switch is on; the renderer hands
- * it the names to listen for as a phrase starts (`parakeet:vocabulary`).
+ * phrase with it once it is here and the switch is on; as a phrase starts
+ * the renderer says so (`parakeet:vocabulary`), and main reads the names to
+ * listen for from the backend it hosts (`readNames`): calendar and contact
+ * names never cross IPC.
  *
  * Switches: CALENDAR_PARAKEET=off leaves it out (the e2e harness: nothing
  * fetched, nothing loaded); CALENDAR_PARAKEET=fixture keeps it in memory,
@@ -111,12 +114,12 @@ const storeOf = (userDataDir: string): ParakeetStore => {
 };
 
 const isNetwork = (value: unknown): value is 'any' | 'wifi' => value === 'any' || value === 'wifi';
-const isTerms = (value: unknown): value is ReadonlyArray<string> =>
-  Array.isArray(value) &&
-  value.length <= 500 &&
-  value.every((term) => typeof term === 'string' && term.length <= 200);
 
-export const registerParakeetModel = (userDataDir: string): void => {
+export const registerParakeetModel = (
+  userDataDir: string,
+  /** The names dictation listens for, from the backend (`dictationVocabulary`). */
+  readNames: () => Promise<ReadonlyArray<string>>,
+): void => {
   const store = storeOf(userDataDir);
   store.subscribe(() => {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -141,7 +144,15 @@ export const registerParakeetModel = (userDataDir: string): void => {
     }
     return undefined;
   });
-  ipcMain.handle('parakeet:vocabulary', (_event, terms: unknown) =>
-    isTerms(terms) ? store.vocabulary(terms) : undefined,
-  );
+  // A phrase starts: the names, and the models loaded while it is said. A
+  // failed read leaves the names handed on last.
+  ipcMain.handle('parakeet:vocabulary', async () => {
+    if (!readsWithParakeet(store.getState())) {
+      return;
+    }
+    const names = await readNames().catch(() => undefined);
+    if (names !== undefined) {
+      await store.vocabulary(names);
+    }
+  });
 };

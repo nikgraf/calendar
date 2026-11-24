@@ -3,7 +3,7 @@
  * licences ask to be credited, as both apps show them (iOS: Settings ›
  * Acknowledgements; Mac: the About panel) and THIRD_PARTY_NOTICES.md at the
  * repository's root lists them with their licence texts
- * (`acknowledgements.test.ts` keeps the two together). An entry here is a
+ * (`scripts/thirdPartyNotices.test.ts` keeps the two together). An entry here is a
  * notice the licence requires: CC BY 4.0 asks for the creator, the licence
  * and what was changed; MIT, Apache-2.0 and the OFL for the copyright
  * notice and the licence's text with every copy.

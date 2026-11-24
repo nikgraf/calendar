@@ -1,3 +1,4 @@
+import { AppleCalendarRequestError } from '@calendar/apple-calendar';
 import { Contact } from '@calendar/core';
 import { ContactRepo, EventRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
@@ -15,15 +16,18 @@ const contact = (displayName: string) =>
     source: 'device',
   });
 
-/** Stores with no events and no Google contacts; device contacts that fail until told not to. */
+/** No stored events, one device contact, and EventKit failing until told not to. */
 const setup = () => {
-  const state = { failing: true, reads: 0 };
+  const state = { appleFailing: true, contactReads: 0 };
   const layer = Layer.mergeAll(
     Layer.succeed(EventRepo, {
       getWindow: () => Effect.succeed({ masters: [], overrides: [], singles: [] }),
     } as unknown as EventRepo['Service']),
     Layer.succeed(AppleCalendarEvents, {
-      eventsInRange: () => Effect.succeed([]),
+      eventsInRangeOrFail: () =>
+        state.appleFailing
+          ? Effect.fail(new AppleCalendarRequestError({ message: 'timed out', method: 'events' }))
+          : Effect.succeed([]),
     } as unknown as AppleCalendarEvents['Service']),
     Layer.succeed(ContactRepo, {
       listAll: () => Effect.succeed([]),
@@ -31,10 +35,8 @@ const setup = () => {
     Layer.succeed(DeviceContacts, {
       birthdays: () => Effect.succeed([]),
       list: () => {
-        state.reads += 1;
-        return state.failing
-          ? Effect.fail(new Error('helper restarting') as never)
-          : Effect.succeed([contact('Emily Carter')]);
+        state.contactReads += 1;
+        return Effect.succeed([contact('Emily Carter')]);
       },
       refresh: () => Effect.void,
     } as unknown as DeviceContacts['Service']),
@@ -43,16 +45,16 @@ const setup = () => {
 };
 
 describe('loadDictationVocabulary', () => {
-  it.effect('keeps a whole read for a while, and reads again after a failed one', () => {
+  it.effect('keeps a whole read for a while, and reads again after EventKit failed', () => {
     const { layer, state } = setup();
     return Effect.gen(function* () {
-      // The device's contacts could not be read: the rest goes on, and nothing is kept.
-      expect((yield* loadDictationVocabulary).people).toEqual([]);
-      state.failing = false;
+      // EventKit did not answer: the contacts still count, and nothing is kept.
       expect((yield* loadDictationVocabulary).people).toEqual(['Emily Carter']);
-      // Kept now: the next phrase does not read the address book again.
+      state.appleFailing = false;
       expect((yield* loadDictationVocabulary).people).toEqual(['Emily Carter']);
-      expect(state.reads).toBe(2);
+      // Kept now: the next phrase reads nothing again.
+      expect((yield* loadDictationVocabulary).people).toEqual(['Emily Carter']);
+      expect(state.contactReads).toBe(2);
     }).pipe(Effect.provide(layer));
   });
 });

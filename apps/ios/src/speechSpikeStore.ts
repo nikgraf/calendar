@@ -9,7 +9,8 @@ import type { DeviceMemory } from './modelSpikeStore.ts';
  * recordings (once), loads the Assistant's model if asked, loads Parakeet,
  * transcribes every clip and scores it against the sheet, reading the
  * app's memory throughout, then lets Parakeet go. Measured, nothing more:
- * no dictation uses Parakeet.
+ * the engine is dictation's (Settings › Dictation › Read With Parakeet),
+ * and a run takes it over until it ends; dictation loads its own again.
  */
 
 /** How often the footprint is read while a model loads and clips run. */

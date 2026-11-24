@@ -58,7 +58,7 @@ describe('Settings › Dictation › Read With Parakeet', () => {
     await app?.stop();
   });
 
-  it('is on from the start, offers the download, and deletes the files keeping the switch', async () => {
+  it('is on from the start, offers the download, and deletes the files keeping the switch as it was', async () => {
     const settings = await app.openSettings('dictation');
     await settings.waitUntil(($) => $.has('[data-testid="dictation-parakeet"]'));
     expect(
@@ -79,7 +79,7 @@ describe('Settings › Dictation › Read With Parakeet', () => {
     );
     expect(await settings.evaluate(($) => $.has('[data-testid="parakeet-action"]'))).toBe(false);
 
-    // Off: the files stay; on again, it reads with them at once.
+    // Off: the files stay.
     await settings.clickTestId('read-with-parakeet');
     await settings.waitUntil(
       ($) => !$.el<HTMLInputElement>('[data-testid="read-with-parakeet"]')!.checked,
@@ -87,8 +87,8 @@ describe('Settings › Dictation › Read With Parakeet', () => {
     expect(await settings.evaluate(($) => $.text('[data-testid="parakeet-status"]'))).toBe(
       'On this Mac · 712 MB',
     );
-    await settings.clickTestId('read-with-parakeet');
 
+    // Deleted while off: the download is offered again, and the switch stays off.
     await settings.clickTestId('parakeet-delete');
     await settings.waitUntil(
       ($) => $.text('[data-testid="parakeet-action"]') === 'Download Parakeet (712 MB)',
@@ -97,7 +97,7 @@ describe('Settings › Dictation › Read With Parakeet', () => {
       await settings.evaluate(
         ($) => $.el<HTMLInputElement>('[data-testid="read-with-parakeet"]')!.checked,
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 

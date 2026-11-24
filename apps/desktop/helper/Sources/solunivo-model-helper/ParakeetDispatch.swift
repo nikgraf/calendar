@@ -49,30 +49,37 @@ enum ParakeetDispatch {
   }
 }
 
-/// The one Parakeet download at a time: a second call joins it, a cancel stops it.
+/// The one Parakeet download at a time: a second call joins it, a cancel
+/// stops it. A cancelled one that winds down after the next started leaves
+/// that one's slot alone, so a later cancel still stops it.
 private final class HelperParakeetDownloads: @unchecked Sendable {
   private let lock = NSLock()
-  private var current: Task<Void, Error>?
+  private var current: (id: Int, task: Task<Void, Error>)?
+  private var started = 0
 
   func start(_ work: @escaping @Sendable () async throws -> Void) -> Task<Void, Error> {
     lock.withLock {
-      if let current { return current }
+      if let current { return current.task }
+      started += 1
+      let id = started
       let task = Task {
-        defer { self.finished() }
+        defer { self.finished(id) }
         try await work()
       }
-      current = task
+      current = (id, task)
       return task
     }
   }
 
-  private func finished() {
-    lock.withLock { current = nil }
+  private func finished(_ id: Int) {
+    lock.withLock {
+      if current?.id == id { current = nil }
+    }
   }
 
   func cancel() {
     lock.withLock {
-      current?.cancel()
+      current?.task.cancel()
       current = nil
     }
   }

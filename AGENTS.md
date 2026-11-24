@@ -276,7 +276,9 @@ commits by staging deliberately.
 - Window-level concerns (screen privacy, logging, open-external, the
   `model:*` AI-helper channels (dictation's `model:speech-*` among them),
   `assistant:*` (the Assistant's own model:
-  its state, the download, a prompt), the `reminders:*` / `contacts:*` /
+  its state, the download, a prompt), `parakeet:*` (Parakeet's state, its
+  download, the switch, and a phrase's start, which main answers with the
+  names it reads from the backend itself), the `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `appleCalendar:open`
   (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the

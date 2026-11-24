@@ -167,6 +167,14 @@ export const beforeListening = async (): Promise<void> => {
   }
 };
 
+/** A Speech Spike run holds the engine: a memory warning must not take its model mid-run. */
+let spikeRun = false;
+
+/** The Speech Spike page's run begins (true) or ends (false). */
+export const holdParakeetForSpike = (on: boolean): void => {
+  spikeRun = on;
+};
+
 /**
  * At launch (from CalendarScreen): the choice kept and the files found,
  * once the app is in front; a download the background cut goes on when it
@@ -186,9 +194,12 @@ export const startParakeet = (): void => {
   }
   // iOS warned of memory: the models go, as the Assistant's context does.
   appState?.addEventListener('memoryWarning', () => {
-    void loadParakeet()
-      ?.parakeetRelieve()
-      .catch(() => undefined);
+    // A Speech Spike run counts the warnings it measures; its model stays.
+    if (!spikeRun) {
+      void loadParakeet()
+        ?.parakeetRelieve()
+        .catch(() => undefined);
+    }
   });
   appState?.addEventListener('change', (state) => {
     if (state === 'background') {

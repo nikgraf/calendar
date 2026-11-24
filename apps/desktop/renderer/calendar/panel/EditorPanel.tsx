@@ -137,6 +137,7 @@ function LessonFrame({
           : undefined
       }
       id={id}
+      more={copy !== undefined && 'more' in copy ? copy.more : undefined}
       note={copy?.text}
       onSkip={onSkip}
       progress={copy?.progress}

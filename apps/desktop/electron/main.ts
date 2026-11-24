@@ -8,6 +8,7 @@ import { installApplicationMenu } from './menu.ts';
 import { initPrivacy } from './privacy.ts';
 import { startCaptureHint } from './captureHint.ts';
 import { registerAssistantModel } from './assistantModel/index.ts';
+import { commonBackendHandlers } from '@calendar/sync';
 import { registerParakeetModel } from './parakeetModel.ts';
 import { registerModelHelper } from './modelHelper.ts';
 import { initModelProvider } from './modelProvider.ts';
@@ -154,7 +155,11 @@ void app.whenReady().then(() => {
   startAgentHost(host);
   registerModelHelper();
   registerAssistantModel(app.getPath('userData'));
-  registerParakeetModel(app.getPath('userData'));
+  registerParakeetModel(app.getPath('userData'), () =>
+    host
+      .run(commonBackendHandlers.dictationVocabulary())
+      .then(({ people, places }) => [...people, ...places]),
+  );
   registerRemindersIpc();
   registerContactsIpc();
   registerAppleCalendarIpc();

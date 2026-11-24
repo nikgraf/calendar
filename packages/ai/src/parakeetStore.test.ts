@@ -183,6 +183,13 @@ describe('createParakeetStore', () => {
     await store.remove();
     expect(store.getState()).toEqual({ files: { kind: 'absent' }, on: true });
     expect(fake.uses.at(-1)).toBe('false []');
+    // Off, deleting leaves it off: the switch is not the default again.
+    const off = fakePort({ choice: { on: false }, here: true });
+    const quiet = createParakeetStore({ port: off.port, supported: true });
+    await quiet.boot();
+    await quiet.remove();
+    expect(quiet.getState()).toEqual({ files: { kind: 'absent' }, on: false });
+    expect(off.choice()).toEqual({ on: false });
 
     const asked = fakePort();
     const running = createParakeetStore({ port: asked.port, supported: true });
@@ -192,6 +199,28 @@ describe('createParakeetStore', () => {
     await running.setOn(false);
     await asked.finish(false);
     expect(running.getState()).toEqual({ files: { kind: 'absent' }, on: false });
+  });
+
+  it('waits for Wi-Fi, with mobile data on offer, once a phone without a connection gets one', async () => {
+    const fake = fakePort({ path: { constrained: false, expensive: false, satisfied: false } });
+    const store = createParakeetStore({ port: fake.port, supported: true });
+    await store.boot();
+    await store.download('wifi');
+    expect(store.getState().files).toEqual({ for: 'network', kind: 'waiting', progress: 0 });
+    fake.moveTo(MOBILE);
+    expect(store.getState().files).toEqual({ for: 'wifi', kind: 'waiting', progress: 0 });
+    expect(fake.downloads()).toBe(0);
+  });
+
+  it('prepares the models right after a download, so the first phrase finds them', async () => {
+    const fake = fakePort();
+    const store = createParakeetStore({ port: fake.port, supported: true });
+    await store.boot();
+    const asked = store.download('any');
+    await tick();
+    await fake.finish(true);
+    await asked;
+    expect(fake.prepared()).toBe(1);
   });
 
   it('loads the models as a phrase starts, never at launch, and only while it reads with them', async () => {
