@@ -1,6 +1,7 @@
 import { LESSON_COUNT, type LessonId, lessonCopy, lessonPosition } from '@calendar/core';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, use, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ConversationHoldContext } from '../assistant/conversationHold.ts';
 import { Glyph } from '../GroupedList.tsx';
 import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
@@ -46,6 +47,7 @@ export function LessonBanner({
   const { colors } = useTheme();
   const copy = lessonCopy(id, 'iphone');
   const [open, setOpen] = useState(false);
+  const holdConversation = use(ConversationHoldContext);
   return (
     <View style={styles.banner} testID="lesson-banner">
       <Glyph name="sparkles" size={16} tintColor={colors.primary} weight="medium" />
@@ -100,7 +102,11 @@ export function LessonBanner({
               accessibilityRole="button"
               accessibilityState={{ expanded: open }}
               hitSlop={8}
-              onPress={() => setOpen((was) => !was)}
+              onPress={() => {
+                // Opening grows the conversation: it stays where it is.
+                holdConversation();
+                setOpen((was) => !was);
+              }}
               style={({ pressed }) => [styles.disclosure, pressed && styles.pressed]}
               testID="lesson-explain-toggle"
             >
