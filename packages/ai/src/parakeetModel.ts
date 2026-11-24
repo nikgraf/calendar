@@ -268,7 +268,7 @@ const lessonOfferOf = (
       ...assistant,
       action: { kind: 'both', label: 'Download Models' },
       decline: 'Download Only Phrases Model',
-      text: `${flowPromise(device)} The models are a one-time download of ${sizeLabel(assistantBytes + PARAKEET_BYTES)}${device === 'iPhone' ? ', over Wi-Fi' : ''}; the speech model is optional. Until then, try the demo below.`,
+      text: `${flowPromise(device)} They are a one-time download of ${sizeLabel(assistantBytes + PARAKEET_BYTES)}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, try the demo below.`,
     };
   }
   if (wanted && assistant.action === undefined) {

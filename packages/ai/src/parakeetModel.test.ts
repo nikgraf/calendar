@@ -16,12 +16,12 @@ describe('lessonOffer', () => {
       action: { kind: 'both', label: 'Download Models' },
       decline: 'Download Only Phrases Model',
       explain: true,
-      text: 'The Assistant reads what you say only with models on this iPhone, never with an AI in the cloud. The models are a one-time download of 1.5 GB, over Wi-Fi; the speech model is optional. Until then, try the demo below.',
+      text: 'The Assistant reads what you say only with models on this iPhone, never with an AI in the cloud. They are a one-time download of 1.5 GB, over Wi-Fi. Until then, try the demo below.',
     });
     expect(
       lessonOffer(offered, absent, { assistantBytes: ASSISTANT_BYTES, device: 'Mac' })?.text,
     ).toBe(
-      'The Assistant reads what you say only with models on this Mac, never with an AI in the cloud. The models are a one-time download of 1.5 GB; the speech model is optional. Until then, try the demo below.',
+      'The Assistant reads what you say only with models on this Mac, never with an AI in the cloud. They are a one-time download of 1.5 GB. Until then, try the demo below.',
     );
   });
 
