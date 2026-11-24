@@ -46,6 +46,7 @@ import {
   lessonModelCopy,
   lessonOffer,
   type ModelStatus,
+  PARAKEET_BYTES,
   PUBLISHED_MODEL,
   statusOf,
   tunedReader,
@@ -60,6 +61,7 @@ import {
 import { modelFixture } from '../model.ts';
 import { parakeet, useParakeetState } from '../parakeetRuntime.ts';
 import { AssistantBar, type BarDemo, demoHoldsBar } from './assistant/AssistantBar.tsx';
+import { AssistantFlow } from './assistant/AssistantFlow.tsx';
 import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
 import { AssistantView } from './assistant/AssistantView.tsx';
 import { DraftPager } from './assistant/DraftPager.tsx';
@@ -602,8 +604,9 @@ const runModelAction = (download: AssistantDownload, action: 'download' | 'mobil
 
 /**
  * The lesson's offer, pressed: the Assistant's model, Parakeet beside it
- * (`both`), or Parakeet alone; "Without Parakeet" (`decline`) still fetches
- * the Assistant's model when it was offered too, and switches Parakeet off.
+ * (`both`, Download Models), or Parakeet alone; "Download Only Phrases
+ * Model" (`decline`) still fetches the Assistant's model, and switches
+ * Parakeet off, as "Skip Speech Model" (`decline-parakeet`) does alone.
  */
 const runOffer = (
   download: AssistantDownload,
@@ -694,6 +697,11 @@ function LessonFrame({
         copy !== undefined && 'decline' in copy && copy.decline !== undefined
           ? { label: copy.decline, onPress: () => runOffer(download, declined) }
           : undefined
+      }
+      explain={
+        copy !== undefined && 'explain' in copy && copy.explain === true ? (
+          <AssistantFlow compact sizes={{ phrases: assistantBytes, speech: PARAKEET_BYTES }} />
+        ) : undefined
       }
       id={id}
       more={copy !== undefined && 'more' in copy ? copy.more : undefined}

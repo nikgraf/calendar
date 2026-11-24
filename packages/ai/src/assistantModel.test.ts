@@ -147,10 +147,9 @@ describe('lessonModelCopy', () => {
 
   it('says what the Assistant is and what the download is, with the notice’s action', () => {
     const copy = lessonModelCopy({ kind: 'unasked' }, iPhone);
-    expect(copy.text).toContain(
-      'a small model trained on calendar phrases, running on this iPhone',
+    expect(copy.text).toBe(
+      'The Assistant uses only models on this iPhone. What you say or type never leaves it. It needs one model, a one-time download of 834 MB, over Wi-Fi. Until then, try the demo below.',
     );
-    expect(copy.text).toContain('a one-time download of 834 MB, over Wi-Fi');
     expect(copy.action).toEqual({ kind: 'download', label: 'Download (834 MB)' });
     expect(lessonModelCopy({ kind: 'unasked' }, { ...iPhone, device: 'Mac' }).text).not.toContain(
       'Wi-Fi',

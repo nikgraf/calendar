@@ -119,6 +119,13 @@ export const statusOf = (state: AssistantModelState): 'not-ready' | 'ready' | 'u
 
 export type AssistantDevice = 'iPhone' | 'Mac';
 
+/**
+ * The Assistant's promise, first in the Create lesson and in Settings:
+ * it reads with models on the device only (`assistantFlow.ts` has the rest).
+ */
+export const flowPromise = (device: AssistantDevice): string =>
+  `The Assistant uses only models on this ${device}. What you say or type never leaves it.`;
+
 const UNSUPPORTED: Readonly<Record<AssistantDevice, Readonly<Record<UnsupportedReason, string>>>> =
   {
     iPhone: {
@@ -247,7 +254,7 @@ export const lessonModelCopy = (
     switch (state.kind) {
       case 'unasked':
       case 'declined':
-        return `Solunivo reads what you say with an Assistant of its own: a small model trained on calendar phrases, running on this ${device}, so your words stay on it. It is a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, the demo below shows how it works.`;
+        return `${flowPromise(device)} It needs one model, a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, try the demo below.`;
       case 'downloading':
         return `Downloading the Assistant’s model · ${String(progress ?? 0)} %. It goes on if you leave. ${meanwhile}`;
       case 'verifying':

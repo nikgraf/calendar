@@ -1,6 +1,8 @@
 import { LESSON_COUNT, type LessonId, lessonCopy, lessonPosition } from '@calendar/core';
+import { type ReactNode, useId, useState } from 'react';
 import { Button } from '../ui/Button.tsx';
-import { SparkleIcon } from '../ui/icons.tsx';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
+import { ChevronDownIcon, ChevronUpIcon, SparkleIcon } from '../ui/icons.tsx';
 
 /** What the banner says to do, per lesson that runs inside an existing surface. */
 const HINTS: Partial<Record<LessonId, string>> = {
@@ -18,6 +20,7 @@ const HINTS: Partial<Record<LessonId, string>> = {
 export function LessonBanner({
   action,
   decline,
+  explain,
   id,
   more,
   note,
@@ -26,8 +29,10 @@ export function LessonBanner({
 }: {
   /** What the note asks for (the Create lesson's download of the Assistant's model). */
   action?: { readonly label: string; readonly onClick: () => void } | undefined;
-  /** Beside the action, quieter: what goes without an optional part of it ("Without Parakeet"). */
+  /** Beside the action, a secondary button: the download without its optional part. */
   decline?: { readonly label: string; readonly onClick: () => void } | undefined;
+  /** Behind "How it works", closed until clicked: the whole flow the note sums up. */
+  explain?: ReactNode;
   id: LessonId;
   /** After the hint: an offer that leaves it in place (Parakeet, once the Assistant's model is here). */
   more?: string | undefined;
@@ -39,6 +44,8 @@ export function LessonBanner({
   progress?: number | undefined;
 }) {
   const copy = lessonCopy(id, 'mac');
+  const [open, setOpen] = useState(false);
+  const explainId = useId();
   return (
     <div
       className="mb-3 flex items-start gap-2.5 rounded-control bg-fill px-3 py-2"
@@ -75,7 +82,7 @@ export function LessonBanner({
           </div>
         )}
         {action === undefined ? null : (
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button
               data-testid="lesson-model-action"
               onClick={action.onClick}
@@ -89,12 +96,32 @@ export function LessonBanner({
                 data-testid="lesson-model-decline"
                 onClick={decline.onClick}
                 size="sm"
-                variant="ghost"
+                variant="raised"
               >
                 {decline.label}
               </Button>
             )}
           </div>
+        )}
+        {explain === undefined ? null : (
+          <>
+            <button
+              aria-controls={explainId}
+              aria-expanded={open}
+              className={`mt-1.5 inline-flex items-center gap-1 text-xs ${TEXT_ACTION_CLASS.primary}`}
+              data-testid="lesson-explain-toggle"
+              onClick={() => setOpen((was) => !was)}
+              type="button"
+            >
+              How it works
+              {open ? <ChevronUpIcon size={12} /> : <ChevronDownIcon size={12} />}
+            </button>
+            {open ? (
+              <div className="mt-2" data-testid="lesson-explain" id={explainId}>
+                {explain}
+              </div>
+            ) : null}
+          </>
         )}
       </div>
       {onSkip ? (

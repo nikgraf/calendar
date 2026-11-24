@@ -1,4 +1,5 @@
 import { LESSON_COUNT, type LessonId, lessonCopy, lessonPosition } from '@calendar/core';
+import { type ReactNode, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Glyph } from '../GroupedList.tsx';
 import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
@@ -18,6 +19,7 @@ const HINTS: Partial<Record<LessonId, string>> = {
 export function LessonBanner({
   action,
   decline,
+  explain,
   id,
   more,
   note,
@@ -26,8 +28,10 @@ export function LessonBanner({
 }: {
   /** What the note asks for (the Create lesson's download of the Assistant's model). */
   action?: { readonly label: string; readonly onPress: () => void } | undefined;
-  /** Beside the action, quieter: what goes without an optional part of it ("Without Parakeet"). */
+  /** Under the action, a smaller secondary button: the download without its optional part. */
   decline?: { readonly label: string; readonly onPress: () => void } | undefined;
+  /** Behind "How it works", closed until pressed: the whole flow the note sums up. */
+  explain?: ReactNode;
   id: LessonId;
   /** After the hint: an offer that leaves it in place (Parakeet, once the Assistant's model is here). */
   more?: string | undefined;
@@ -41,6 +45,7 @@ export function LessonBanner({
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
   const copy = lessonCopy(id, 'iphone');
+  const [open, setOpen] = useState(false);
   return (
     <View style={styles.banner} testID="lesson-banner">
       <Glyph name="sparkles" size={16} tintColor={colors.primary} weight="medium" />
@@ -81,13 +86,38 @@ export function LessonBanner({
                 accessibilityRole="button"
                 hitSlop={8}
                 onPress={decline.onPress}
-                style={({ pressed }) => [styles.decline, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
                 testID="lesson-model-decline"
               >
-                <Text style={styles.declineLabel}>{decline.label}</Text>
+                <Text style={styles.secondaryLabel}>{decline.label}</Text>
               </Pressable>
             )}
           </View>
+        )}
+        {explain === undefined ? null : (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: open }}
+              hitSlop={8}
+              onPress={() => setOpen((was) => !was)}
+              style={({ pressed }) => [styles.disclosure, pressed && styles.pressed]}
+              testID="lesson-explain-toggle"
+            >
+              <Text style={styles.disclosureLabel}>How it works</Text>
+              <Glyph
+                name={open ? 'chevron.up' : 'chevron.down'}
+                size={11}
+                tintColor={colors.primary}
+                weight="semibold"
+              />
+            </Pressable>
+            {open ? (
+              <View style={styles.explain} testID="lesson-explain">
+                {explain}
+              </View>
+            ) : null}
+          </>
         )}
       </View>
       {onSkip ? (
@@ -114,7 +144,6 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.primary,
       borderRadius: 22,
       justifyContent: 'center',
-      marginTop: 8,
       minHeight: 44,
       paddingHorizontal: 18,
     },
@@ -123,9 +152,11 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
       fontWeight: '600',
     },
-    /** The download, and the way without its optional part under it. */
+    /** The download, and the smaller one without its optional part under it. */
     actions: {
       alignItems: 'flex-start',
+      gap: 8,
+      marginTop: 8,
     },
     banner: {
       alignItems: 'flex-start',
@@ -138,14 +169,21 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 14,
       paddingVertical: 10,
     },
-    decline: {
-      justifyContent: 'center',
-      minHeight: 44,
-      paddingHorizontal: 4,
+    disclosure: {
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      gap: 4,
+      minHeight: 32,
     },
-    declineLabel: {
+    disclosureLabel: {
       color: colors.primary,
-      fontSize: 15,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    explain: {
+      paddingBottom: 4,
+      paddingTop: 6,
     },
     fill: {
       backgroundColor: colors.primary,
@@ -160,6 +198,20 @@ const makeStyles = (colors: ThemeColors) =>
     },
     pressed: {
       opacity: 0.6,
+    },
+    /** Quieter and smaller than the action: soft fill, no ink. */
+    secondary: {
+      alignItems: 'center',
+      backgroundColor: colors.fill,
+      borderRadius: 17,
+      justifyContent: 'center',
+      minHeight: 34,
+      paddingHorizontal: 14,
+    },
+    secondaryLabel: {
+      color: colors.text,
+      fontSize: 14,
+      fontWeight: '500',
     },
     skip: {
       color: colors['text-secondary'],

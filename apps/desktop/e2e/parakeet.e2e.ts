@@ -70,7 +70,7 @@ describe('Settings › Dictation › Read With Parakeet', () => {
       'Not on this Mac yet. It is a one-time download.',
     );
     expect(await settings.evaluate(($) => $.text('[data-testid="parakeet-action"]'))).toBe(
-      'Download Parakeet (712 MB)',
+      'Download Speech Model (712 MB)',
     );
 
     await settings.clickTestId('parakeet-action');
@@ -91,12 +91,46 @@ describe('Settings › Dictation › Read With Parakeet', () => {
     // Deleted while off: the download is offered again, and the switch stays off.
     await settings.clickTestId('parakeet-delete');
     await settings.waitUntil(
-      ($) => $.text('[data-testid="parakeet-action"]') === 'Download Parakeet (712 MB)',
+      ($) => $.text('[data-testid="parakeet-action"]') === 'Download Speech Model (712 MB)',
     );
     expect(
       await settings.evaluate(
         ($) => $.el<HTMLInputElement>('[data-testid="read-with-parakeet"]')!.checked,
       ),
+    ).toBe(false);
+  });
+});
+
+describe('Settings › AI Model explains the Assistant', () => {
+  let app: App;
+
+  beforeAll(async () => {
+    app = await launchApp(seed, { parakeet: 'fixture' });
+  });
+
+  afterAll(async () => {
+    await app?.stop();
+  });
+
+  it('says it runs on this Mac only, shows the steps, and downloads the speech model from its row', async () => {
+    const settings = await app.openSettings('model');
+    await settings.waitUntil(($) => $.has('[data-testid="assistant-model-section"]'));
+    expect(await settings.evaluate(($) => $.text('[data-testid="assistant-promise"]'))).toBe(
+      'The Assistant uses only models on this Mac. What you say or type never leaves it.',
+    );
+    expect(
+      await settings.evaluate(($) => $.all('[data-testid^="assistant-flow-step-"]').length),
+    ).toBe(4);
+    expect(
+      await settings.evaluate(($) => $.text('[data-testid="assistant-model-speech-status"]')),
+    ).toBe('Not on this Mac yet.');
+
+    await settings.clickTestId('assistant-model-speech-action');
+    await settings.waitUntil(
+      ($) => $.text('[data-testid="assistant-model-speech-status"]') === 'On this Mac · 712 MB',
+    );
+    expect(
+      await settings.evaluate(($) => $.has('[data-testid="assistant-model-speech-action"]')),
     ).toBe(false);
   });
 });
@@ -118,19 +152,27 @@ describe('the Create lesson offers Parakeet beside the Assistant’s model', () 
     await app?.stop();
   });
 
-  it('offers both in one button, and Without Parakeet fetches the Assistant’s alone and switches Parakeet off', async () => {
+  it('offers both models in one button, explains the flow, and the phrases model alone switches Parakeet off', async () => {
     const { cdp } = app;
     await cdp.clickTestId('getting-started-row-create');
     await cdp.waitUntil(($) => $.el('[data-testid="lesson-banner"]')?.dataset.lesson === 'create');
-    await cdp.waitUntil(
-      ($) => $.text('[data-testid="lesson-model-action"]') === 'Download Both (1.5 GB)',
-    );
-    expect(await cdp.evaluate(($) => $.text('[data-testid="lesson-banner-note"]'))).toContain(
-      'Dictation can also read with Parakeet, a speech model on this Mac',
+    await cdp.waitUntil(($) => $.text('[data-testid="lesson-model-action"]') === 'Download Models');
+    expect(await cdp.evaluate(($) => $.text('[data-testid="lesson-banner-note"]'))).toBe(
+      'The Assistant uses only models on this Mac. What you say or type never leaves it. It needs two models, a one-time download of 1.5 GB. Until then, try the demo below.',
     );
     expect(await cdp.evaluate(($) => $.text('[data-testid="lesson-model-decline"]'))).toBe(
-      'Without Parakeet',
+      'Download Only Phrases Model',
     );
+
+    // How it works: closed until asked, then the four steps.
+    expect(await cdp.evaluate(($) => $.has('[data-testid="lesson-explain"]'))).toBe(false);
+    await cdp.clickTestId('lesson-explain-toggle');
+    await cdp.waitUntil(($) => $.has('[data-testid="lesson-explain"]'));
+    expect(
+      await cdp.evaluate(
+        ($) => $.all('[data-testid="lesson-explain"] [data-testid^="assistant-flow-step-"]').length,
+      ),
+    ).toBe(4);
 
     await cdp.clickTestId('lesson-model-decline');
     // The Assistant's download was asked for (this host refuses it), and

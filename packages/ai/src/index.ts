@@ -22,6 +22,7 @@ export * from './tunedFinder.ts';
 export * from './tunedResult.ts';
 export * from './phraseReader.ts';
 export * from './assistantModel.ts';
+export * from './assistantFlow.ts';
 export * from './parakeetModel.ts';
 export * from './parakeetStore.ts';
 export * from './lessonDemo.ts';

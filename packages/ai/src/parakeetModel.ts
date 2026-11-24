@@ -1,4 +1,9 @@
-import { type AssistantDevice, type NetworkReading, sizeLabel } from './assistantModel.ts';
+import {
+  type AssistantDevice,
+  flowPromise,
+  type NetworkReading,
+  sizeLabel,
+} from './assistantModel.ts';
 
 /**
  * Parakeet, as both apps fetch and describe it: NVIDIA's speech recogniser
@@ -103,26 +108,26 @@ export const parakeetCopy = (
   switch (files.kind) {
     case 'absent':
       return {
-        action: { kind: 'download', label: `Download Parakeet (${size})` },
+        action: { kind: 'download', label: `Download Speech Model (${size})` },
         line: `Not on this ${device} yet. It is a one-time download${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
       };
     case 'downloading':
       return {
-        line: `Downloading Parakeet · ${String(percent(files.progress))} %`,
+        line: `Downloading the speech model · ${String(percent(files.progress))} %`,
         progress: percent(files.progress),
       };
     case 'waiting':
       if (files.for === 'network') {
-        return { line: 'Waiting for a connection to download Parakeet.' };
+        return { line: 'Waiting for a connection to download the speech model.' };
       }
       return network?.expensive === true || network?.constrained !== true
         ? {
             action: { kind: 'mobile', label: `Use Mobile Data (${size})` },
-            line: `Parakeet downloads when this ${device} is on Wi-Fi.`,
+            line: `The speech model downloads when this ${device} is on Wi-Fi.`,
           }
         : {
             action: { kind: 'mobile', label: `Download Now (${size})` },
-            line: 'Parakeet waits while Low Data Mode is on.',
+            line: 'The speech model waits while Low Data Mode is on.',
           };
     case 'failed':
       return {
@@ -135,8 +140,8 @@ export const parakeetCopy = (
       return {
         line:
           files.reason === 'off'
-            ? 'Parakeet is switched off in this build.'
-            : `This build cannot run Parakeet; dictation uses Apple’s recogniser.`,
+            ? 'The speech model is switched off in this build.'
+            : `This build cannot run the speech model; dictation uses Apple’s recogniser.`,
       };
   }
 };
@@ -156,21 +161,28 @@ export interface LessonOffer {
       | 'retry';
     readonly label: string;
   };
-  /** Parakeet is offered: "Without Parakeet" switches it off (Settings › Dictation can switch it on again). */
+  /**
+   * Parakeet is offered: the quieter way without it ("Download Only Phrases
+   * Model", "Skip Speech Model"), which switches it off (Settings ›
+   * Dictation can switch it on again).
+   */
   readonly decline?: string;
+  /** A download is offered: the banner's "How it works" shows the steps (`assistantFlow.ts`). */
+  readonly explain?: true;
   /** After the lesson's own hint, when the note leaves it in place (`text` absent). */
   readonly more?: string;
   readonly progress?: number;
-  /** In place of the lesson's hint: what the Assistant's model is, and Parakeet beside it. */
+  /** In place of the lesson's hint: that the Assistant runs on this device, and what it downloads. */
   readonly text?: string;
 }
 
 /**
  * The Create lesson's offer: the Assistant's model as `lessonModelCopy`
  * words it (`assistant`, absent once it was here before the lesson), and
- * Parakeet beside it while it is on and not here — optional, but in the
- * same button: Download Both. "Without Parakeet" is the person's no and
- * switches it off. Undefined when neither has anything to say.
+ * Parakeet (the speech model) beside it while it is on and not here —
+ * optional, but in the same button: Download Models. "Download Only
+ * Phrases Model" is the person's no to it and switches it off. Undefined
+ * when neither has anything to say.
  */
 export const lessonOffer = (
   assistant:
@@ -195,9 +207,33 @@ export const lessonOffer = (
     readonly network?: NetworkReading | undefined;
   },
 ): LessonOffer | undefined => {
+  const offer = lessonOfferOf(assistant, parakeet, { assistantBytes, device, network });
+  const kind = offer?.action?.kind;
+  return offer !== undefined && (kind === 'both' || kind === 'download' || kind === 'parakeet')
+    ? { ...offer, explain: true }
+    : offer;
+};
+
+const lessonOfferOf = (
+  assistant: Parameters<typeof lessonOffer>[0],
+  parakeet: ParakeetState,
+  {
+    assistantBytes,
+    device,
+    network,
+  }: {
+    readonly assistantBytes: number;
+    readonly device: AssistantDevice;
+    readonly network?: NetworkReading | undefined;
+  },
+): LessonOffer | undefined => {
   const wanted = parakeet.on && parakeet.files.kind === 'absent';
-  const line = `Dictation can also read with Parakeet, a speech model on this ${device} that writes the names and places you say better: ${sizeLabel(PARAKEET_BYTES)} more.`;
-  const decline = 'Without Parakeet';
+  const line = `The speech model spells the names and places you say better. It runs on this ${device} too: ${sizeLabel(PARAKEET_BYTES)}.`;
+  const speechAction = {
+    kind: 'parakeet',
+    label: `Download Speech Model (${sizeLabel(PARAKEET_BYTES)})`,
+  } as const;
+  const decline = 'Skip Speech Model';
   const pending =
     parakeet.on &&
     (parakeet.files.kind === 'downloading' ||
@@ -206,11 +242,7 @@ export const lessonOffer = (
   if (assistant === undefined) {
     // The lesson's own hint stays: what to try comes first, the offer after it.
     if (wanted) {
-      return {
-        action: { kind: 'parakeet', label: `Download Parakeet (${sizeLabel(PARAKEET_BYTES)})` },
-        decline,
-        more: line,
-      };
+      return { action: speechAction, decline, more: line };
     }
     if (!pending) {
       return undefined;
@@ -233,18 +265,15 @@ export const lessonOffer = (
   if (wanted && assistant.action?.kind === 'download') {
     return {
       ...assistant,
-      action: {
-        kind: 'both',
-        label: `Download Both (${sizeLabel(assistantBytes + PARAKEET_BYTES)})`,
-      },
-      decline,
-      text: `${assistant.text} ${line}`,
+      action: { kind: 'both', label: 'Download Models' },
+      decline: 'Download Only Phrases Model',
+      text: `${flowPromise(device)} It needs two models, a one-time download of ${sizeLabel(assistantBytes + PARAKEET_BYTES)}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, try the demo below.`,
     };
   }
   if (wanted && assistant.action === undefined) {
     return {
       ...assistant,
-      action: { kind: 'parakeet', label: `Download Parakeet (${sizeLabel(PARAKEET_BYTES)})` },
+      action: speechAction,
       decline,
       text: `${assistant.text} ${line}`,
     };
@@ -254,7 +283,7 @@ export const lessonOffer = (
     return {
       ...assistant,
       ...(assistant.progress === undefined ? { progress } : {}),
-      text: `${assistant.text} Parakeet: ${String(progress)} %.`,
+      text: `${assistant.text} Speech model: ${String(progress)} %.`,
     };
   }
   if (pending) {
