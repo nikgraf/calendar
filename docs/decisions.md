@@ -1663,6 +1663,17 @@ was cut (pruned 2026-11-17).
   phrase is read (#214: a thinking pause lost the next words); a session
   per phrase started again at each finish. Open: saying "undo"; an
   end-of-turn model (Smart Turn) if the pause still cuts.
+- **The live recognisers pause while a phrase is read** (2026-11-24,
+  #381) — iOS caps the recognisers an app runs at once ("Maximum number
+  of recognizers reached"): the two live ones and #377's reading beside
+  them failed every phrase on the iPhone, never on the Mac. The live ones
+  stop for the reading and start again on the audio kept meanwhile, so
+  the microphone stays open and nothing said is lost, only written a
+  moment later. If a reading still fails, the iPhone adapter finishes the
+  session and opens a new one; the module's error shows in Diagnostics.
+  Rejected: closing the microphone for the reading (the fallback alone:
+  words said meanwhile went unheard, up to Parakeet's 4 s). Open: the cap
+  itself, not documented.
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a

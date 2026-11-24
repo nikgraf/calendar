@@ -153,13 +153,18 @@ a phrase is read once more, whole, with plain SpeechTranscriber,
 alternatives kept, either with the microphone left open (`read`, which
 answers a `mark` where its audio ended; `cut` with that mark lets go of
 the phrase once it landed, and the next reading begins after it) or as
-it closes (`finish`, everything since the last cut). On the iPhone a
-`read` the module rejects (it failed on build 59 for every phrase, where
-the Mac's reads beside its live recognisers) falls back in the adapter
-(`appleSpeech.ts`): the phrase is finished and read as one, the
-microphone opens again in a new session whose words go on from the
-listening's, and that reading is kept until its `cut`, so a phrase
-that grows is read whole. A read or finish while it runs waits for
+it closes (`finish`, everything since the last cut). iOS caps the
+recognisers an app runs at once, so a `read` stops the live recognisers
+for the reading (Apple's passes only, not Parakeet's) and starts them
+again on the audio that kept arriving meanwhile: the microphone stays
+open, words said during the reading are written a moment later, and a
+recogniser that lagged is brought up to the other's words first, so its
+next word counts as new. Readings run one at a time; a finish or cancel
+closes the microphone at once and waits for one under way. Should a
+`read` still fail, the iPhone adapter (`appleSpeech.ts`) falls back:
+the phrase is finished and read as one, the microphone opens again in a
+new session whose words go on from the listening's, and that reading is
+kept until its `cut`, so a phrase that grows is read whole. A read or finish while it runs waits for
 it, and a listening ended meanwhile still gets its phrase. What the module answered is kept in
 Settings › Advanced › Diagnostics (`crashLog.ts`). Before a phrase's
 first words the session keeps only 8 s of the room, so a long wait is

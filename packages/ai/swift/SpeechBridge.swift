@@ -12,7 +12,9 @@
 // recogniser phrases were always read with, and that reading is the
 // answer: `read` while the microphone stays open (hands-free: words said
 // meanwhile are kept, and either join the phrase or begin the next one),
-// `finish` as it closes. `cut` lets go of a phrase that landed: the next
+// `finish` as it closes. While a phrase is read the live recognisers
+// stop and start again on the audio kept meanwhile (iOS caps the
+// recognisers an app runs at once). `cut` lets go of a phrase that landed: the next
 // `read` begins after it. With it the phrase is read in the user's other language too
 // (`SpeechAssets.other`): a name said the German way inside an English
 // sentence is written as English words by the English recogniser and as
@@ -190,13 +192,22 @@ enum SpeechAssets {
 /// yet let go of (`cut`), for its final reading. `append` may be called
 /// from any one thread at a time (the microphone's tap, the helper's stdin
 /// reader), in order.
+///
+/// The live recognisers stop while a phrase is read with the microphone
+/// open, and start again on the audio that came meanwhile: iOS caps the
+/// recognisers an app runs at once ("Maximum number of recognizers
+/// reached"), and the two live ones and the reading's would be three, the
+/// other language's four. The audio keeps arriving and is kept for them,
+/// so no word said during the reading goes unheard; it is written a
+/// moment later.
 final class SpeechListening: @unchecked Sendable {
   typealias Words = @Sendable (_ source: String, _ text: String) -> Void
+  typealias Read = (reading: SpeechReading, mark: AVAudioFramePosition)
 
   /// Audio kept beyond this goes, the oldest first: the app sends a
   /// phrase 60 s after its first word.
   private static let maxSeconds = 90.0
-  /// Before a phrase's first word, only this much of the room is kept: a
+  /// Before a phrase's first words, only this much of the room is kept: a
   /// hands-free listening that waited half a minute for a word must not
   /// read the half minute again. The first words are seen when a
   /// recogniser writes them, a second or so after they were said and
@@ -207,15 +218,26 @@ final class SpeechListening: @unchecked Sendable {
 
   /// The recognisers listening: "accurate", and "quick" when its assets are here.
   let sources: [String]
-  private let analyzer: SpeechAnalyzer
   private let format: AVAudioFormat
-  private let input: AsyncStream<AnalyzerInput>.Continuation
   private let locale: Locale
+  /// The quick recogniser's locale; nil when it does not listen.
+  private let quickLocale: Locale?
+  private let onWords: Words
   /// The second language as chosen (`SpeechAssets.other`): worked out when the phrase is read.
   private let other: String
-  private let readers: [Task<Void, Never>]
   private let lock = NSLock()
   private let words: WordsSeen
+  /// What each recogniser wrote, the whole listening: live recognisers
+  /// started again go on from it.
+  private let written: Written
+  /// The live recognisers running now (stopped while a phrase is read).
+  private var live: LiveRecognisers
+  /// Where the microphone's audio goes: the live recognisers', or, while a
+  /// phrase is read, the next ones'.
+  private var input: AsyncStream<AnalyzerInput>.Continuation
+  /// The reading under way with the microphone open: the next one, a
+  /// finish and a cancel wait for it, so no two read at once.
+  private var pending: Task<Read?, Error>?
   private var converter: AVAudioConverter?
   /// The phrase's audio, each block with where it began in the listening.
   private var kept: [(start: AVAudioFramePosition, buffer: AVAudioPCMBuffer)] = []
@@ -228,18 +250,20 @@ final class SpeechListening: @unchecked Sendable {
   private var open = true
 
   private init(
-    analyzer: SpeechAnalyzer, format: AVAudioFormat,
-    input: AsyncStream<AnalyzerInput>.Continuation, locale: Locale, other: String,
-    readers: [Task<Void, Never>], sources: [String], words: WordsSeen
+    format: AVAudioFormat, input: AsyncStream<AnalyzerInput>.Continuation, live: LiveRecognisers,
+    locale: Locale, onWords: @escaping Words, other: String, quickLocale: Locale?,
+    words: WordsSeen, written: Written
   ) {
-    self.sources = sources
-    self.analyzer = analyzer
+    self.sources = quickLocale == nil ? ["accurate"] : ["accurate", "quick"]
     self.format = format
     self.input = input
+    self.live = live
     self.locale = locale
+    self.onWords = onWords
     self.other = other
-    self.readers = readers
+    self.quickLocale = quickLocale
     self.words = words
+    self.written = written
   }
 
   static func start(
@@ -251,14 +275,13 @@ final class SpeechListening: @unchecked Sendable {
     guard let locale = await SpeechAssets.locale(identifier) else {
       throw SpeechBridgeError.unsupported("locale not supported: \(identifier)")
     }
-    let accurate = SpeechAssets.accurate(locale, live: true)
-    var modules: [any SpeechModule] = [accurate]
-    var quick: DictationTranscriber?
-    if let quickLocale = await DictationTranscriber.supportedLocale(equivalentTo: locale) {
-      let module = SpeechAssets.quick(quickLocale)
+    var modules: [any SpeechModule] = [SpeechAssets.accurate(locale, live: true)]
+    var quickLocale: Locale?
+    if let found = await DictationTranscriber.supportedLocale(equivalentTo: locale) {
+      let module = SpeechAssets.quick(found)
       // Not installed (prepare could not): the accurate words alone decide.
       if await AssetInventory.status(forModules: [module]) == .installed {
-        quick = module
+        quickLocale = found
         modules.append(module)
       }
     }
@@ -267,40 +290,14 @@ final class SpeechListening: @unchecked Sendable {
       throw SpeechBridgeError.failed("no audio format for the recognisers")
     }
     let (stream, input) = AsyncStream<AnalyzerInput>.makeStream()
-    let analyzer = SpeechAnalyzer(
-      modules: modules, options: .init(priority: .userInitiated, modelRetention: .lingering))
-    try await analyzer.start(inputSequence: stream)
     let seen = WordsSeen()
-    var readers = [
-      Task {
-        var done = ""
-        do {
-          for try await result in accurate.results {
-            let text = joined(done, String(result.text.characters))
-            if result.isFinal { done = text }
-            seen.mark()
-            onWords("accurate", text)
-          }
-        } catch {}
-      }
-    ]
-    if let quick {
-      readers.append(
-        Task {
-          var done = ""
-          do {
-            for try await result in quick.results {
-              let text = joined(done, String(result.text.characters))
-              if result.isFinal { done = text }
-              seen.mark()
-              onWords("quick", text)
-            }
-          } catch {}
-        })
-    }
+    let written = Written()
+    let live = try await LiveRecognisers.start(
+      locale: locale, quickLocale: quickLocale, stream: stream, written: written, seen: seen,
+      onWords: onWords)
     return SpeechListening(
-      analyzer: analyzer, format: format, input: input, locale: locale, other: other,
-      readers: readers, sources: quick == nil ? ["accurate"] : ["accurate", "quick"], words: seen)
+      format: format, input: input, live: live, locale: locale, onWords: onWords, other: other,
+      quickLocale: quickLocale, words: seen, written: written)
   }
 
   /// The other language to read the phrase in: only when its recogniser is
@@ -350,13 +347,54 @@ final class SpeechListening: @unchecked Sendable {
     }
   }
 
-  /// The phrase so far, to read while listening goes on (`readAll`):
-  /// its audio, and `mark`, where it ended. Its audio stays until `cut`.
-  func snapshot() -> (audio: KeptAudio, mark: AVAudioFramePosition) {
+  /// Reads the phrase so far, the microphone left open: its audio, and
+  /// `mark`, where it ended. Its audio stays until `cut`. Queued behind a
+  /// reading still under way; nil once the listening was closed.
+  func read() -> Task<Read?, Error> {
     lock.withLock {
-      reading = true
-      return (KeptAudio(buffers: kept.map(\.buffer)), total)
+      let before = pending
+      let task = Task { () -> Read? in
+        _ = try? await before?.value
+        return try await self.readNow()
+      }
+      pending = task
+      return task
     }
+  }
+
+  private func readNow() async throws -> Read? {
+    // The phrase's audio, and the microphone's from here on kept for the
+    // live recognisers that come next, at once: no block is in neither.
+    let taken = lock.withLock { () -> (KeptAudio, AVAudioFramePosition, LiveRecognisers, AsyncStream<AnalyzerInput>)? in
+      guard open else { return nil }
+      reading = true
+      input.finish()
+      let (stream, next) = AsyncStream<AnalyzerInput>.makeStream()
+      input = next
+      return (KeptAudio(buffers: kept.map(\.buffer)), total, live, stream)
+    }
+    guard let (audio, mark, stopped, stream) = taken else { return nil }
+    await stopped.stop()
+    // A recogniser that lagged will not write the rest of the phrase now:
+    // its next word is a new one, as the other's is.
+    for (source, text) in written.level() { onWords(source, text) }
+    let reading = try await readAll(audio.buffers) { try await self.resume(stream) }
+    return (reading, mark)
+  }
+
+  /// The live recognisers again, on the audio that came while the phrase
+  /// was read. Nothing when the listening was closed meanwhile.
+  private func resume(_ stream: AsyncStream<AnalyzerInput>) async throws {
+    guard lock.withLock({ open }) else { return }
+    let next = try await LiveRecognisers.start(
+      locale: locale, quickLocale: quickLocale, stream: stream, written: written, seen: words,
+      onWords: onWords)
+    let late = lock.withLock { () -> Bool in
+      guard open else { return true }
+      live = next
+      return false
+    }
+    if late { await next.stop() }
   }
 
   /// The phrase read up to `mark` landed: its audio goes, and the next
@@ -374,25 +412,40 @@ final class SpeechListening: @unchecked Sendable {
   }
 
   /// Stops listening and reads the phrase once more, whole, and in the
-  /// other language beside it. No segments when nothing was said.
+  /// other language beside it. No segments when nothing was said. A
+  /// reading under way ends first: the recognisers run one reading at a time.
   func finish() async throws -> SpeechReading {
-    let audio = close()
-    await analyzer.cancelAndFinishNow()
-    for reader in readers { reader.cancel() }
+    let (audio, before) = close()
+    _ = try? await before?.value
+    await lock.withLock { live }.stop()
     return try await readAll(audio)
   }
 
   /// Reads audio once more, whole, in the other language beside it, and
   /// with Parakeet when dictation reads with it. No segments when nothing
-  /// was said.
-  func readAll(_ audio: [AVAudioPCMBuffer]) async throws -> SpeechReading {
-    guard !audio.isEmpty else { return SpeechReading(other: nil, segments: []) }
+  /// was said. `appleDone` runs once Apple's recognisers are done with it
+  /// (they are capped, Parakeet is not), whether or not they read it.
+  func readAll(
+    _ audio: [AVAudioPCMBuffer], appleDone: (@Sendable () async throws -> Void)? = nil
+  ) async throws -> SpeechReading {
+    guard !audio.isEmpty else {
+      try await appleDone?()
+      return SpeechReading(other: nil, segments: [])
+    }
     // The passes only read the audio, at the same time.
     let kept = KeptAudio(buffers: audio)
-    async let second = Self.readOther(kept, than: locale, chosen: other, format: format)
     async let third = readWithParakeet(kept.buffers, locale: locale)
-    let segments = try await Self.read(kept, locale: locale)
+    async let second = Self.readOther(kept, than: locale, chosen: other, format: format)
+    let segments: [SpeechSegment]
+    do {
+      segments = try await Self.read(kept, locale: locale)
+    } catch {
+      _ = await second
+      try await appleDone?()
+      throw error
+    }
     let other = await second
+    try await appleDone?()
     let parakeet = await third
     guard !segments.isEmpty else { return SpeechReading(other: nil, segments: []) }
     return SpeechReading(
@@ -401,20 +454,21 @@ final class SpeechListening: @unchecked Sendable {
 
   /// Stops listening and drops the phrase.
   func cancel() async {
-    _ = close()
-    await analyzer.cancelAndFinishNow()
-    for reader in readers { reader.cancel() }
+    let (_, before) = close()
+    _ = try? await before?.value
+    await lock.withLock { live }.stop()
   }
 
-  /// No more audio in; hands back what was kept, and keeps none of it.
-  private func close() -> [AVAudioPCMBuffer] {
+  /// No more audio in; hands back what was kept, and keeps none of it, and
+  /// the reading still under way.
+  private func close() -> ([AVAudioPCMBuffer], Task<Read?, Error>?) {
     lock.withLock {
       open = false
       input.finish()
       let audio = kept.map(\.buffer)
       kept = []
       keptFrames = 0
-      return audio
+      return (audio, pending)
     }
   }
 
@@ -474,6 +528,102 @@ final class SpeechListening: @unchecked Sendable {
       await analyzer.cancelAndFinishNow()
     }
     return try await collect.value
+  }
+}
+
+/// The live recognisers of a listening: one analyzer with the accurate
+/// recogniser, and the quick one when it listens, on the microphone's
+/// audio; their words go out as they change, each recogniser's text
+/// everything it wrote since the listening began (`written`).
+private struct LiveRecognisers: @unchecked Sendable {
+  let analyzer: SpeechAnalyzer
+  let readers: [Task<Void, Never>]
+
+  static func start(
+    locale: Locale, quickLocale: Locale?, stream: AsyncStream<AnalyzerInput>, written: Written,
+    seen: WordsSeen, onWords: @escaping SpeechListening.Words
+  ) async throws -> LiveRecognisers {
+    let accurate = SpeechAssets.accurate(locale, live: true)
+    var modules: [any SpeechModule] = [accurate]
+    var quick: DictationTranscriber?
+    if let quickLocale {
+      let module = SpeechAssets.quick(quickLocale)
+      quick = module
+      modules.append(module)
+    }
+    let analyzer = SpeechAnalyzer(
+      modules: modules, options: .init(priority: .userInitiated, modelRetention: .lingering))
+    try await analyzer.start(inputSequence: stream)
+    // Each goes on from what its recogniser wrote before (an earlier pass).
+    var readers = [
+      Task {
+        var done = written.text("accurate")
+        do {
+          for try await result in accurate.results {
+            let text = joined(done, String(result.text.characters))
+            if result.isFinal { done = text }
+            written.set("accurate", text)
+            seen.mark()
+            onWords("accurate", text)
+          }
+        } catch {}
+      }
+    ]
+    if let quick {
+      readers.append(
+        Task {
+          var done = written.text("quick")
+          do {
+            for try await result in quick.results {
+              let text = joined(done, String(result.text.characters))
+              if result.isFinal { done = text }
+              written.set("quick", text)
+              seen.mark()
+              onWords("quick", text)
+            }
+          } catch {}
+        })
+    }
+    return LiveRecognisers(analyzer: analyzer, readers: readers)
+  }
+
+  /// Stops them; once this returns, they write nothing more.
+  func stop() async {
+    await analyzer.cancelAndFinishNow()
+    for reader in readers {
+      reader.cancel()
+      await reader.value
+    }
+  }
+}
+
+/// What each recogniser of a listening wrote so far, across its passes.
+private final class Written: @unchecked Sendable {
+  private let lock = NSLock()
+  private var texts: [String: String] = [:]
+
+  func text(_ source: String) -> String {
+    lock.withLock { texts[source] ?? "" }
+  }
+
+  func set(_ source: String, _ text: String) {
+    lock.withLock { texts[source] = text }
+  }
+
+  /// Every recogniser that wrote any words is brought up to the one that
+  /// wrote the most (the accurate one writes in bursts, behind the quick
+  /// one); answers the ones raised.
+  func level() -> [(String, String)] {
+    lock.withLock {
+      let count = { (text: String) in text.split(whereSeparator: \.isWhitespace).count }
+      guard let longest = texts.values.max(by: { count($0) < count($1) }) else { return [] }
+      var raised: [(String, String)] = []
+      for (source, text) in texts where !text.isEmpty && count(text) < count(longest) {
+        texts[source] = longest
+        raised.append((source, longest))
+      }
+      return raised
+    }
   }
 }
 
@@ -580,23 +730,22 @@ final class SpeechSessions: @unchecked Sendable {
   }
 
   /// A reading of the phrase so far, the microphone left open; nil when
-  /// `id` is not the listening (dropped, or replaced). Only taking its
-  /// audio is queued with the other steps: the reading runs beside them,
-  /// so a cancel or a finish (and the microphone closing with it) never
-  /// waits for it.
-  func read(id: Int) -> Task<(reading: SpeechReading, mark: AVAudioFramePosition)?, Error> {
-    let taken = serial { () -> (SpeechListening, KeptAudio, AVAudioFramePosition)? in
+  /// `id` is not the listening (dropped, or replaced). Only starting it is
+  /// queued with the other steps: the reading runs beside them, so a
+  /// cancel or a finish closes the microphone at once, and the listening
+  /// then waits for the reading before it reads or stops.
+  func read(id: Int) -> Task<SpeechListening.Read?, Error> {
+    let taken = serial { () -> Task<SpeechListening.Read?, Error>? in
       guard
         let listening = self.lock.withLock({
           self.current?.id == id ? self.current?.listening : nil
         })
       else { return nil }
-      let (audio, mark) = listening.snapshot()
-      return (listening, audio, mark)
+      return listening.read()
     }
     return Task {
-      guard let (listening, audio, mark) = try await taken.value else { return nil }
-      return (try await listening.readAll(audio.buffers), mark)
+      guard let reading = try await taken.value else { return nil }
+      return try await reading.value
     }
   }
 
