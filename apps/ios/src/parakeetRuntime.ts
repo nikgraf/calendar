@@ -184,6 +184,12 @@ export const startParakeet = (): void => {
   if (begun) {
     void current.store.boot();
   }
+  // iOS warned of memory: the models go, as the Assistant's context does.
+  appState?.addEventListener('memoryWarning', () => {
+    void loadParakeet()
+      ?.parakeetRelieve()
+      .catch(() => undefined);
+  });
   appState?.addEventListener('change', (state) => {
     if (state === 'background') {
       // As the Assistant's model does: the next phrase loads it again.

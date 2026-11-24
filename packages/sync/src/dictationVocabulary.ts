@@ -18,7 +18,8 @@ const read = new WeakMap<object, { at: number; vocabulary: DictationVocabulary }
  * The names dictation's Parakeet listens for (`dictationVocabulary` in
  * core): read from a year of events and both address books, at most once
  * per `VOCABULARY_TTL_MS`. A store that cannot be read gives no names
- * from it; dictation goes on with the rest.
+ * from it; dictation goes on with the rest, and the next phrase reads
+ * again (a failed read is never kept).
  */
 export const loadDictationVocabulary = Effect.gen(function* () {
   const now = yield* Clock.currentTimeMillis;
@@ -27,12 +28,20 @@ export const loadDictationVocabulary = Effect.gen(function* () {
   if (known && now - known.at < VOCABULARY_TTL_MS) {
     return known.vocabulary;
   }
+  let whole = true;
+  const orNothing = <A>(fallback: A) =>
+    Effect.orElseSucceed(() => {
+      whole = false;
+      return fallback;
+    });
   const events = yield* loadEventsInRange(now - VOCABULARY_HISTORY_MS, now).pipe(
-    Effect.orElseSucceed((): ReadonlyArray<EventRecord> => []),
+    orNothing<ReadonlyArray<EventRecord>>([]),
   );
-  const google = yield* (yield* ContactRepo).listAll().pipe(Effect.orElseSucceed(() => []));
-  const device = yield* (yield* DeviceContacts).list().pipe(Effect.orElseSucceed(() => []));
+  const google = yield* (yield* ContactRepo).listAll().pipe(orNothing([]));
+  const device = yield* (yield* DeviceContacts).list().pipe(orNothing([]));
   const vocabulary = dictationVocabulary(events, [...google, ...device]);
-  read.set(store, { at: now, vocabulary });
+  if (whole) {
+    read.set(store, { at: now, vocabulary });
+  }
   return vocabulary;
 });

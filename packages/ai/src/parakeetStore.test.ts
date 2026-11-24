@@ -64,6 +64,11 @@ const fakePort = (
     background: () => {
       active = false;
     },
+    cancelLate: () => {
+      const cancelled = finish;
+      finish = undefined;
+      setTimeout(() => cancelled?.(false), 5);
+    },
     choice: () => choice,
     downloads: () => downloads,
     finish: async (ok: boolean) => {
@@ -199,6 +204,24 @@ describe('createParakeetStore', () => {
     await store.setOn(false);
     await store.vocabulary(['Kaffemik']);
     expect(fake.prepared()).toBe(1);
+  });
+
+  it('starts again at once when the network comes back before the cancel lands', async () => {
+    const fake = fakePort({ path: WIFI });
+    // The cancel takes the download under way at once; its rejection lands later.
+    const slowCancel = { ...fake.port, cancel: fake.cancelLate };
+    const store = createParakeetStore({ port: slowCancel, supported: true });
+    await store.boot();
+    void store.download('wifi');
+    await tick();
+    fake.moveTo(MOBILE);
+    expect(store.getState().files.kind).toBe('waiting');
+    fake.moveTo(WIFI);
+    expect(store.getState().files.kind).toBe('downloading');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // The first download's late end is neither the answer nor a failure: the second runs on.
+    expect(store.getState().files.kind).toBe('downloading');
+    expect(fake.downloads()).toBe(2);
   });
 
   it('does nothing where the build has no Parakeet', async () => {

@@ -84,6 +84,18 @@ actor ParakeetEngine {
   ]
   /// Ultra's share of the whole download, for one progress over both.
   private static let ultraShare = 613.0 / 712.0
+  /// The languages Parakeet TDT 0.6B v3 was trained on (NVIDIA's model
+  /// card), which Ultra keeps: a phrase listened to in another is Apple's
+  /// alone. Measured on Nik's recordings in English and German (#378).
+  private static let languages: Set<String> = [
+    "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it", "lt", "lv",
+    "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
+  ]
+
+  static func reads(_ locale: Locale) -> Bool {
+    locale.language.languageCode.map { languages.contains($0.identifier) } ?? false
+  }
+
   /// How long a phrase's answer waits for Parakeet before it goes without it.
   static let readLimit: Duration = .seconds(4)
 
@@ -94,6 +106,12 @@ actor ParakeetEngine {
   private var ctc: CtcModels?
   private var session: VocabularyBoostingSession?
   private var warming: Task<Void, Never>?
+  /// The one load of the model under way: every phrase that needs it waits for it.
+  private var loading: (version: AsrModelVersion, generation: Int, task: Task<Void, Error>)?
+  /// The one build of the vocabulary's spotter under way.
+  private var spotting: Task<Void, Error>?
+  /// Moves on whenever the models are let go: a load that ends after that keeps nothing.
+  private var generation = 0
 
   /// Where the files live: the iOS app's caches, the Mac app's profile.
   func configure(folder: URL) {
@@ -162,6 +180,7 @@ actor ParakeetEngine {
     if next != terms {
       terms = next
       session = nil
+      spotting = nil
     }
   }
 
@@ -193,44 +212,86 @@ actor ParakeetEngine {
     return (loaded.asr, loaded.models)
   }
 
-  /// The model loaded, with the vocabulary's spotter when there are terms.
+  /// The model loaded, with the vocabulary's spotter when there are terms:
+  /// one load at a time, which every phrase that needs it waits for, and
+  /// none that outlives `releaseModels`.
   private func prepare(_ version: AsrModelVersion) async throws -> (AsrManager, AsrModels) {
-    if let current = try? ready(version) {
-      try await vocabularySession()
-      return current
+    let started = generation
+    if (try? ready(version)) == nil {
+      if loading?.version != version || loading?.generation != started {
+        guard let folder else { throw ParakeetBridgeError.notConfigured }
+        let directory = folder.appendingPathComponent(
+          AsrModels.defaultCacheDirectory(for: version).lastPathComponent, isDirectory: true)
+        guard AsrModels.modelsExist(at: directory, version: version) else {
+          throw ParakeetBridgeError.notHere
+        }
+        loading = (
+          version, started, Task { try await self.load(version, from: directory, generation: started) }
+        )
+      }
+      if let task = loading?.task {
+        try await task.value
+      }
     }
-    guard let folder else { throw ParakeetBridgeError.notConfigured }
-    let directory = folder.appendingPathComponent(
-      AsrModels.defaultCacheDirectory(for: version).lastPathComponent, isDirectory: true)
-    guard AsrModels.modelsExist(at: directory, version: version) else {
+    guard generation == started, let current = try? ready(version) else {
       throw ParakeetBridgeError.notHere
+    }
+    try await vocabularySession(generation: started)
+    return current
+  }
+
+  private func load(_ version: AsrModelVersion, from directory: URL, generation started: Int)
+    async throws
+  {
+    defer {
+      if loading?.generation == started && loading?.version == version { loading = nil }
     }
     let models = try await AsrModels.load(from: directory, version: version)
     let asr = AsrManager(config: .default)
     try await asr.loadModels(models)
+    // Let go of meanwhile (switched off, deleted, the app left): nothing is kept.
+    guard generation == started else { return }
     loaded = (version, asr, models)
-    try await vocabularySession()
-    return (asr, models)
   }
 
-  private func vocabularySession() async throws {
+  /// The vocabulary's spotter for the terms now: built once, which every
+  /// phrase that needs it waits for.
+  private func vocabularySession(generation started: Int) async throws {
     guard session == nil, !terms.isEmpty else { return }
+    let task: Task<Void, Error>
+    if let spotting {
+      task = spotting
+    } else {
+      let wanted = terms
+      task = Task { try await self.buildSession(for: wanted, generation: started) }
+      spotting = task
+    }
+    defer { if spotting == task { spotting = nil } }
+    try await task.value
+  }
+
+  private func buildSession(for wanted: [String], generation started: Int) async throws {
     if ctc == nil {
       let (_, directory) = try paths()
       guard CtcModels.modelsExist(at: directory) else { return }
-      ctc = try await CtcModels.load(from: directory, variant: .ctc110m)
+      let models = try await CtcModels.load(from: directory, variant: .ctc110m)
+      guard generation == started else { return }
+      ctc = models
     }
     guard let ctc else { return }
-    session = try await VocabularyBoostingSession(
-      vocabulary: CustomVocabularyContext(terms: terms.map { CustomVocabularyTerm(text: $0) }),
+    let built = try await VocabularyBoostingSession(
+      vocabulary: CustomVocabularyContext(terms: wanted.map { CustomVocabularyTerm(text: $0) }),
       ctcModels: ctc)
+    // Other names came meanwhile: the next phrase builds theirs.
+    guard generation == started, terms == wanted else { return }
+    session = built
   }
 
   /// A finished phrase as Parakeet reads it, when dictation reads with it
   /// and the models are here: nil otherwise, and nil on any failure (the
   /// answer goes on with Apple's reading then).
-  func readPhrase(_ buffers: [AVAudioPCMBuffer]) async -> ParakeetReading? {
-    guard on, !buffers.isEmpty,
+  func readPhrase(_ buffers: [AVAudioPCMBuffer], locale: Locale) async -> ParakeetReading? {
+    guard on, !buffers.isEmpty, Self.reads(locale),
       let model = try? await prepare(.ultra),
       let samples = try? Self.samples(of: buffers), !samples.isEmpty
     else { return nil }
@@ -313,8 +374,11 @@ actor ParakeetEngine {
   }
 
   private func releaseModels() {
+    generation += 1
     warming?.cancel()
     warming = nil
+    loading = nil
+    spotting = nil
     loaded = nil
     ctc = nil
     session = nil
@@ -386,15 +450,16 @@ actor ParakeetEngine {
 }
 
 /// `readPhrase`, or nil once `limit` has passed: the answer does not wait
-/// longer for Parakeet (its pass goes on, and the next phrase queues behind it).
-func readWithParakeet(_ buffers: [AVAudioPCMBuffer]) async -> ParakeetReading? {
+/// longer for Parakeet (its pass goes on, and the engine reads the next
+/// phrase beside it).
+func readWithParakeet(_ buffers: [AVAudioPCMBuffer], locale: Locale) async -> ParakeetReading? {
   let kept = ParakeetAudio(buffers: buffers)
   let answered = ParakeetOnce()
   // Unstructured on purpose: a task group would wait for the Core ML pass,
   // which does not stop when cancelled, and the limit would mean nothing.
   return await withCheckedContinuation { (done: CheckedContinuation<ParakeetReading?, Never>) in
     Task {
-      let reading = await ParakeetEngine.shared.readPhrase(kept.buffers)
+      let reading = await ParakeetEngine.shared.readPhrase(kept.buffers, locale: locale)
       if answered.take() { done.resume(returning: reading) }
     }
     Task {

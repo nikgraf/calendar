@@ -111,10 +111,14 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
   const { port } = deps;
   let choice: ParakeetChoice = PARAKEET_DEFAULT;
   let terms: ReadonlyArray<string> = [];
-  /** The download under way, so a second ask joins it and a cancel is told from a failure. */
+  /** The download under way, so a second ask joins it. */
   let running: Promise<void> | undefined;
-  /** Stopped on purpose (the network, the switch, a delete): not a failure. */
-  let stopped = false;
+  /**
+   * Which download counts: one stopped on purpose (the network, the switch,
+   * a delete) is no longer it, so its late end is neither a failure nor a
+   * success, and a new one can start before the cancel lands.
+   */
+  let current = 0;
   /** Cut by the background: goes on with `resume`. */
   let paused = false;
   let watching: (() => void) | undefined;
@@ -155,27 +159,33 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
     if (running !== undefined) {
       return running;
     }
-    stopped = false;
+    current += 1;
+    const mine = current;
     paused = false;
     set({ files: { kind: 'downloading', progress: progressOf(state.files) } });
     running = port
       .download((fraction) => {
-        if (state.files.kind === 'downloading') {
+        if (mine === current && state.files.kind === 'downloading') {
           set({ files: { kind: 'downloading', progress: fraction } });
         }
       })
-      .then(settle, (error: unknown) => {
-        if (stopped) {
-          return;
-        }
-        if (port.active !== undefined && !port.active()) {
-          paused = true;
-          return;
-        }
-        set({ files: { kind: 'failed', message: messageOf(error) } });
-      })
+      .then(
+        () => (mine === current ? settle() : undefined),
+        (error: unknown) => {
+          if (mine !== current) {
+            return;
+          }
+          if (port.active !== undefined && !port.active()) {
+            paused = true;
+            return;
+          }
+          set({ files: { kind: 'failed', message: messageOf(error) } });
+        },
+      )
       .finally(() => {
-        running = undefined;
+        if (mine === current) {
+          running = undefined;
+        }
       });
     return running;
   };
@@ -193,7 +203,8 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
 
   const stop = () => {
     if (running !== undefined) {
-      stopped = true;
+      current += 1;
+      running = undefined;
       port.cancel();
     }
   };

@@ -390,7 +390,7 @@ final class SpeechListening: @unchecked Sendable {
     // The passes only read the audio, at the same time.
     let kept = KeptAudio(buffers: audio)
     async let second = Self.readOther(kept, than: locale, chosen: other, format: format)
-    async let third = readWithParakeet(kept.buffers)
+    async let third = readWithParakeet(kept.buffers, locale: locale)
     let segments = try await Self.read(kept, locale: locale)
     let other = await second
     let parakeet = await third
