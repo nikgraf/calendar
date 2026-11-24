@@ -115,11 +115,9 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
       fontWeight: '600',
     },
+    /** The download, and the way without its optional part under it. */
     actions: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 14,
+      alignItems: 'flex-start',
     },
     banner: {
       alignItems: 'flex-start',
@@ -134,8 +132,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     decline: {
       justifyContent: 'center',
-      marginTop: 8,
       minHeight: 44,
+      paddingHorizontal: 4,
     },
     declineLabel: {
       color: colors.primary,
