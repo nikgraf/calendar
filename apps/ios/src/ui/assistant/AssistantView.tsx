@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { AssistantCard } from './AssistantCard.tsx';
+import { ConversationHoldContext } from './conversationHold.ts';
 import { DraftQuestions } from './DraftQuestions.tsx';
 import { SwitchAnchorContext } from './useViewSwitch.ts';
 
@@ -332,6 +333,12 @@ export function AssistantView({
   // once the rows fit again, which left them scrolled half out of view
   // above an empty stretch, so the offset is set outright.
   const sizes = useRef({ content: 0, view: 0 });
+  // The banner's "How it works" grew or shrank the content: the reader
+  // stays where they are (`ConversationHoldContext`).
+  const held = useRef(false);
+  const hold = () => {
+    held.current = true;
+  };
   const toEnd = (animated: boolean) => {
     const { content, view } = sizes.current;
     scroller.current?.scrollTo({ animated, y: Math.max(content - view, 0) });
@@ -364,6 +371,10 @@ export function AssistantView({
       keyboardShouldPersistTaps="handled"
       onContentSizeChange={(_width, height) => {
         sizes.current.content = height;
+        if (held.current) {
+          held.current = false;
+          return;
+        }
         toEnd(true);
       }}
       onLayout={(event) => {
@@ -378,7 +389,7 @@ export function AssistantView({
       style={styles.thread}
       testID="assistant-thread"
     >
-      {banner}
+      <ConversationHoldContext value={hold}>{banner}</ConversationHoldContext>
       {unavailable ? <View testID="assistant-unavailable">{notice}</View> : null}
       {!started && assistant === 'new' && !pending && !unavailable ? (
         <View style={styles.empty} testID={demo ? 'assistant-demo-empty' : undefined}>

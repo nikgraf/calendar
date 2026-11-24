@@ -1,11 +1,13 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-export type ButtonVariant = 'danger' | 'ghost' | 'primary' | 'secondary';
+export type ButtonVariant = 'danger' | 'ghost' | 'primary' | 'raised' | 'secondary';
 
 const VARIANT: Record<ButtonVariant, string> = {
   danger: 'text-danger hover:bg-fill',
   ghost: 'text-ink-secondary hover:bg-fill hover:text-ink',
   primary: 'bg-primary text-on-primary hover:bg-primary-hover',
+  /** The secondary on a surface already drawn in `fill` (the lesson banner). */
+  raised: 'bg-surface-raised text-ink hover:bg-hairline',
   secondary: 'bg-fill text-ink hover:bg-hairline',
 };
 
@@ -15,9 +17,10 @@ const SIZE = {
 } as const;
 
 /**
- * A text button in one of the four roles the design uses: the one filled
- * ink action of a surface, a soft-filled secondary, a quiet ghost, and a
- * red-text destructive one. Always `type="button"` unless told otherwise.
+ * A text button in one of the roles the design uses: the one filled ink
+ * action of a surface, a soft-filled secondary (`raised` on a surface
+ * already drawn in `fill`), a quiet ghost, and a red-text destructive
+ * one. Always `type="button"` unless told otherwise.
  */
 export function Button({
   children,

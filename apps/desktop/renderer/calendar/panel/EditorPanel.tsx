@@ -4,6 +4,7 @@ import {
   lessonDemoModel,
   lessonModelCopy,
   lessonOffer,
+  PARAKEET_BYTES,
   PUBLISHED_MODEL,
   tunedReader,
 } from '@calendar/ai';
@@ -42,6 +43,7 @@ import { Button } from '../../ui/Button.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
 import { RedoIcon, UndoIcon, VideoIcon, XIcon } from '../../ui/icons.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
+import { AssistantFlow } from '../assistant/AssistantFlow.tsx';
 import { AssistantView } from '../assistant/AssistantView.tsx';
 import { EventEditorForm } from '../EventEditorForm.tsx';
 import { DiscardConfirm } from '../DiscardConfirm.tsx';
@@ -63,9 +65,10 @@ const demoReader = tunedReader(lessonDemoModel);
 
 /**
  * The banner's action: download the Assistant's model (the person agrees),
- * Parakeet beside it (`both`) or alone, or try again. "Without Parakeet"
- * (`decline`) still fetches the Assistant's model when it was offered too,
- * and switches Parakeet off.
+ * Parakeet beside it (`both`, Download Models) or alone, or try again.
+ * "Download Only Phrases Model" (`decline`) still fetches the Assistant's
+ * model, and switches Parakeet off, as "Skip Speech Model"
+ * (`decline-parakeet`) does alone.
  */
 const runModelAction = (
   kind:
@@ -150,6 +153,14 @@ function LessonFrame({
         copy !== undefined && 'decline' in copy && copy.decline !== undefined
           ? { label: copy.decline, onClick: () => runModelAction(declined) }
           : undefined
+      }
+      explain={
+        copy !== undefined && 'explain' in copy && copy.explain === true ? (
+          <AssistantFlow
+            compact
+            sizes={{ phrases: PUBLISHED_MODEL.bytes, speech: PARAKEET_BYTES }}
+          />
+        ) : undefined
       }
       id={id}
       more={copy !== undefined && 'more' in copy ? copy.more : undefined}

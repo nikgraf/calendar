@@ -183,8 +183,8 @@ export const holdParakeetForSpike = (on: boolean): void => {
 /**
  * At launch (from CalendarScreen): the choice kept and the files found,
  * once the app is in front; a download the background cut goes on when it
- * is back. Nothing is asked here: the Create lesson and Settings ›
- * Dictation offer the download.
+ * is back. Nothing is asked here: the Create lesson, Settings › Dictation
+ * and Settings › Assistant offer the download.
  */
 export const startParakeet = (): void => {
   const current = runtime();

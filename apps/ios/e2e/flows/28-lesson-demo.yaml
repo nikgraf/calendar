@@ -69,7 +69,7 @@ tags:
           timeout: 10000
       - assertVisible:
           id: 'lesson-banner-note'
-          text: '.*a small model trained on calendar phrases, running on this iPhone.*'
+          text: '.*only with models on this iPhone, never with an AI in the cloud.*'
       - extendedWaitUntil:
           visible:
             id: 'quick-add-demo-phrase'

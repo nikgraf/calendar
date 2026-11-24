@@ -319,8 +319,8 @@ export const releaseAssistantModel = (): Promise<void> => runtime().model.leave(
  * At launch (from CalendarScreen): picks up a transfer and a file the last
  * launch left, once the app is in front; lets the model go when the app
  * leaves the screen, and when iOS warns of memory. Nothing is asked here:
- * the Getting started card's Create lesson and the Assistant's notice
- * offer the download.
+ * the Getting started card's Create lesson, Settings › Assistant and the
+ * Assistant's notice offer the download.
  */
 export const startAssistantModel = (): void => {
   const current = runtime();

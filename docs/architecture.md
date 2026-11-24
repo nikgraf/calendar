@@ -49,7 +49,8 @@ and fills a form's defaults without reading the words. The answer has a
 day only where the words gave one: a first phrase without one lands on
 the day on show, a later turn keeps the draft's. Each device downloads
 the model once, when the person asks for it (the Create lesson's
-banner, the Assistant's notice, the Mac's Settings › AI Model; nothing
+banner, the Assistant's notice, iOS Settings › Assistant, the Mac's
+Settings › AI Model; nothing
 asks at launch; a new version is offered as an update where an earlier
 one was agreed to), checks its size and SHA-256, and loads it on the
 first question. The
