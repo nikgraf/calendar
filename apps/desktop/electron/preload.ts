@@ -106,6 +106,24 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('model:providerChanged', wrapped);
     return () => ipcRenderer.off('model:providerChanged', wrapped);
   },
+  /** Where Parakeet stands (parakeetModel.ts): the state now, then every change. */
+  onParakeet: (listener: (state: unknown) => void) => {
+    let changed = false;
+    const wrapped = (_event: unknown, state: unknown) => {
+      changed = true;
+      listener(state);
+    };
+    ipcRenderer.on('parakeet:changed', wrapped);
+    void ipcRenderer.invoke('parakeet:state').then(
+      (state: unknown) => {
+        if (!changed) {
+          listener(state);
+        }
+      },
+      () => undefined,
+    );
+    return () => ipcRenderer.off('parakeet:changed', wrapped);
+  },
   /**
    * Event reminders clicked in Notification Center: the one waiting at
    * subscription (it may have opened this window), then one per click.
@@ -169,7 +187,15 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   },
   /** Opens a Getting started lesson in the calendar window (Settings › Getting Started › Open). */
   openLesson: (id: string) => ipcRenderer.invoke('lesson:open', id),
+  /** Fetches Parakeet and switches it on (Settings › Dictation, the Create lesson). */
+  parakeetDownload: () => ipcRenderer.invoke('parakeet:download', 'any'),
+  parakeetRemove: () => ipcRenderer.invoke('parakeet:remove'),
+  parakeetRetry: () => ipcRenderer.invoke('parakeet:retry'),
+  parakeetSetOn: (on: boolean) => ipcRenderer.invoke('parakeet:set-on', on),
+  /** The names dictation listens for as a phrase starts. */
   openSettings: (pane?: string) => ipcRenderer.invoke('settings:open', pane),
+  parakeetVocabulary: (terms: ReadonlyArray<string>) =>
+    ipcRenderer.invoke('parakeet:vocabulary', terms),
   privacyGet: () => ipcRenderer.invoke('privacy:get'),
   privacySet: (choice: string) => ipcRenderer.invoke('privacy:set', choice),
   remindersStatus: () => ipcRenderer.invoke('reminders:status'),

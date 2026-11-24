@@ -154,6 +154,11 @@ export const appleSpeech: SpeechToText = {
     if (signal?.aborted) {
       return undefined;
     }
+    // Parakeet's names for this phrase, read meanwhile: the phrase is read
+    // seconds later. Loaded on first use: it reaches the backend.
+    void import('./parakeetRuntime.ts')
+      .then(({ beforeListening }) => beforeListening())
+      .catch(() => undefined);
     sessions += 1;
     const session = sessions;
     // Subscribed before the microphone opens: no word arrives unheard.

@@ -35,6 +35,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { startAssistantModel } from '../assistantRuntime.ts';
+import { startParakeet } from '../parakeetRuntime.ts';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
 import { markLaunch } from '../launchTiming.ts';
@@ -85,6 +86,7 @@ export function CalendarScreen() {
     // The Assistant's model: picked up where the last launch left it. The
     // Create lesson and the Assistant's notice offer the download.
     startAssistantModel();
+    startParakeet();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         kickSync();

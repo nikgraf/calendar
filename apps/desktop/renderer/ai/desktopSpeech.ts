@@ -158,6 +158,11 @@ export const desktopSpeech: SpeechToText = {
     if (signal?.aborted) {
       return undefined;
     }
+    // Parakeet's names for this phrase, read meanwhile: the phrase is read
+    // seconds later. Loaded on first use: it reaches the backend's rpc.
+    void import('./parakeetModel.ts')
+      .then(({ beforeListening }) => beforeListening())
+      .catch(() => undefined);
     let stream: MediaStream;
     // Chromium's own voice processing, as Settings › Dictation asks.
     const processed = noiseReduction.get();

@@ -1310,6 +1310,13 @@ export interface LaunchOptions {
    */
   readonly onboarding?: 'off' | 'on';
   /**
+   * 'off' (default): Parakeet is left out of dictation and Settings —
+   * nothing offered, fetched or loaded (`CALENDAR_PARAKEET=off`).
+   * 'fixture': kept in memory, its download done at once and nothing
+   * loaded, for the specs of Settings › Dictation and the Create lesson.
+   */
+  readonly parakeet?: 'fixture' | 'off';
+  /**
    * 'off' (default): no EventKit. 'real': the helper. A fixture uses the
    * in-memory Reminders client so mutation e2e tests never touch personal data.
    */
@@ -1581,6 +1588,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
         CALENDAR_AGENT_SOCKET: agentSocketPath,
         // The Assistant's own model: off unless a spec points it at a file.
         ...assistantModelEnv(options.assistantModel),
+        CALENDAR_PARAKEET: options.parakeet ?? 'off',
         // No camera, no TCC prompt, unless a spec stands one in.
         CALENDAR_CAMERA: options.camera ? 'fixture' : 'off',
         ...(options.camera ? { CALENDAR_CAMERA_CODE: options.camera.code } : {}),
