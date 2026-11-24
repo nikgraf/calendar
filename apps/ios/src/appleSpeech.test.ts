@@ -29,6 +29,8 @@ const native = vi.hoisted(() => {
     prepareError: undefined as Error | undefined,
     /** Set: `read` rejects with it, as it does on an iPhone beside the live recognisers. */
     readError: undefined as Error | undefined,
+    /** What each read does in turn, before `readError` applies: wait, then fail or answer. */
+    readPlan: [] as Array<{ error?: Error; held?: Promise<void> }>,
     /** The phrases `finish` answers in turn; `finishes` once they ran out. */
     finishQueue: [] as Array<{
       other?: string;
@@ -91,7 +93,13 @@ vi.mock('expo', () => ({
       },
       read: async (session: number) => {
         native.calls.push(`read ${session}`);
-        if (native.readError) {
+        const plan = native.readPlan.shift();
+        if (plan) {
+          await plan.held;
+          if (plan.error) {
+            throw plan.error;
+          }
+        } else if (native.readError) {
           throw native.readError;
         }
         if (native.gone.has(session)) {
@@ -192,6 +200,7 @@ beforeEach(() => {
   native.microphone = true;
   native.prepareError = undefined;
   native.readError = undefined;
+  native.readPlan.length = 0;
   native.finishQueue.length = 0;
   native.finishError = undefined;
   native.finishHeld = undefined;
@@ -603,6 +612,32 @@ describe('appleSpeech', () => {
         'cut 2 0',
         'cancel 2',
       ]);
+    });
+
+    it('never brings back a phrase another reading sent while its own read failed', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      let release: (() => void) | undefined;
+      native.readPlan.push(
+        {
+          error: new Error('SpeechError: failed: busy'),
+          held: new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+        },
+        {},
+      );
+      native.readError = undefined;
+      native.finishes = { segments: [{ alternatives: [], text: 'Lunch tomorrow' }] };
+      // The phrase grew while it was read: the editor reads it again, that reading lands.
+      const first = speech.read();
+      await expect(speech.read()).resolves.toMatchObject({ heard: { text: 'Lunch tomorrow' } });
+      speech.cut(48_000);
+      native.finishQueue.push(phrase('Lunch tomorrow'));
+      release?.();
+      await first;
+      native.finishQueue.push(phrase('Dinner'));
+      await expect(speech.finish()).resolves.toMatchObject({ text: 'Dinner' });
     });
   });
 });

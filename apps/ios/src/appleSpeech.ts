@@ -77,6 +77,8 @@ type Said = Record<WordsSource, string>;
  * goes on from.
  */
 interface Listening {
+  /** Phrases let go of (`cut`) so far: a fallback keeps its reading only if none was since its read was asked for. */
+  cuts: number;
   /** Which start opened it (`starts`): a fallback opens nothing again once a newer one began. */
   readonly epoch: number;
   /** The session is being read the fallback way (`readAfresh`): its phrase, once read. */
@@ -196,7 +198,12 @@ const later = (lost: (() => void) | undefined) => {
  * listening is still the current one; the reading stays until its `cut`.
  * `read` undefined: the module no longer held the session.
  */
-const reopen = async (native: Native, active: Listening, read: SpeechRead | undefined) => {
+const reopen = async (
+  native: Native,
+  active: Listening,
+  read: SpeechRead | undefined,
+  cuts: number,
+) => {
   // Given up, finished or replaced; or a newer start is on its way, whose
   // session a reopened one would replace in the module.
   const superseded = () => current !== active || starts !== active.epoch;
@@ -217,7 +224,14 @@ const reopen = async (native: Native, active: Listening, read: SpeechRead | unde
   try {
     const next = await openSession(native, active.onWords, active.said);
     if (!superseded()) {
-      current = { ...active, ...next, fallback: undefined, uncut: read };
+      // A phrase cut since its read was asked for landed through another
+      // reading: what this one holds of it was sent already.
+      current = {
+        ...active,
+        ...next,
+        fallback: undefined,
+        uncut: active.cuts === cuts ? read : undefined,
+      };
     } else {
       next.remove();
       await native.cancel(next.session).catch(() => undefined);
@@ -241,7 +255,11 @@ const reopen = async (native: Native, active: Listening, read: SpeechRead | unde
  * meanwhile (a phrase on its way lands). Undefined when the module no
  * longer held the session.
  */
-const readAfresh = (native: Native, active: Listening): Promise<SpeechRead | undefined> => {
+const readAfresh = (
+  native: Native,
+  active: Listening,
+  cuts: number,
+): Promise<SpeechRead | undefined> => {
   active.fallback ??= (async () => {
     let result: SpeechRead | null;
     try {
@@ -251,7 +269,7 @@ const readAfresh = (native: Native, active: Listening): Promise<SpeechRead | und
       throw error;
     }
     const read = result === null ? undefined : after(active.uncut, result);
-    await reopen(native, active, read);
+    await reopen(native, active, read, cuts);
     return read;
   })();
   return active.fallback;
@@ -290,6 +308,7 @@ export const appleSpeech: SpeechToText = {
     const active = current;
     if (active) {
       active.uncut = undefined;
+      active.cuts += 1;
       loadSpeechModule()?.cut(active.session, mark);
     }
   },
@@ -340,13 +359,14 @@ export const appleSpeech: SpeechToText = {
       return phraseIn(await active.fallback);
     }
     let result: Awaited<ReturnType<Native['read']>>;
+    const cuts = active.cuts;
     try {
       result = await native.read(active.session);
     } catch (error) {
       // Should the module still fail to read (iOS caps the recognisers an
       // app runs at once), the phrase is read and sent all the same.
       recordDictationError('read', error);
-      return phraseIn(await readAfresh(native, active));
+      return phraseIn(await readAfresh(native, active, cuts));
     }
     return result ? { heard: heardIn(after(active.uncut, result)), mark: result.mark } : undefined;
   },
@@ -389,6 +409,7 @@ export const appleSpeech: SpeechToText = {
     // The module dropped the phrase before when this one started.
     current?.remove();
     current = {
+      cuts: 0,
       epoch,
       onLost,
       onWords,
