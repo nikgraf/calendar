@@ -180,8 +180,17 @@ describe('createSpeechSpikeStore', () => {
       'load ultra [Jörg Hofstätter, Sarah, Karlsplatz]',
     ]);
     expect(store.getState().report?.options.vocabulary).toBe('peopleAndPlaces');
+    expect(store.getState().report?.vocabularyTerms).toBe(3);
     expect(withPeople('peopleAndPlaces', false)).toBe('places');
     expect(withPlaces('places', false)).toBe('none');
+  });
+
+  it('adds this iPhone’s own names when asked, and counts them', async () => {
+    const { log, store } = setup({ deviceNames: async () => ['Café Prückel', 'Anna Weber'] });
+    store.setOptions({ beside: false, device: true, vocabulary: 'none' });
+    await store.run();
+    expect(log).toContain('load ultra [Café Prückel, Anna Weber]');
+    expect(store.getState().report?.vocabularyTerms).toBe(2);
   });
 
   it('keeps what it measured when the app leaves the screen mid-run', async () => {

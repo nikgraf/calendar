@@ -39,14 +39,20 @@ sentences, dictation and capture from text or photo.
 - `packages/ai` — the on-device AI seams (`LanguageModel`,
   `SpeechToText`, `TextRecognizer`), the Assistant's tuned path
   (`phraseReader.ts`, `tuned.ts`, `tunedResult.ts`, `said.ts`) and its
-  model's release (`assistantModel.ts`), the find-time, search and
-  capture prompt/normalize/parse pipelines, and the deterministic
+  model's release (`assistantModel.ts`), Parakeet's state and store
+  (`parakeetModel.ts`, `parakeetStore.ts`: the speech model dictation
+  reads each phrase with once it is downloaded), the find-time, search
+  and capture prompt/normalize/parse pipelines, and the deterministic
   fixture model both e2e suites run on. Pure TypeScript; platform
-  adapters live in the apps. Its two Swift sources
+  adapters live in the apps. Its Swift sources
   (`swift/OcrBridge.swift`, Vision text recognition;
-  `swift/SpeechBridge.swift`, dictation streamed into SpeechAnalyzer)
-  are symlinked into the desktop helper and the `solunivo-ocr` /
-  `solunivo-speech` iOS Expo modules like the other bridges.
+  `swift/SpeechBridge.swift`, dictation streamed into SpeechAnalyzer;
+  `swift/ParakeetBridge.swift`, Parakeet through FluidAudio, pinned in
+  the Podfile plugin and the helper's Package.swift) are symlinked into
+  the desktop helper and the `solunivo-ocr` / `solunivo-speech` iOS Expo
+  modules like the other bridges. Credits for what the apps ship or
+  download: core `acknowledgements.ts` → THIRD_PARTY_NOTICES.md
+  (`node scripts/third-party-notices.ts`).
 - `packages/reminders`, `packages/apple-calendar`, `packages/contacts`,
   `packages/geo` — one seam each over a native bridge, all the same
   shape: a `Context.Service` client (`reminders.*`, `calendar.*`,
@@ -347,7 +353,10 @@ commits by staging deliberately.
   recognizer from `@calendar/ai` instead, the Assistant's tuned prompt
   included (its grammar: `docs/google-sync-and-testing.md`); the
   harness also sets `CALENDAR_ASSISTANT_MODEL=off`, so no run asks to
-  download the Assistant's model unless a spec points it at a file. `…=live` signs
+  download the Assistant's model unless a spec points it at a file, and
+  `CALENDAR_PARAKEET=off` (a spec's `parakeet: 'fixture'` for its
+  screens); an iOS bundle on the fixture model leaves Parakeet out unless
+  `EXPO_PUBLIC_CALENDAR_PARAKEET=fixture`. `…=live` signs
   the real API in as the dedicated live test account — only the opt-in
   live suites use it (`GOOGLE_LIVE=1` Node files, `CALENDAR_E2E_GOOGLE=live`
   desktop spec, `apps/ios/e2e/live` flows; `google-live.yml` nightly),

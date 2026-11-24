@@ -1,8 +1,10 @@
+import { Effect } from 'effect';
 import { useEffect, useSyncExternalStore } from 'react';
 import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
 import { loadParakeet, type ParakeetVersion } from '../../../modules/solunivo-speech/index.ts';
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
 import { loadAssistantModel, releaseAssistantModel } from '../../assistantRuntime.ts';
+import { backendClient } from '../../backend.ts';
 import { llamaHolder } from '../../llamaOwner.ts';
 import { SPIKE_CLIPS, SPIKE_PEOPLE, SPIKE_PLACES } from '../../speechSpikeClips.ts';
 import {
@@ -126,6 +128,10 @@ const makeStore = (): SpeechSpikeStore => {
       },
     },
     clips: SPIKE_CLIPS,
+    deviceNames: async () => {
+      const names = await Effect.runPromise(backendClient.dictationVocabulary());
+      return [...names.people, ...names.places];
+    },
     files: deviceFiles(),
     keepAwake: (on) => probe?.keepAwake(on),
     memory: () => probe?.read(),
@@ -259,6 +265,12 @@ export function SpeechSpikePage() {
           }
           title="The Places as Vocabulary"
           value={hasPlaces(options.vocabulary)}
+        />
+        <SwitchRow
+          disabled={!idle}
+          onValueChange={(device) => store.setOptions({ device })}
+          title="This iPhone’s Names and Places"
+          value={options.device}
         />
         <SwitchRow
           disabled={!idle}

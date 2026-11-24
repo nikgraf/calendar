@@ -170,8 +170,20 @@ listened in among the device's languages, its keyboards on iOS, and its
 region's own, so German on an English iPhone in Austria), Off, or one
 picked. The second's assets are fetched on the side when dictation is
 prepared, and the pass is left out without them. The lists come from
-the recogniser (`speech.languages`, the module's `languages`). The
-audio stays in memory and goes with the phrase. The phrase ends on its words, not its loudness:
+the recogniser (`speech.languages`, the module's `languages`). A third
+pass beside them is Parakeet's (`packages/ai/swift/ParakeetBridge.swift`,
+symlinked like the bridge; FluidAudio's Core ML port of moondream's
+Parakeet Ultra), once its files are here and Settings › Dictation › Read
+With Parakeet is on (it is from the start; `parakeetStore.ts` in ai keeps
+the switch and the download, iOS `parakeetRuntime.ts`, Mac
+`electron/parakeetModel.ts`): the kept audio resampled to 16 kHz, read,
+then rescored against the names the user is likely to say (core
+`dictationVocabulary`: a year of guests and places by count, then the
+contacts, at most 100 of each, handed over as each phrase starts). The
+answer waits for it at most 4 s. When it came, its text is the phrase
+the thread reads (`Heard.text`) and Apple's goes along as `Heard.apple`
+(`heardFromSegments`); Apple's recogniser still decides that nothing was
+said. The audio stays in memory and goes with the phrase. The phrase ends on its words, not its loudness:
 `listenForPhrase` (`packages/ai/src/phraseEnd.ts`) ends it when the
 quick words have stood still for 900 ms, or, while the accurate ones
 are ahead of them, when those have for 1,200 ms; until then the words
@@ -2166,7 +2178,9 @@ gateway carries all of it. Details, limits and the threat model:
   `search`, offered and never taken, and any other far hit is left out),
   best first and uncached. A dictated turn's place goes with
   dictation's other readings of it (ai `readingsFor`: the recogniser's
-  own, the other language's right after the likeliest of them). The other
+  own, then Apple's when Parakeet's reading is the phrase
+  (`appleReading`, lined up like the other language's), then the other
+  language's, right after the likeliest of them). The other
   language's (`otherLanguageReading`): the whole phrase as that
   recogniser wrote it is lined up word by word with the phrase, and the
   words it has where the place's stood take their place ("Nashmacht" →

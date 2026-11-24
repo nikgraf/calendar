@@ -40,6 +40,11 @@ export interface SpeechSpikeDeps {
     | { readonly load: () => Promise<void>; readonly release: () => Promise<void> }
     | undefined;
   readonly clips: ReadonlyArray<SpikeClip>;
+  /**
+   * The names dictation's Parakeet listens for on this iPhone (its
+   * calendar's people and places, its contacts), when they are asked for.
+   */
+  readonly deviceNames?: () => Promise<ReadonlyArray<string>>;
   /** Undefined on a binary without the file system module. */
   readonly files: ClipFiles | undefined;
   readonly keepAwake: (on: boolean) => void;
@@ -60,6 +65,8 @@ export interface SpeechSpikeDeps {
 export interface SpeechSpikeOptions {
   /** Load the Assistant's model first, so the memory read is of both. */
   readonly beside: boolean;
+  /** This iPhone's own names on top of the clips' (as dictation lists them): how the rescoring grows with them. */
+  readonly device: boolean;
   readonly version: ParakeetVersion;
   readonly vocabulary: SpikeVocabulary;
 }
@@ -119,6 +126,8 @@ export interface SpeechSpikeReport {
   readonly scores: Readonly<Record<SpikeClip['group'], GroupScore>>;
   readonly simulator: boolean;
   readonly timing: { readonly medianMs: number; readonly p90Ms: number };
+  /** How many names the vocabulary held. */
+  readonly vocabularyTerms: number;
   readonly when: string;
 }
 
@@ -194,7 +203,7 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
   let state: SpeechSpikeState = {
     memory: undefined,
     notice: undefined,
-    options: { beside: true, version: 'ultra', vocabulary: 'people' },
+    options: { beside: true, device: false, version: 'ultra', vocabulary: 'people' },
     report: undefined,
     step: { kind: 'idle' },
   };
@@ -300,13 +309,13 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
         throw new Error(cut);
       }
       set({ step: { fraction: 0, kind: 'loading' } });
-      const { loadMs } = await parakeet.load(
-        options.version,
-        [
-          ...(hasPeople(options.vocabulary) ? deps.people : []),
-          ...(hasPlaces(options.vocabulary) ? deps.places : []),
-        ],
-        (fraction) => set({ step: { fraction, kind: 'loading' } }),
+      const terms = [
+        ...(hasPeople(options.vocabulary) ? deps.people : []),
+        ...(hasPlaces(options.vocabulary) ? deps.places : []),
+        ...(options.device ? ((await deps.deviceNames?.()) ?? []) : []),
+      ];
+      const { loadMs } = await parakeet.load(options.version, terms, (fraction) =>
+        set({ step: { fraction, kind: 'loading' } }),
       );
       const afterLoad = watch.sample()?.footprint;
       const rows = await transcribeAll(parakeet, uris);
@@ -331,6 +340,7 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
           scores: scoresOf(deps.clips, rows),
           simulator: deps.simulator,
           timing: { medianMs: quantile(times, 0.5), p90Ms: quantile(times, 0.9) },
+          vocabularyTerms: terms.length,
           when: new Date(deps.now()).toISOString(),
         },
       });
