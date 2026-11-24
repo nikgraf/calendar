@@ -158,11 +158,11 @@ it closes (`finish`, everything since the last cut). iOS caps the
 recognisers an app runs at once, so a `read` stops the live recognisers
 for the reading (Apple's passes only, not Parakeet's) and starts them
 again on the audio that kept arriving meanwhile: the microphone stays
-open, words said during the reading are written a moment later, and a
-accurate recogniser, when it lagged the quick one, is brought up to the
-quick one's words first, so its next word counts as new. Readings run one at a time; a finish or cancel
-closes the microphone at once and waits for one under way; each read
-takes its audio as it is asked for. Should a
+open, the live ones first write everything they heard (the accurate one
+is a burst behind), and words said during the reading are written a
+moment later by the next ones, going on from the same text. Readings run
+one at a time; each takes its audio as it is asked for, and a finish or
+cancel closes the microphone at once and waits for one under way. Should a
 `read` still fail, the iPhone adapter (`appleSpeech.ts`) falls back:
 the phrase is finished and read as one, the microphone opens again in a
 new session whose words go on from the listening's, and that reading is

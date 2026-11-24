@@ -379,11 +379,14 @@ final class SpeechListening: @unchecked Sendable {
       input = next
       return (live, stream)
     }
-    await swapped.0.stop()
-    guard let stream = swapped.1 else { return (try await readAll(audio.buffers), mark) }
-    // The accurate recogniser, a burst behind, will not write the rest of
-    // the phrase now: its next word is a new one, as the quick one's is.
-    if let raised = written.levelAccurate() { onWords("accurate", raised) }
+    guard let stream = swapped.1 else {
+      await swapped.0.stop()
+      return (try await readAll(audio.buffers), mark)
+    }
+    // They write what they heard first (the accurate one is a burst
+    // behind): a word said as the pause ended is not lost between the
+    // passes, and the next pass's words are new ones.
+    await swapped.0.finishWriting()
     let reading = try await readAll(audio.buffers) { try await self.resume(stream) }
     return (reading, mark)
   }
@@ -593,6 +596,17 @@ private struct LiveRecognisers: @unchecked Sendable {
     return LiveRecognisers(analyzer: analyzer, readers: readers)
   }
 
+  /// Lets them write everything their audio holds (it ended: the input
+  /// was finished), then stops them; stops them at once should that fail.
+  func finishWriting() async {
+    do {
+      try await analyzer.finalizeAndFinishThroughEndOfInput()
+      for reader in readers { await reader.value }
+    } catch {
+      await stop()
+    }
+  }
+
   /// Stops them; once this returns, they write nothing more.
   func stop() async {
     await analyzer.cancelAndFinishNow()
@@ -616,21 +630,6 @@ private final class Written: @unchecked Sendable {
     lock.withLock { texts[source] = text }
   }
 
-  /// The accurate recogniser, when it wrote fewer words than the quick
-  /// one, is brought up to the quick one's (it writes in bursts, behind
-  /// it); answers its new text. Never the quick one: one that heard less
-  /// (deaf in a loud room) has not lagged, and raising it would read as
-  /// words said after the pause.
-  func levelAccurate() -> String? {
-    lock.withLock {
-      let count = { (text: String) in text.split(whereSeparator: \.isWhitespace).count }
-      let accurate = texts["accurate"] ?? ""
-      let quick = texts["quick"] ?? ""
-      guard !accurate.isEmpty, count(accurate) < count(quick) else { return nil }
-      texts["accurate"] = quick
-      return quick
-    }
-  }
 }
 
 /// Where the phrase's first words came, as a frame of the listening: the

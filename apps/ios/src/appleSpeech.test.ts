@@ -37,8 +37,6 @@ const native = vi.hoisted(() => {
     }>,
     /** Sessions finished or cancelled: the module answers nothing for them again. */
     gone: new Set<number>(),
-    /** Set: the next read waits until the test lets it through. */
-    readHeld: undefined as Promise<void> | undefined,
     /** Set: the next finish waits until the test lets it through. */
     finishHeld: undefined as Promise<void> | undefined,
     /** Set: `finish` rejects with it. */
@@ -93,9 +91,6 @@ vi.mock('expo', () => ({
       },
       read: async (session: number) => {
         native.calls.push(`read ${session}`);
-        const held = native.readHeld;
-        native.readHeld = undefined;
-        await held;
         if (native.readError) {
           throw native.readError;
         }
@@ -200,7 +195,6 @@ beforeEach(() => {
   native.finishQueue.length = 0;
   native.finishError = undefined;
   native.finishHeld = undefined;
-  native.readHeld = undefined;
   native.gone.clear();
   native.startError = undefined;
   notes.clear();
@@ -557,24 +551,6 @@ describe('appleSpeech', () => {
       });
     });
 
-    it('still delivers the phrase when dictation ends before the module’s read failed', async () => {
-      const speech = await loadSpeech();
-      await speech.start({ onWords: noWords });
-      native.finishQueue.push(phrase('Lunch with Sarah'));
-      let release: (() => void) | undefined;
-      native.readHeld = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const read = speech.read();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      // "That's all" while the module still reads: the session is finished, not dropped.
-      await speech.cancel();
-      release?.();
-      await expect(read).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' }, mark: 0 });
-      expect(startCalls()).toEqual(['start 1 processed', 'read 1', 'finish 1']);
-      expect(native.listeners.size).toBe(0);
-    });
-
     it('lets a noise pause read that way go before the next phrase', async () => {
       const speech = await loadSpeech();
       await speech.start({ onWords: noWords });
@@ -612,7 +588,7 @@ describe('appleSpeech', () => {
       await expect(speech.finish()).resolves.toMatchObject({ text: 'Dinner' });
     });
 
-    it('cancels a reopened listening in the module, with no reading left over', async () => {
+    it('cancels a reopened listening in the module', async () => {
       const speech = await loadSpeech();
       await speech.start({ onWords: noWords });
       native.finishQueue.push(phrase('Lunch with Sarah'));
@@ -627,56 +603,6 @@ describe('appleSpeech', () => {
         'cut 2 0',
         'cancel 2',
       ]);
-    });
-
-    it('counts the lagging recogniser’s first word after reopening as a new one', async () => {
-      const speech = await loadSpeech();
-      const heard: Array<string> = [];
-      await speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) });
-      say({ session: 1, source: 'accurate', text: 'Lunch' });
-      say({ session: 1, source: 'quick', text: 'Lunch with Sarah' });
-      native.finishQueue.push(phrase('Lunch with Sarah'));
-      await speech.read();
-      say({ session: 2, source: 'accurate', text: 'Tomorrow' });
-      expect(heard).toEqual([
-        'accurate: Lunch',
-        'quick: Lunch with Sarah',
-        'accurate: Lunch with Sarah',
-        'accurate: Lunch with Sarah Tomorrow',
-      ]);
-    });
-
-    it('never raises the quick recogniser when it heard less than the accurate one', async () => {
-      const speech = await loadSpeech();
-      const heard: Array<string> = [];
-      await speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) });
-      say({ session: 1, source: 'accurate', text: 'Lunch at 3 PM' });
-      say({ session: 1, source: 'quick', text: 'Lunch at 3PM' });
-      native.finishQueue.push(phrase('Lunch at 3 PM'));
-      await speech.read();
-      say({ session: 2, source: 'quick', text: 'Tomorrow' });
-      expect(heard).toEqual([
-        'accurate: Lunch at 3 PM',
-        'quick: Lunch at 3PM',
-        'quick: Lunch at 3PM Tomorrow',
-      ]);
-    });
-
-    it('gives the phrase to a read the module answered with nothing once ended as a finish', async () => {
-      native.readError = undefined;
-      const speech = await loadSpeech();
-      await speech.start({ onWords: noWords });
-      let release: (() => void) | undefined;
-      native.readHeld = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      native.finishQueue.push(phrase('Lunch with Sarah'));
-      const read = speech.read();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await speech.cancel();
-      // The module answers the read with nothing: its finish took the session.
-      release?.();
-      await expect(read).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' }, mark: 0 });
     });
   });
 });

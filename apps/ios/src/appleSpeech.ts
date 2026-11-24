@@ -83,8 +83,6 @@ interface Listening {
   fallback?: Promise<SpeechRead | undefined> | undefined;
   readonly onLost: (() => void) | undefined;
   readonly onWords: (source: WordsSource, text: string) => void;
-  /** The module is reading the phrase with the microphone open (`read`), not answered yet. */
-  reading?: Promise<unknown> | undefined;
   readonly remove: () => void;
   readonly said: Said;
   readonly session: number;
@@ -186,23 +184,6 @@ const after = (before: SpeechRead | undefined, read: SpeechRead): SpeechRead => 
   };
 };
 
-const SOURCES = ['accurate', 'quick'] as const;
-
-const wordsOf = (text: string) => text.split(/\s+/).filter(Boolean).length;
-
-/**
- * The words before a reopened session: the accurate recogniser, when it
- * lagged the quick one as the session closed (it writes in bursts), is
- * brought up to the quick one's words, since it will never write the rest
- * of that phrase and its first word in the new session must count as a
- * new one. Never the quick one: one that heard less (deaf in a loud
- * room) has not lagged, and raising it would read as words after the pause.
- */
-const levelled = (said: Said): Said =>
-  said.accurate !== '' && wordsOf(said.accurate) < wordsOf(said.quick)
-    ? { ...said, accurate: said.quick }
-    : said;
-
 /** Told a moment later: after the phrase read with it reached the caller, so its message stays. */
 const later = (lost: (() => void) | undefined) => {
   if (lost) {
@@ -233,17 +214,10 @@ const reopen = async (native: Native, active: Listening, read: SpeechRead | unde
     later(active.onLost);
     return;
   }
-  const before = levelled(active.said);
   try {
-    const next = await openSession(native, active.onWords, before);
+    const next = await openSession(native, active.onWords, active.said);
     if (!superseded()) {
-      current = { ...active, ...next, fallback: undefined, reading: undefined, uncut: read };
-      for (const source of SOURCES) {
-        // Not heard anew yet: the recogniser that lagged is told it caught up.
-        if (before[source] !== active.said[source] && next.said[source] === before[source]) {
-          active.onWords(source, before[source]);
-        }
-      }
+      current = { ...active, ...next, fallback: undefined, uncut: read };
     } else {
       next.remove();
       await native.cancel(next.session).catch(() => undefined);
@@ -283,9 +257,6 @@ const readAfresh = (native: Native, active: Listening): Promise<SpeechRead | und
   return active.fallback;
 };
 
-/** The listening's fallback reading under way, if one began. */
-const fallbackOf = (listening: Listening) => listening.fallback;
-
 /** A fallback reading as the phrase read: the new session holds nothing of it, so there is nothing to cut. */
 const phraseIn = (read: SpeechRead | undefined): PhraseRead | undefined =>
   read === undefined ? undefined : { heard: heardIn(read), mark: 0 };
@@ -309,15 +280,11 @@ export const appleSpeech: SpeechToText = {
       return;
     }
     active.remove();
-    const native = loadSpeechModule();
-    if (native && active.reading && !active.fallback) {
-      // A phrase is on its way and may still have to be read the fallback
-      // way: ending the session as a finish does keeps its audio for that
-      // (the microphone closes all the same), and nothing opens again.
-      void readAfresh(native, active).catch(() => undefined);
-      return;
-    }
-    await native?.cancel(active.session).catch(() => undefined);
+    // A read under way keeps its phrase: the module took its audio when
+    // it was asked for.
+    await loadSpeechModule()
+      ?.cancel(active.session)
+      .catch(() => undefined);
   },
   cut: (mark) => {
     const active = current;
@@ -373,27 +340,15 @@ export const appleSpeech: SpeechToText = {
       return phraseIn(await active.fallback);
     }
     let result: Awaited<ReturnType<Native['read']>>;
-    const reading = native.read(active.session);
-    active.reading = reading;
     try {
-      result = await reading;
+      result = await native.read(active.session);
     } catch (error) {
       // Should the module still fail to read (iOS caps the recognisers an
       // app runs at once), the phrase is read and sent all the same.
       recordDictationError('read', error);
       return phraseIn(await readAfresh(native, active));
-    } finally {
-      if (active.reading === reading) {
-        active.reading = undefined;
-      }
     }
-    if (!result) {
-      // Ended meanwhile as a finish (`cancel` during a read): the phrase is in its reading.
-      // Read anew: the narrowing from the start of this read is stale after the await.
-      const fallback = fallbackOf(active);
-      return fallback ? phraseIn(await fallback) : undefined;
-    }
-    return { heard: heardIn(after(active.uncut, result)), mark: result.mark };
+    return result ? { heard: heardIn(after(active.uncut, result)), mark: result.mark } : undefined;
   },
   start: async ({ onLost, onWords, signal }) => {
     starts += 1;
