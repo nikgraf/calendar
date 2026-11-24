@@ -101,6 +101,11 @@ for (const [number, said] of rowsOf('## The short turns', '## The scripted phras
   });
 }
 
+/** The vocabulary's places: each English sentence's, without a house number. */
+const spikePlaces = clips
+  .filter((clip) => clip.group === 'en')
+  .map((clip) => clip.place.replace(/ \d+$/u, ''));
+
 const line = (clip) => {
   const fields = [
     `group: ${quote(clip.group)}`,
@@ -142,6 +147,16 @@ export interface SpikeClip {
 /** The people the clips name: the vocabulary Parakeet is given (an address book's worth). */
 export const SPIKE_PEOPLE: ReadonlyArray<string> = [
 ${[...FULL_NAMES, 'Sarah', 'Anna', 'Max', 'David'].map((name) => `  ${quote(name)},`).join('\n')}
+];
+
+/**
+ * The places the English sentences say, a street's number left off: the
+ * vocabulary when places are asked for, as a list of the places someone
+ * goes to would be. Every place a sentence names is in it (the German
+ * sentences say the same ones), so it measures the best case.
+ */
+export const SPIKE_PLACES: ReadonlyArray<string> = [
+${spikePlaces.map((place) => `  ${quote(place)},`).join('\n')}
 ];
 
 export const SPIKE_CLIPS: ReadonlyArray<SpikeClip> = [

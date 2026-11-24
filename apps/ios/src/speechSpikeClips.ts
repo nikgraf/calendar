@@ -36,6 +36,55 @@ export const SPIKE_PEOPLE: ReadonlyArray<string> = [
   'David',
 ];
 
+/**
+ * The places the English sentences say, a street's number left off: the
+ * vocabulary when places are asked for, as a list of the places someone
+ * goes to would be. Every place a sentence names is in it (the German
+ * sentences say the same ones), so it measures the best case.
+ */
+export const SPIKE_PLACES: ReadonlyArray<string> = [
+  'Figlmüller',
+  'Café Prückel',
+  'Naschmarkt',
+  'Schönbrunn',
+  'Stephansplatz',
+  'Praterstern',
+  'Karlsplatz',
+  'Mariahilfer Straße',
+  'Schwedenplatz',
+  'Gasthaus Pöschl',
+  'Kaffemik',
+  'Kleinod',
+  'Café Sperl',
+  'Café Hawelka',
+  'Augarten',
+  'Türkenschanzpark',
+  'Westbahnhof',
+  'Hauptbahnhof',
+  'Burggarten',
+  'Volksgarten',
+  'MuseumsQuartier',
+  'Donauinsel',
+  'Kahlenberg',
+  'Mayer am Pfarrplatz',
+  'Schweizerhaus',
+  'Zum Schwarzen Kameel',
+  'Plachutta',
+  'Steirereck',
+  'Schottentor',
+  'Rathausplatz',
+  'München',
+  'Zürich',
+  'Salzburg',
+  'Klosterneuburg',
+  'St. Pölten',
+  'Kitzbühel',
+  'Wollzeile',
+  'Neubaugasse',
+  'Währinger Straße',
+  'Praterstraße',
+];
+
 export const SPIKE_CLIPS: ReadonlyArray<SpikeClip> = [
   {
     group: 'en',

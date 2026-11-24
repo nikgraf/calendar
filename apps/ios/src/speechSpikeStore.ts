@@ -47,8 +47,10 @@ export interface SpeechSpikeDeps {
   readonly now: () => number;
   /** Undefined on a binary built without `solunivo-parakeet`. */
   readonly parakeet: ParakeetPort | undefined;
-  /** The people's names, the vocabulary when one is asked for. */
+  /** The people's names, the vocabulary when they are asked for. */
   readonly people: ReadonlyArray<string>;
+  /** The places' names, the vocabulary when they are asked for. */
+  readonly places: ReadonlyArray<string>;
   /** `ios 27.1`, for the report. */
   readonly platform: string;
   /** A simulator runs the app: its timings and memory are the Mac's. */
@@ -59,8 +61,28 @@ export interface SpeechSpikeOptions {
   /** Load the Assistant's model first, so the memory read is of both. */
   readonly beside: boolean;
   readonly version: ParakeetVersion;
-  readonly vocabulary: 'none' | 'people';
+  readonly vocabulary: SpikeVocabulary;
 }
+
+/** The names Parakeet's spotter is given: the people, the places, both or none. */
+export type SpikeVocabulary = 'none' | 'people' | 'peopleAndPlaces' | 'places';
+
+const vocabularyOf = (people: boolean, places: boolean): SpikeVocabulary =>
+  people ? (places ? 'peopleAndPlaces' : 'people') : places ? 'places' : 'none';
+
+/** The vocabulary with the people's names on or off, the places kept as they are. */
+export const withPeople = (vocabulary: SpikeVocabulary, on: boolean): SpikeVocabulary =>
+  vocabularyOf(on, hasPlaces(vocabulary));
+
+/** The vocabulary with the places' names on or off, the people kept as they are. */
+export const withPlaces = (vocabulary: SpikeVocabulary, on: boolean): SpikeVocabulary =>
+  vocabularyOf(hasPeople(vocabulary), on);
+
+export const hasPeople = (vocabulary: SpikeVocabulary): boolean =>
+  vocabulary === 'people' || vocabulary === 'peopleAndPlaces';
+
+export const hasPlaces = (vocabulary: SpikeVocabulary): boolean =>
+  vocabulary === 'places' || vocabulary === 'peopleAndPlaces';
 
 export interface SpeechSpikeRow extends Omit<ParakeetHeard, 'raw'> {
   readonly group: SpikeClip['group'];
@@ -280,7 +302,10 @@ export const createSpeechSpikeStore = (deps: SpeechSpikeDeps) => {
       set({ step: { fraction: 0, kind: 'loading' } });
       const { loadMs } = await parakeet.load(
         options.version,
-        options.vocabulary === 'people' ? deps.people : [],
+        [
+          ...(hasPeople(options.vocabulary) ? deps.people : []),
+          ...(hasPlaces(options.vocabulary) ? deps.places : []),
+        ],
         (fraction) => set({ step: { fraction, kind: 'loading' } }),
       );
       const afterLoad = watch.sample()?.footprint;

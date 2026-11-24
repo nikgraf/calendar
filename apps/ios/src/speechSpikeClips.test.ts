@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vite-plus/test';
-import { SPIKE_CLIPS, SPIKE_PEOPLE } from './speechSpikeClips.ts';
+import { SPIKE_CLIPS, SPIKE_PEOPLE, SPIKE_PLACES } from './speechSpikeClips.ts';
 
 const AUDIO = join(import.meta.dirname, '..', '..', 'desktop', 'e2e', 'bench', 'audio');
 const sheet = readFileSync(join(AUDIO, 'README.md'), 'utf8');
@@ -28,6 +28,14 @@ describe('SPIKE_CLIPS', () => {
         rows.some((cells) => cells.includes(clip.said)),
         clip.id,
       ).toBe(true);
+    }
+  });
+
+  it('lists every place an English sentence says, its house number left off', () => {
+    const english = SPIKE_CLIPS.filter((clip) => clip.group === 'en');
+    expect(SPIKE_PLACES).toHaveLength(english.length);
+    for (const clip of english) {
+      expect(SPIKE_PLACES, clip.id).toContain(clip.place?.replace(/ \d+$/u, ''));
     }
   });
 

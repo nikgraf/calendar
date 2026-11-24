@@ -7,13 +7,17 @@ import {
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
 import { loadAssistantModel, releaseAssistantModel } from '../../assistantRuntime.ts';
 import { llamaHolder } from '../../llamaOwner.ts';
-import { SPIKE_CLIPS, SPIKE_PEOPLE } from '../../speechSpikeClips.ts';
+import { SPIKE_CLIPS, SPIKE_PEOPLE, SPIKE_PLACES } from '../../speechSpikeClips.ts';
 import {
   type ClipFiles,
   createSpeechSpikeStore,
+  hasPeople,
+  hasPlaces,
   type ParakeetPort,
   type SpeechSpikeReport,
   type SpeechSpikeStore,
+  withPeople,
+  withPlaces,
 } from '../../speechSpikeStore.ts';
 import {
   ActionRow,
@@ -129,6 +133,7 @@ const makeStore = (): SpeechSpikeStore => {
     now: Date.now,
     parakeet: parakeetPort(),
     people: SPIKE_PEOPLE,
+    places: SPIKE_PLACES,
     platform: `${Platform.OS} ${String(Platform.Version)}`,
     simulator: probe?.isSimulator() ?? false,
   });
@@ -242,9 +247,19 @@ export function SpeechSpikePage() {
         ))}
         <SwitchRow
           disabled={!idle}
-          onValueChange={(on) => store.setOptions({ vocabulary: on ? 'people' : 'none' })}
+          onValueChange={(on) =>
+            store.setOptions({ vocabulary: withPeople(options.vocabulary, on) })
+          }
           title="The People as Vocabulary"
-          value={options.vocabulary === 'people'}
+          value={hasPeople(options.vocabulary)}
+        />
+        <SwitchRow
+          disabled={!idle}
+          onValueChange={(on) =>
+            store.setOptions({ vocabulary: withPlaces(options.vocabulary, on) })
+          }
+          title="The Places as Vocabulary"
+          value={hasPlaces(options.vocabulary)}
         />
         <SwitchRow
           disabled={!idle}

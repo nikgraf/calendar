@@ -4,6 +4,8 @@ import {
   createSpeechSpikeStore,
   type ParakeetPort,
   type SpeechSpikeDeps,
+  withPeople,
+  withPlaces,
 } from './speechSpikeStore.ts';
 
 const CLIPS: ReadonlyArray<SpikeClip> = [
@@ -76,6 +78,7 @@ const setup = (over: Partial<SpeechSpikeDeps> = {}) => {
     now: () => Date.parse('2026-11-23T17:00:00Z'),
     parakeet,
     people: ['Jörg Hofstätter', 'Sarah'],
+    places: ['Karlsplatz'],
     platform: 'ios 27.2',
     simulator: false,
     ...over,
@@ -164,6 +167,21 @@ describe('createSpeechSpikeStore', () => {
     expect(log.indexOf('release assistant')).toBeLessThan(log.indexOf('load v3 []'));
     expect(log).toContain('load v3 []');
     expect(store.getState().report?.memory.afterAssistant).toBeUndefined();
+  });
+
+  it('gives Parakeet the places, alone or after the people, when asked', async () => {
+    const { log, store } = setup();
+    store.setOptions({ beside: false, vocabulary: withPlaces('none', true) });
+    await store.run();
+    store.setOptions({ vocabulary: withPeople(store.getState().options.vocabulary, true) });
+    await store.run();
+    expect(log.filter((line) => line.startsWith('load'))).toEqual([
+      'load ultra [Karlsplatz]',
+      'load ultra [Jörg Hofstätter, Sarah, Karlsplatz]',
+    ]);
+    expect(store.getState().report?.options.vocabulary).toBe('peopleAndPlaces');
+    expect(withPeople('peopleAndPlaces', false)).toBe('places');
+    expect(withPlaces('places', false)).toBe('none');
   });
 
   it('keeps what it measured when the app leaves the screen mid-run', async () => {
