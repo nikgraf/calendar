@@ -121,10 +121,12 @@ export type AssistantDevice = 'iPhone' | 'Mac';
 
 /**
  * The Assistant's promise, first in the Create lesson and in Settings:
- * it reads with models on the device only (`assistantFlow.ts` has the rest).
+ * it reads with models on the device only, never an AI in the cloud. Not
+ * that nothing leaves the device: a place it names is looked up in Apple
+ * Maps (`FLOW_DOWNLOADS` says so), as the location field's typeahead is.
  */
 export const flowPromise = (device: AssistantDevice): string =>
-  `The Assistant uses only models on this ${device}. What you say or type never leaves it.`;
+  `The Assistant reads what you say only with models on this ${device}, never with an AI in the cloud.`;
 
 const UNSUPPORTED: Readonly<Record<AssistantDevice, Readonly<Record<UnsupportedReason, string>>>> =
   {
@@ -254,7 +256,7 @@ export const lessonModelCopy = (
     switch (state.kind) {
       case 'unasked':
       case 'declined':
-        return `${flowPromise(device)} It needs one model, a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, try the demo below.`;
+        return `${flowPromise(device)} The model is a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, try the demo below.`;
       case 'downloading':
         return `Downloading the Assistant’s model · ${String(progress ?? 0)} %. It goes on if you leave. ${meanwhile}`;
       case 'verifying':

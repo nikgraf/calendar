@@ -106,7 +106,7 @@ export function AssistantPage() {
       <PageHero
         icon={<IconTile color={colors['event-lilac-edge']} name="lock.shield.fill" size={56} />}
         subtitle={flowPromise('iPhone')}
-        title="On This iPhone Only"
+        title="AI on This iPhone Only"
       />
       <Section header="How It Works">
         <RowSlot testID="assistant-flow-card">

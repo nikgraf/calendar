@@ -1572,7 +1572,7 @@ was cut (pruned 2026-11-17).
   package's prebuilt binary, a memory entitlement, scoring on the phone.
   Open: Apple's six hung calls, the prompt read again on every call.
 - **Dictation reads each phrase with Parakeet** (2026-11-24, #378) — once
-  downloaded (the Create lesson's Download Both, Settings › Dictation) and
+  downloaded (the Create lesson's Download Models, Settings › Dictation) and
   on (from the start), moondream's Parakeet Ultra reads the finished phrase
   with the user's people and places as its vocabulary, on iOS and the Mac;
   Apple's recogniser still shows the words live, ends the phrase and goes

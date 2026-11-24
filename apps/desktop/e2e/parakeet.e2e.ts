@@ -116,7 +116,7 @@ describe('Settings › AI Model explains the Assistant', () => {
     const settings = await app.openSettings('model');
     await settings.waitUntil(($) => $.has('[data-testid="assistant-model-section"]'));
     expect(await settings.evaluate(($) => $.text('[data-testid="assistant-promise"]'))).toBe(
-      'The Assistant uses only models on this Mac. What you say or type never leaves it.',
+      'The Assistant reads what you say only with models on this Mac, never with an AI in the cloud.',
     );
     expect(
       await settings.evaluate(($) => $.all('[data-testid^="assistant-flow-step-"]').length),
@@ -158,7 +158,7 @@ describe('the Create lesson offers Parakeet beside the Assistant’s model', () 
     await cdp.waitUntil(($) => $.el('[data-testid="lesson-banner"]')?.dataset.lesson === 'create');
     await cdp.waitUntil(($) => $.text('[data-testid="lesson-model-action"]') === 'Download Models');
     expect(await cdp.evaluate(($) => $.text('[data-testid="lesson-banner-note"]'))).toBe(
-      'The Assistant uses only models on this Mac. What you say or type never leaves it. It needs two models, a one-time download of 1.5 GB. Until then, try the demo below.',
+      'The Assistant reads what you say only with models on this Mac, never with an AI in the cloud. The models are a one-time download of 1.5 GB; the speech model is optional. Until then, try the demo below.',
     );
     expect(await cdp.evaluate(($) => $.text('[data-testid="lesson-model-decline"]'))).toBe(
       'Download Only Phrases Model',

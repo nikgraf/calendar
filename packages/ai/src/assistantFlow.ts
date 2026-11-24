@@ -72,9 +72,9 @@ export const flowSteps = (device: AssistantDevice): ReadonlyArray<FlowStep> => [
   },
 ];
 
-/** Where the two downloads come from: the only time the Assistant uses the internet. */
+/** Where the two downloads come from, and the one lookup that leaves the device. */
 export const FLOW_DOWNLOADS =
-  'Only the downloads use the internet, once: the phrases model from GitHub, the speech model from Hugging Face.';
+  'The models download once: the phrases model from GitHub, the speech model from Hugging Face. A place you name is looked up in Apple Maps.';
 
 /** The two models with their sizes, phrases first. */
 export const flowModels = (

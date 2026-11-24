@@ -101,8 +101,8 @@ sentences, dictation and capture from text or photo.
   for Apple's on-device model (search, capture, find a time until the
   Assistant's model is here); llama.rn for the Assistant's own model,
   which then finds a time too
-  (`src/assistantRuntime.ts`: the download, offered by the Create lesson
-  and the Assistant's notice, Wi-Fi
+  (`src/assistantRuntime.ts`: the download, offered by the Create lesson,
+  Settings › Assistant and the Assistant's notice, Wi-Fi
   only unless mobile data is allowed; the Model Spike page measures with
   the same runtime, in both variants); the local Expo modules under `modules/`;
   `expo-maps` draws the editor and event detail maps.

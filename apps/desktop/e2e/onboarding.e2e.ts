@@ -411,7 +411,7 @@ describe('Create with AI before the Assistant’s model is here: the demo, and t
     // The banner says what the Assistant is and offers its download; the
     // editor stays on the Assistant, its field holding the lesson's phrase.
     expect(await cdp.evaluate(($) => $.text('[data-testid="lesson-banner-note"]'))).toContain(
-      'The Assistant uses only models on this Mac. What you say or type never leaves it.',
+      'The Assistant reads what you say only with models on this Mac, never with an AI in the cloud.',
     );
     expect(await cdp.evaluate(($) => $.text('[data-testid="lesson-model-action"]'))).toBe(
       'Download (834 MB)',

@@ -14,7 +14,8 @@ import {
  * reads each finished phrase with it once it is here and Settings ›
  * Dictation › Read With Parakeet is on (it is from the start); until then,
  * or off, Apple's recogniser alone writes the phrase. Nothing is fetched
- * before the person asks (the Create lesson, Settings › Dictation). Measured
+ * before the person asks (the Create lesson, Settings › Dictation, Settings ›
+ * Assistant on iOS and › AI Model on the Mac). Measured
  * on Nik's recordings (#378): English sentences 16 % of words wrong
  * against Apple's 30 %, every listed full name right.
  */
@@ -267,7 +268,7 @@ const lessonOfferOf = (
       ...assistant,
       action: { kind: 'both', label: 'Download Models' },
       decline: 'Download Only Phrases Model',
-      text: `${flowPromise(device)} It needs two models, a one-time download of ${sizeLabel(assistantBytes + PARAKEET_BYTES)}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, try the demo below.`,
+      text: `${flowPromise(device)} The models are a one-time download of ${sizeLabel(assistantBytes + PARAKEET_BYTES)}${device === 'iPhone' ? ', over Wi-Fi' : ''}; the speech model is optional. Until then, try the demo below.`,
     };
   }
   if (wanted && assistant.action === undefined) {
