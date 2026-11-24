@@ -159,7 +159,8 @@ the Mac's reads beside its live recognisers) falls back in the adapter
 (`appleSpeech.ts`): the phrase is finished and read as one, the
 microphone opens again in a new session whose words go on from the
 listening's, and that reading is kept until its `cut`, so a phrase
-that grows is read whole. What the module answered is kept in
+that grows is read whole. A read or finish while it runs waits for
+it, and a listening ended meanwhile still gets its phrase. What the module answered is kept in
 Settings › Advanced › Diagnostics (`crashLog.ts`). Before a phrase's
 first words the session keeps only 8 s of the room, so a long wait is
 not read again; past 90 s the oldest audio goes. Each reading: each segment of the reading comes

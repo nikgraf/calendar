@@ -77,6 +77,8 @@ type Said = Record<WordsSource, string>;
  * goes on from.
  */
 interface Listening {
+  /** The session is being read the fallback way (`readAfresh`): its phrase, once read. */
+  fallback?: Promise<SpeechRead | undefined> | undefined;
   readonly onLost: (() => void) | undefined;
   readonly onWords: (source: WordsSource, text: string) => void;
   readonly remove: () => void;
@@ -157,6 +159,10 @@ const after = (before: SpeechRead | undefined, read: SpeechRead): SpeechRead => 
   if (!before) {
     return read;
   }
+  // Nothing followed it (no audio, so no other reading either).
+  if (read.segments.length === 0) {
+    return before;
+  }
   const other = joinedOr(before.other, read.other);
   const parakeet =
     before.parakeet && read.parakeet
@@ -173,36 +179,33 @@ const after = (before: SpeechRead | undefined, read: SpeechRead): SpeechRead => 
   };
 };
 
-/**
- * The phrase so far could not be read with the microphone open: it is
- * read the way a finished listening is (the microphone closes, the live
- * recognisers stop first), and the microphone opens again for what comes
- * next. Words said while it is closed go unheard. A listening given up
- * meanwhile is not opened again.
- */
-const readAfresh = async (native: Native, active: Listening): Promise<PhraseRead | undefined> => {
-  let result: SpeechRead | null;
-  try {
-    result = await native.finish(active.session);
-  } catch (error) {
-    recordDictationError('finish', error);
-    throw error;
+/** Told a moment later: after the phrase read with it reached the caller, so its message stays. */
+const later = (lost: (() => void) | undefined) => {
+  if (lost) {
+    setTimeout(lost, 0);
   }
+};
+
+/**
+ * Opens the microphone again after a fallback reading, while the
+ * listening is still the current one; the reading stays until its `cut`.
+ * `read` undefined: the module no longer held the session.
+ */
+const reopen = async (native: Native, active: Listening, read: SpeechRead | undefined) => {
   if (current !== active) {
-    return undefined;
+    return;
   }
   active.remove();
-  if (result === null) {
+  if (read === undefined) {
     // The module let the listening go: nothing will end it now.
     current = undefined;
-    active.onLost?.();
-    return undefined;
+    later(active.onLost);
+    return;
   }
-  const read = after(active.uncut, result);
   try {
     const next = await openSession(native, active.onWords, active.said);
     if (current === active) {
-      current = { ...active, ...next, uncut: read };
+      current = { ...active, ...next, fallback: undefined, uncut: read };
     } else {
       next.remove();
       await native.cancel(next.session).catch(() => undefined);
@@ -211,12 +214,40 @@ const readAfresh = async (native: Native, active: Listening): Promise<PhraseRead
     recordDictationError('start', error);
     if (current === active) {
       current = undefined;
-      active.onLost?.();
+      later(active.onLost);
     }
   }
-  // The new session holds nothing of this phrase: there is nothing to cut.
-  return { heard: heardIn(read), mark: 0 };
 };
+
+/**
+ * The phrase so far could not be read with the microphone open: it is
+ * read the way a finished listening is (the microphone closes, the live
+ * recognisers stop first), and the microphone opens again for what comes
+ * next. Words said while it is closed go unheard. Once per session: a
+ * read or a finish meanwhile waits for this one instead of finishing the
+ * session again, and the phrase still comes back to a listening given up
+ * meanwhile (a phrase on its way lands). Undefined when the module no
+ * longer held the session.
+ */
+const readAfresh = (native: Native, active: Listening): Promise<SpeechRead | undefined> => {
+  active.fallback ??= (async () => {
+    let result: SpeechRead | null;
+    try {
+      result = await native.finish(active.session);
+    } catch (error) {
+      recordDictationError('finish', error);
+      throw error;
+    }
+    const read = result === null ? undefined : after(active.uncut, result);
+    await reopen(native, active, read);
+    return read;
+  })();
+  return active.fallback;
+};
+
+/** A fallback reading as the phrase read: the new session holds nothing of it, so there is nothing to cut. */
+const phraseIn = (read: SpeechRead | undefined): PhraseRead | undefined =>
+  read === undefined ? undefined : { heard: heardIn(read), mark: 0 };
 
 /**
  * Apple's on-device SpeechAnalyzer through the app's own module
@@ -256,6 +287,11 @@ export const appleSpeech: SpeechToText = {
       return undefined;
     }
     active.remove();
+    if (active.fallback) {
+      // Already being read: the phrase on its way is what was said.
+      const read = await active.fallback;
+      return read ? heardIn(read) : undefined;
+    }
     try {
       const result = await native.finish(active.session);
       return result ? heardIn(after(active.uncut, result)) : undefined;
@@ -286,6 +322,9 @@ export const appleSpeech: SpeechToText = {
     if (!active || !native) {
       return undefined;
     }
+    if (active.fallback) {
+      return phraseIn(await active.fallback);
+    }
     let result: Awaited<ReturnType<Native['read']>>;
     try {
       result = await native.read(active.session);
@@ -293,7 +332,7 @@ export const appleSpeech: SpeechToText = {
       // On the iPhone the reading beside the live recognisers can fail
       // where the Mac's does not: the phrase is still read and sent.
       recordDictationError('read', error);
-      return readAfresh(native, active);
+      return phraseIn(await readAfresh(native, active));
     }
     return result ? { heard: heardIn(after(active.uncut, result)), mark: result.mark } : undefined;
   },

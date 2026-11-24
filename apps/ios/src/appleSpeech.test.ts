@@ -32,8 +32,13 @@ const native = vi.hoisted(() => {
     /** The phrases `finish` answers in turn; `finishes` once they ran out. */
     finishQueue: [] as Array<{
       other?: string;
+      parakeet?: { raw: string; replacements: ReadonlyArray<never>; text: string };
       segments: ReadonlyArray<{ alternatives: ReadonlyArray<string>; text: string }>;
     }>,
+    /** Sessions finished or cancelled: the module answers nothing for them again. */
+    gone: new Set<number>(),
+    /** Set: the next finish waits until the test lets it through. */
+    finishHeld: undefined as Promise<void> | undefined,
     /** Set: `finish` rejects with it. */
     finishError: undefined as Error | undefined,
     /** Set: the next start fails with it. */
@@ -56,12 +61,20 @@ vi.mock('expo', () => ({
       },
       cancel: async (session: number) => {
         native.calls.push(`cancel ${session}`);
+        native.gone.add(session);
       },
       cut: (session: number, mark: number) => {
         native.calls.push(`cut ${session} ${mark}`);
       },
       finish: async (session: number) => {
         native.calls.push(`finish ${session}`);
+        if (native.gone.has(session)) {
+          return null;
+        }
+        native.gone.add(session);
+        const held = native.finishHeld;
+        native.finishHeld = undefined;
+        await held;
         if (native.finishError) {
           throw native.finishError;
         }
@@ -128,6 +141,15 @@ vi.mock('expo-file-system', () => ({
 /** A phrase as the module reads it whole. */
 const phrase = (text: string) => ({ segments: [{ alternatives: [], text }] });
 
+/** Holds the next finish until the returned function lets it through. */
+const holdFinish = () => {
+  let release: (() => void) | undefined;
+  native.finishHeld = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return () => release?.();
+};
+
 const say = (event: Words) => {
   for (const listener of native.listeners) {
     listener(event);
@@ -169,6 +191,8 @@ beforeEach(() => {
   native.readError = undefined;
   native.finishQueue.length = 0;
   native.finishError = undefined;
+  native.finishHeld = undefined;
+  native.gone.clear();
   native.startError = undefined;
   notes.clear();
 });
@@ -441,6 +465,9 @@ describe('appleSpeech', () => {
       await speech.start({ onLost: lost, onWords: noWords });
       native.startError = new Error('SpeechError: no microphone');
       await expect(speech.read()).resolves.toMatchObject({ mark: 0 });
+      // Told once the phrase reached the editor, so its message is the last word.
+      expect(lost).not.toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(lost).toHaveBeenCalledOnce();
       expect(notes.get(DICTATION_ERROR)).toMatch(/\nstart: Error: SpeechError: no microphone/);
       await expect(speech.read()).resolves.toBeUndefined();
@@ -452,6 +479,73 @@ describe('appleSpeech', () => {
       native.finishError = new Error('SpeechError: failed: busy');
       await expect(speech.read()).rejects.toThrow('busy');
       expect(notes.get(DICTATION_ERROR)).toMatch(/\nfinish: Error: SpeechError: failed: busy/);
+    });
+
+    it('still delivers the phrase on its way when dictation ends while it is read', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const release = holdFinish();
+      const read = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // "That's all" with nothing said since: the editor cancels, the phrase still lands.
+      await speech.cancel();
+      release();
+      await expect(read).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' }, mark: 0 });
+      expect(startCalls()).toEqual(['start 1 processed', 'read 1', 'finish 1', 'cancel 1']);
+    });
+
+    it('gives a finish meanwhile the phrase being read', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const release = holdFinish();
+      const read = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // A hold lifted: the editor reads everything since the last phrase landed.
+      const finished = speech.finish();
+      release();
+      await expect(finished).resolves.toMatchObject({ text: 'Lunch with Sarah' });
+      await read;
+      expect(startCalls()).toEqual(['start 1 processed', 'read 1', 'finish 1']);
+      expect(native.listeners.size).toBe(0);
+    });
+
+    it('gives a second read meanwhile the same phrase, without finishing again', async () => {
+      const speech = await loadSpeech();
+      const lost = vi.fn();
+      await speech.start({ onLost: lost, onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const release = holdFinish();
+      const first = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const second = speech.read();
+      release();
+      await expect(first).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' } });
+      await expect(second).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' } });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(lost).not.toHaveBeenCalled();
+      expect(startCalls()).toEqual([
+        'start 1 processed',
+        'read 1',
+        'finish 1',
+        'start 2 processed',
+      ]);
+    });
+
+    it('keeps Parakeet’s reading of the phrase when nothing follows it', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push({
+        ...phrase('Lunch with Sara'),
+        parakeet: { raw: 'Lunch with Sarah', replacements: [], text: 'Lunch with Sarah' },
+      });
+      await speech.read();
+      native.finishQueue.push({ segments: [] });
+      await expect(speech.finish()).resolves.toMatchObject({
+        apple: 'Lunch with Sara',
+        text: 'Lunch with Sarah',
+      });
     });
   });
 });
