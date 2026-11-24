@@ -197,6 +197,17 @@ public class SolunivoSpeechModule: Module {
       await Self.engine().use(on: on, vocabulary: vocabulary)
     }
 
+    // As a phrase starts: the models load in the background while it is
+    // said, when dictation reads with Parakeet.
+    AsyncFunction("parakeetPrepare") { () async in
+      await Self.engine().prepare()
+    }
+
+    // The app left the screen: the models go, the switch stays.
+    AsyncFunction("parakeetRelieve") { () async in
+      await Self.engine().relieve()
+    }
+
     // The Speech Spike page (Settings › Advanced): any version, any
     // vocabulary, a file; `onParakeetProgress` while the model downloads.
     AsyncFunction("parakeetSpikeLoad") {

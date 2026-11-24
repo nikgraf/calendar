@@ -75,6 +75,9 @@ const helperPort = (userDataDir: string): ParakeetPort => {
         here: found.here === true,
       };
     },
+    prepare: async () => {
+      await call('parakeet.prepare');
+    },
     readChoice: async () => {
       try {
         return readParakeetChoice(JSON.parse(readFileSync(choiceFile, 'utf8')));

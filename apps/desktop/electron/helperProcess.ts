@@ -48,6 +48,7 @@ const TIMEOUTS_MS: Record<string, number> = {
   'ocr.recognizeText': 60_000,
   // Parakeet's two models, 712 MB from Hugging Face: a slow line takes long, a stall still ends.
   'parakeet.download': 3_600_000,
+  'parakeet.prepare': 30_000,
   'parakeet.remove': 30_000,
   'parakeet.state': 30_000,
   // The models load in the background: the call itself answers at once.

@@ -149,7 +149,9 @@ actor ParakeetEngine {
   }
 
   /// Dictation reads with Parakeet (`on`), with these names as its
-  /// vocabulary, or no longer does and lets the models go.
+  /// vocabulary, or no longer does and lets the models go. Nothing is
+  /// loaded here: `prepare` does that as dictation starts, and the first
+  /// phrase loads them otherwise.
   func use(on: Bool, vocabulary: [String]) {
     self.on = on
     guard on else {
@@ -161,7 +163,18 @@ actor ParakeetEngine {
       terms = next
       session = nil
     }
-    warm()
+  }
+
+  /// Loads the models now, in the background, when dictation reads with
+  /// Parakeet: called as a phrase starts, so the load runs while it is said.
+  func prepare() {
+    if on { warm() }
+  }
+
+  /// Lets the models go and keeps the switch (the iOS app left the screen):
+  /// the next phrase loads them again, in under a second.
+  func relieve() {
+    releaseModels()
   }
 
   /// Loads the models in the background when they are here and not loaded:

@@ -19,6 +19,7 @@ const fakePort = (
   let finish: ((ok: boolean) => void) | undefined;
   let progress: ((fraction: number) => void) | undefined;
   let downloads = 0;
+  let prepared = 0;
   const port: ParakeetPort = {
     active: () => active,
     cancel: () => finish?.(false),
@@ -44,6 +45,9 @@ const fakePort = (
         pathListeners.add(listener);
         return () => pathListeners.delete(listener);
       },
+    },
+    prepare: async () => {
+      prepared += 1;
     },
     readChoice: async () => choice,
     remove: async () => {
@@ -76,6 +80,7 @@ const fakePort = (
       }
     },
     port,
+    prepared: () => prepared,
     progress: (fraction: number) => progress?.(fraction),
     uses,
   };
@@ -182,6 +187,18 @@ describe('createParakeetStore', () => {
     await running.setOn(false);
     await asked.finish(false);
     expect(running.getState()).toEqual({ files: { kind: 'absent' }, on: false });
+  });
+
+  it('loads the models as a phrase starts, never at launch, and only while it reads with them', async () => {
+    const fake = fakePort({ here: true });
+    const store = createParakeetStore({ port: fake.port, supported: true });
+    await store.boot();
+    expect(fake.prepared()).toBe(0);
+    await store.vocabulary(['Kaffemik']);
+    expect(fake.prepared()).toBe(1);
+    await store.setOn(false);
+    await store.vocabulary(['Kaffemik']);
+    expect(fake.prepared()).toBe(1);
   });
 
   it('does nothing where the build has no Parakeet', async () => {

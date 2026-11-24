@@ -109,6 +109,7 @@ const devicePort = (): ParakeetPort | undefined => {
       }
     },
     files: () => native.parakeetState(),
+    prepare: () => native.parakeetPrepare(),
     ...(network === undefined
       ? {}
       : {
@@ -184,6 +185,13 @@ export const startParakeet = (): void => {
     void current.store.boot();
   }
   appState?.addEventListener('change', (state) => {
+    if (state === 'background') {
+      // As the Assistant's model does: the next phrase loads it again.
+      void loadParakeet()
+        ?.parakeetRelieve()
+        .catch(() => undefined);
+      return;
+    }
     if (state !== 'active') {
       return;
     }

@@ -28,6 +28,8 @@ export interface ParakeetPort {
     readonly path: () => NetworkReading;
     readonly subscribe: (listener: (path: NetworkReading) => void) => () => void;
   };
+  /** Loads the models in the background (as a phrase starts); nothing where they are loaded. */
+  readonly prepare?: () => Promise<void>;
   readonly readChoice: () => Promise<ParakeetChoice | undefined>;
   readonly remove: () => Promise<void>;
   /** Dictation reads with Parakeet, with these names, or no longer does. */
@@ -57,7 +59,10 @@ export interface ParakeetStore {
   /** The switch; off also stops a download under way. */
   readonly setOn: (on: boolean) => Promise<void>;
   readonly subscribe: (listener: () => void) => () => void;
-  /** The names dictation listens for now (as it starts): handed on when it reads with Parakeet. */
+  /**
+   * As a phrase starts: the names dictation listens for, handed on when it
+   * reads with Parakeet, and its models loaded meanwhile.
+   */
   readonly vocabulary: (terms: ReadonlyArray<string>) => Promise<void>;
 }
 
@@ -274,6 +279,10 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
     vocabulary: async (next) => {
       terms = next;
       await apply();
+      // The load runs while the phrase is said, not at launch.
+      if (readsWithParakeet(state)) {
+        await port.prepare?.().catch(() => undefined);
+      }
     },
   };
 };

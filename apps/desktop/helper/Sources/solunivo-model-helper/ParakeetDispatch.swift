@@ -31,6 +31,9 @@ enum ParakeetDispatch {
       downloads.cancel()
       try await ParakeetEngine.shared.remove()
       return [:]
+    case "parakeet.prepare":
+      await ParakeetEngine.shared.prepare()
+      return [:]
     case "parakeet.use":
       let on: Bool
       if case .bool(let value)? = params["on"] { on = value } else { on = false }

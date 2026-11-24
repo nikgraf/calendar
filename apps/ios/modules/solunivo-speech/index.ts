@@ -52,6 +52,10 @@ export interface SolunivoParakeetNative {
   readonly parakeetCancel: () => void;
   /** Fetches what is missing of the files; rejects "cancelled" after `parakeetCancel`. */
   readonly parakeetDownload: () => Promise<void>;
+  /** As a phrase starts: the models load in the background when dictation reads with Parakeet. */
+  readonly parakeetPrepare: () => Promise<void>;
+  /** The app left the screen: the models go, the switch stays. */
+  readonly parakeetRelieve: () => Promise<void>;
   readonly parakeetRemove: () => Promise<void>;
   readonly parakeetSpikeLoad: (
     version: ParakeetVersion,
