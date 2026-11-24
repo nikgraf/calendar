@@ -419,10 +419,20 @@ const keysOf = (reading: string): string =>
  * spaces is one long word), or when it
  * reads them the same, or as `text` already has them.
  */
-export const otherLanguageReading = (heard: Heard, text: string): string | undefined => {
-  if (heard.other === undefined) {
-    return undefined;
-  }
+export const otherLanguageReading = (heard: Heard, text: string): string | undefined =>
+  heard.other === undefined ? undefined : readingWithin(heard, text, heard.other);
+
+/**
+ * `text` as Apple's recogniser wrote its words, when Parakeet's reading is
+ * the phrase (`Heard.apple`): lined up the same way as the other
+ * language's reading (`otherLanguageReading`), so a German place Apple
+ * spelled right is searched too.
+ */
+export const appleReading = (heard: Heard, text: string): string | undefined =>
+  heard.apple === undefined ? undefined : readingWithin(heard, text, heard.apple);
+
+/** `text` with the words another reading of the whole phrase has where they stood. */
+const readingWithin = (heard: Heard, text: string, whole: string): string | undefined => {
   const own = wordsOf(text);
   const phrase = segmentWords(heard.segments).map((entry) => entry.word);
   const found = findWords(own, phrase);
@@ -430,7 +440,7 @@ export const otherLanguageReading = (heard: Heard, text: string): string | undef
   if (run === undefined || found.length > 1) {
     return undefined;
   }
-  const other = wordsOf(heard.other);
+  const other = wordsOf(whole);
   // Fewer than half the words: not a reading word for word (no spaces between them).
   if (other.length * 2 < phrase.length) {
     return undefined;
@@ -455,23 +465,31 @@ export const otherLanguageReading = (heard: Heard, text: string): string | undef
 
 /**
  * Every other reading of `text` worth a search: the recogniser's own
- * (`alternativesFor`), with the other language's (`otherLanguageReading`:
- * a name said that language's way is a word of it) right after the
+ * (`alternativesFor`), with Apple's when Parakeet read the phrase
+ * (`appleReading`) and the other language's (`otherLanguageReading`: a
+ * name said that language's way is a word of it) right after the
  * likeliest of them. Second, not first: read by the wrong language's
  * recogniser a phrase is mostly noise (a German phrase's English
  * reading), and the recogniser's own best guess must not wait behind
  * that; second is still among the few the lookup has time to search.
+ * Apple's goes before the other language's: it listened in the
+ * language the user dictates in.
  */
 export const readingsFor = (
   heard: Heard,
   text: string,
   limit: number = ALTERNATIVES_LIMIT,
 ): ReadonlyArray<string> => {
-  const other = otherLanguageReading(heard, text);
   const own = alternativesFor(heard, text, limit);
-  // One the recogniser weighed too stays where it ranked it.
-  if (other === undefined || own.some((reading) => keysOf(reading) === keysOf(other))) {
-    return own;
+  const more: Array<string> = [];
+  for (const reading of [appleReading(heard, text), otherLanguageReading(heard, text)]) {
+    // One the recogniser weighed too stays where it ranked it.
+    if (
+      reading !== undefined &&
+      ![...own, ...more].some((each) => keysOf(each) === keysOf(reading))
+    ) {
+      more.push(reading);
+    }
   }
-  return [...own.slice(0, 1), other, ...own.slice(1)].slice(0, limit);
+  return [...own.slice(0, 1), ...more, ...own.slice(1)].slice(0, limit);
 };

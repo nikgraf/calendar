@@ -105,7 +105,9 @@ export const appleSpeech: SpeechToText = {
     }
     active.remove();
     const result = await native.finish(active.session);
-    return result ? heardFromSegments(result.segments, result.other) : undefined;
+    return result
+      ? heardFromSegments(result.segments, result.other, result.parakeet?.text)
+      : undefined;
   },
   isPrepared: () => {
     const native = loadSpeechModule();
@@ -131,7 +133,10 @@ export const appleSpeech: SpeechToText = {
     }
     const result = await native.read(active.session);
     return result
-      ? { heard: heardFromSegments(result.segments, result.other), mark: result.mark }
+      ? {
+          heard: heardFromSegments(result.segments, result.other, result.parakeet?.text),
+          mark: result.mark,
+        }
       : undefined;
   },
   start: async ({ onWords, signal }) => {

@@ -3,6 +3,7 @@ import {
   alignWords,
   alternativesFor,
   findWords,
+  appleReading,
   otherLanguageReading,
   readingsFor,
   wordsAt,
@@ -386,6 +387,24 @@ describe('readingsFor', () => {
       'Mit Tom at the Naschmarkt',
     );
     expect(alone && readingsFor(alone, 'Nashmacht')).toEqual(['Naschmarkt']);
+  });
+
+  it('searches Apple’s reading when Parakeet’s is the phrase, before the other language’s', () => {
+    const read = heardFromSegments(
+      [{ text: 'Spazieren mit Anna in Schönbrunn am Sonntag' }],
+      'Spazieren mit Anna in Schambun am Sonntag',
+      'Spazieren mit Anna in Schamboun am Sonntag',
+    );
+    expect(read?.text).toBe('Spazieren mit Anna in Schamboun am Sonntag');
+    expect(read && appleReading(read, 'Schamboun')).toBe('Schönbrunn');
+    expect(read && readingsFor(read, 'Schamboun')).toEqual(['Schönbrunn', 'Schambun']);
+    // Apple heard the same: nothing more to search.
+    const same = heardFromSegments(
+      [{ text: 'Treffen am Karlsplatz' }],
+      undefined,
+      'Treffen am Karlsplatz',
+    );
+    expect(same && readingsFor(same, 'Karlsplatz')).toEqual([]);
   });
 
   it('is the recogniser’s own readings without another language', () => {

@@ -58,6 +58,17 @@ describe('otherReadings', () => {
     expect(readings.length).toBeLessThanOrEqual(READINGS_OFFERED);
   });
 
+  it('offers Apple’s reading first when Parakeet’s was sent', async () => {
+    const read = heardFromSegments([{ text: 'Make it at two' }], undefined, 'Make it at too')!;
+    const readings = await otherReadings({
+      heard: read,
+      stillAsked: () => true,
+      utterance: read.text,
+      would: async (text) => ({ does: '→ 14:00', effect: text }),
+    });
+    expect(readings.map((reading) => reading.text)).toEqual(['Make it at two']);
+  });
+
   it('stops once the answer is no longer asked for, and has nothing to try for words typed', async () => {
     let asked = 0;
     const readings = await otherReadings({

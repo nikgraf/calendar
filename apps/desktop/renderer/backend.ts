@@ -108,6 +108,8 @@ declare global {
       modelSpeechCut: (session: number, mark: number) => void;
       modelSpeechFinish: (session: number) => Promise<{
         other?: string;
+        /** The phrase as Parakeet read it, when dictation reads with it (ParakeetBridge.swift). */
+        parakeet?: { text: string };
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
       modelSpeechLanguages: (
@@ -116,6 +118,7 @@ declare global {
       modelSpeechRead: (session: number) => Promise<{
         mark?: number;
         other?: string;
+        parakeet?: { text: string };
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
       modelSpeechStart: (
