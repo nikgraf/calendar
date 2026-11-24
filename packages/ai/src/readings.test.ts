@@ -407,6 +407,15 @@ describe('readingsFor', () => {
     expect(same && readingsFor(same, 'Karlsplatz')).toEqual([]);
   });
 
+  it('still searches Apple’s alternatives where Parakeet read the place as Apple did', () => {
+    const read = heardFromSegments(
+      [{ text: 'Coffee at' }, { alternatives: [' Kathamek', ' Kaffemik'], text: ' Kathamek' }],
+      undefined,
+      'Coffee at Kathamek',
+    );
+    expect(read && readingsFor(read, 'Kathamek')).toEqual(['Kaffemik']);
+  });
+
   it('is the recogniser’s own readings without another language', () => {
     const read = heard([{ alternatives: ['at Kaffe Mik'], text: 'at Meek' }]);
     expect(readingsFor(read, 'Meek')).toEqual(alternativesFor(read, 'Meek'));

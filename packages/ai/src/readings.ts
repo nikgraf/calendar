@@ -434,7 +434,8 @@ export const appleReading = (heard: Heard, text: string): string | undefined =>
 /** `text` with the words another reading of the whole phrase has where they stood. */
 const readingWithin = (heard: Heard, text: string, whole: string): string | undefined => {
   const own = wordsOf(text);
-  const phrase = segmentWords(heard.segments).map((entry) => entry.word);
+  // The phrase as sent: Apple's segments, or Parakeet's reading when it is the phrase.
+  const phrase = wordsOf(heard.text);
   const found = findWords(own, phrase);
   const [run] = found;
   if (run === undefined || found.length > 1) {

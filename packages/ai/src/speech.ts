@@ -24,6 +24,7 @@ export interface Heard {
    * that is sent: only the place lookup reads it (`otherLanguageReading`).
    */
   readonly other?: string | undefined;
+  /** Apple's recogniser's reading, segment by segment, with the alternatives it weighed. */
   readonly segments: ReadonlyArray<TranscriptSegment>;
   readonly text: string;
 }
@@ -150,7 +151,9 @@ export const transcriptFromSegments = (
 /**
  * A finished phrase from the recogniser's segments; undefined for silence
  * (Apple's recogniser decides that). With Parakeet's reading (`parakeet`)
- * that reading is the phrase, and Apple's goes along as `apple`.
+ * that reading is the phrase, and Apple's goes along as `apple`, its
+ * segments kept with their alternatives: where both read a place alike,
+ * Apple's alternatives for it are still searched.
  */
 export const heardFromSegments = (
   segments: ReadonlyArray<TranscriptSegment>,
@@ -165,5 +168,5 @@ export const heardFromSegments = (
   const read = parakeet === undefined ? undefined : transcriptFromSegments([{ text: parakeet }]);
   return read === undefined
     ? { ...withOther, segments, text: apple }
-    : { apple, ...withOther, segments: [{ text: read }], text: read };
+    : { apple, ...withOther, segments, text: read };
 };

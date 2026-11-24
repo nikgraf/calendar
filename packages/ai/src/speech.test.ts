@@ -58,7 +58,8 @@ describe('heardFromSegments', () => {
     ).toEqual({
       apple: 'Coffee with Thomas Kapmeader',
       other: 'Kaffee mit Thomas',
-      segments: [{ text: 'Coffee with Thomas Karpfeneder' }],
+      // Apple's segments stay, with what it weighed for them.
+      segments,
       text: 'Coffee with Thomas Karpfeneder',
     });
     // Parakeet wrote nothing: Apple's reading is the phrase, as without it.

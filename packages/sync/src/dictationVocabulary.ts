@@ -2,7 +2,8 @@ import { dictationVocabulary, type DictationVocabulary, type EventRecord } from 
 import { ContactRepo, EventRepo } from '@calendar/db';
 import { Clock, Effect } from 'effect';
 import { DeviceContacts } from './deviceContacts.ts';
-import { loadEventsInRangeOrFail } from './eventsInRange.ts';
+import { AppleCalendarEvents } from './appleCalendarEvents.ts';
+import { loadEventsInRange } from './eventsInRange.ts';
 
 /** A year of events: the people met and the places been to. */
 const VOCABULARY_HISTORY_MS = 365 * 24 * 60 * 60 * 1000;
@@ -34,14 +35,20 @@ export const loadDictationVocabulary = Effect.gen(function* () {
       whole = false;
       return fallback;
     });
-  // EventKit's failure is told apart from no events (`OrFail`), so it is not kept either.
-  const events = yield* loadEventsInRangeOrFail(now - VOCABULARY_HISTORY_MS, now).pipe(
+  // Google's rows and EventKit's apart: either failing leaves the other's
+  // names, and EventKit's failure is told from no events (`OrFail`).
+  const start = now - VOCABULARY_HISTORY_MS;
+  const google = yield* loadEventsInRange(start, now, { apple: false }).pipe(
     orNothing<ReadonlyArray<EventRecord>>([]),
   );
-  const google = yield* (yield* ContactRepo).listAll().pipe(orNothing([]));
+  const apple = yield* (yield* AppleCalendarEvents)
+    .eventsInRangeOrFail(start, now)
+    .pipe(orNothing<ReadonlyArray<EventRecord>>([]));
+  const events = [...google, ...apple];
+  const saved = yield* (yield* ContactRepo).listAll().pipe(orNothing([]));
   // The device's contacts never fail: the last snapshot stands in for a failed read.
   const device = yield* (yield* DeviceContacts).list();
-  const vocabulary = dictationVocabulary(events, [...google, ...device]);
+  const vocabulary = dictationVocabulary(events, [...saved, ...device]);
   if (whole) {
     read.set(store, { at: now, vocabulary });
   }

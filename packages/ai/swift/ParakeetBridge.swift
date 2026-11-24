@@ -122,6 +122,23 @@ actor ParakeetEngine {
     var revisions = ModelRegistry.revisionOverrides
     for (repo, revision) in Self.pins { revisions[repo] = revision }
     ModelRegistry.revisionOverrides = revisions
+    // Loads never fetch: FluidAudio would otherwise delete a model that fails
+    // to load and download it again, outside the person's Wi-Fi choice.
+    // Only `download`, which the store gates, goes online.
+    if !downloading { ModelHub.offlineMode = true }
+  }
+
+  /// A download under way: the one time FluidAudio may go online.
+  private var downloading = false
+
+  private func online<T>(_ work: () async throws -> T) async rethrows -> T {
+    downloading = true
+    ModelHub.offlineMode = false
+    defer {
+      downloading = false
+      ModelHub.offlineMode = true
+    }
+    return try await work()
   }
 
   private func paths() throws -> (asr: URL, ctc: URL) {
@@ -149,19 +166,25 @@ actor ParakeetEngine {
   func download(progress: @escaping @Sendable (Double) -> Void) async throws {
     let (asr, ctc) = try paths()
     let share = Self.ultraShare
-    _ = try await AsrModels.download(to: asr, version: .ultra) { step in
-      progress(step.fractionCompleted * share)
-    }
-    try Task.checkCancellation()
-    _ = try await CtcModels.download(to: ctc, variant: .ctc110m) { step in
-      progress(share + step.fractionCompleted * (1 - share))
+    try await online {
+      _ = try await AsrModels.download(to: asr, version: .ultra) { step in
+        progress(step.fractionCompleted * share)
+      }
+      try Task.checkCancellation()
+      _ = try await CtcModels.download(to: ctc, variant: .ctc110m) { step in
+        progress(share + step.fractionCompleted * (1 - share))
+      }
     }
     progress(1)
   }
 
   /// Lets go of the models and deletes their files.
-  func remove() throws {
+  /// Lets go of the models and deletes their files, once a load still
+  /// reading them has stopped.
+  func remove() async throws {
+    let pending = [loading?.task, spotting].compactMap { $0 }
     releaseModels()
+    for task in pending { _ = try? await task.value }
     guard let folder, FileManager.default.fileExists(atPath: folder.path) else { return }
     try FileManager.default.removeItem(at: folder)
   }
@@ -377,7 +400,9 @@ actor ParakeetEngine {
     generation += 1
     warming?.cancel()
     warming = nil
+    loading?.task.cancel()
     loading = nil
+    spotting?.cancel()
     spotting = nil
     loaded = nil
     ctc = nil
@@ -401,13 +426,15 @@ actor ParakeetEngine {
     guard let folder else { throw ParakeetBridgeError.notConfigured }
     releaseModels()
     let started = Date()
-    _ = try await AsrModels.download(
-      to: folder.appendingPathComponent(
-        AsrModels.defaultCacheDirectory(for: version).lastPathComponent, isDirectory: true),
-      version: version, progressHandler: progress)
-    if !vocabulary.isEmpty {
-      let (_, ctc) = try paths()
-      _ = try await CtcModels.download(to: ctc, variant: .ctc110m)
+    let (_, ctc) = try paths()
+    try await online {
+      _ = try await AsrModels.download(
+        to: folder.appendingPathComponent(
+          AsrModels.defaultCacheDirectory(for: version).lastPathComponent, isDirectory: true),
+        version: version, progressHandler: progress)
+      if !vocabulary.isEmpty {
+        _ = try await CtcModels.download(to: ctc, variant: .ctc110m)
+      }
     }
     terms = Self.cleaned(vocabulary)
     _ = try await prepare(version)
