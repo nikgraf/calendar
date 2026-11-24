@@ -3,6 +3,7 @@ import {
   type CaptureSource,
   lessonDemoModel,
   lessonModelCopy,
+  lessonOffer,
   PUBLISHED_MODEL,
   tunedReader,
 } from '@calendar/ai';
@@ -34,6 +35,7 @@ import {
   useAssistantModelState,
   useFinder,
 } from '../../ai/assistantModel.ts';
+import { useParakeetState } from '../../ai/parakeetModel.ts';
 import { backend } from '../../backend.ts';
 import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { Button } from '../../ui/Button.tsx';
@@ -59,11 +61,37 @@ const assistantReader = tunedReader(desktopAssistantModel);
  */
 const demoReader = tunedReader(lessonDemoModel);
 
-/** The banner's action: download the Assistant's model (the person agrees), or try again. */
-const runModelAction = (kind: 'download' | 'mobile' | 'retry') => {
-  void (kind === 'retry'
-    ? window.calendarBridge.assistantRetry()
-    : window.calendarBridge.assistantDownload());
+/**
+ * The banner's action: download the Assistant's model (the person agrees),
+ * Parakeet beside it (`both`) or alone, or try again. "Without Parakeet"
+ * (`decline`) still fetches the Assistant's model when it was offered too,
+ * and switches Parakeet off.
+ */
+const runModelAction = (
+  kind: 'both' | 'decline' | 'decline-parakeet' | 'download' | 'mobile' | 'parakeet' | 'retry',
+) => {
+  const bridge = window.calendarBridge;
+  switch (kind) {
+    case 'both':
+      void bridge.assistantDownload();
+      void bridge.parakeetDownload();
+      return;
+    case 'parakeet':
+      void bridge.parakeetDownload();
+      return;
+    case 'decline':
+      void bridge.assistantDownload();
+      void bridge.parakeetSetOn(false);
+      return;
+    case 'decline-parakeet':
+      void bridge.parakeetSetOn(false);
+      return;
+    case 'retry':
+      void bridge.assistantRetry();
+      return;
+    default:
+      void bridge.assistantDownload();
+  }
 };
 
 /** What the demo answers next, from the thread's phrases: the lesson's phrase, then its change. */
@@ -85,17 +113,28 @@ function LessonFrame({
   readonly model: AssistantModelState | undefined;
   readonly onSkip: (() => void) | undefined;
 }) {
-  const copy =
+  const parakeet = useParakeetState();
+  const own =
     model === undefined
       ? undefined
       : lessonModelCopy(model, { device: 'Mac', network: undefined, size: PUBLISHED_MODEL.bytes });
+  const copy =
+    id === 'create' && parakeet !== undefined
+      ? lessonOffer(own, parakeet, { assistantBytes: PUBLISHED_MODEL.bytes, device: 'Mac' })
+      : own;
   const offer = copy?.action;
+  const declined = offer?.kind === 'both' ? 'decline' : 'decline-parakeet';
   return (
     <LessonBanner
       action={
         offer === undefined
           ? undefined
           : { label: offer.label, onClick: () => runModelAction(offer.kind) }
+      }
+      decline={
+        copy !== undefined && 'decline' in copy && copy.decline !== undefined
+          ? { label: copy.decline, onClick: () => runModelAction(declined) }
+          : undefined
       }
       id={id}
       note={copy?.text}

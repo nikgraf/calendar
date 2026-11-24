@@ -17,6 +17,7 @@ const HINTS: Partial<Record<LessonId, string>> = {
  */
 export function LessonBanner({
   action,
+  decline,
   id,
   note,
   onSkip,
@@ -24,6 +25,8 @@ export function LessonBanner({
 }: {
   /** What the note asks for (the Create lesson's download of the Assistant's model). */
   action?: { readonly label: string; readonly onPress: () => void } | undefined;
+  /** Beside the action, quieter: what goes without an optional part of it ("Without Parakeet"). */
+  decline?: { readonly label: string; readonly onPress: () => void } | undefined;
   id: LessonId;
   /** In place of the hint: the Create lesson without the Assistant's model, and the demo standing in. */
   note?: string | undefined;
@@ -56,14 +59,27 @@ export function LessonBanner({
           </View>
         )}
         {action === undefined ? null : (
-          <Pressable
-            accessibilityRole="button"
-            onPress={action.onPress}
-            style={({ pressed }) => [styles.action, pressed && styles.pressed]}
-            testID="lesson-model-action"
-          >
-            <Text style={styles.actionLabel}>{action.label}</Text>
-          </Pressable>
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={action.onPress}
+              style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+              testID="lesson-model-action"
+            >
+              <Text style={styles.actionLabel}>{action.label}</Text>
+            </Pressable>
+            {decline === undefined ? null : (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={decline.onPress}
+                style={({ pressed }) => [styles.decline, pressed && styles.pressed]}
+                testID="lesson-model-decline"
+              >
+                <Text style={styles.declineLabel}>{decline.label}</Text>
+              </Pressable>
+            )}
+          </View>
         )}
       </View>
       {onSkip ? (
@@ -99,6 +115,12 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
       fontWeight: '600',
     },
+    actions: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 14,
+    },
     banner: {
       alignItems: 'flex-start',
       backgroundColor: colors.surface,
@@ -109,6 +131,15 @@ const makeStyles = (colors: ThemeColors) =>
       marginHorizontal: 16,
       paddingHorizontal: 14,
       paddingVertical: 10,
+    },
+    decline: {
+      justifyContent: 'center',
+      marginTop: 8,
+      minHeight: 44,
+    },
+    declineLabel: {
+      color: colors.primary,
+      fontSize: 15,
     },
     fill: {
       backgroundColor: colors.primary,

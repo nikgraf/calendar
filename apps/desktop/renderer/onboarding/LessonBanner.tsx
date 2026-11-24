@@ -17,6 +17,7 @@ const HINTS: Partial<Record<LessonId, string>> = {
  */
 export function LessonBanner({
   action,
+  decline,
   id,
   note,
   onSkip,
@@ -24,6 +25,8 @@ export function LessonBanner({
 }: {
   /** What the note asks for (the Create lesson's download of the Assistant's model). */
   action?: { readonly label: string; readonly onClick: () => void } | undefined;
+  /** Beside the action, quieter: what goes without an optional part of it ("Without Parakeet"). */
+  decline?: { readonly label: string; readonly onClick: () => void } | undefined;
   id: LessonId;
   /** In place of the hint: the Create lesson without the Assistant's model, and the demo standing in. */
   note?: string | undefined;
@@ -64,15 +67,26 @@ export function LessonBanner({
           </div>
         )}
         {action === undefined ? null : (
-          <Button
-            className="mt-2"
-            data-testid="lesson-model-action"
-            onClick={action.onClick}
-            size="sm"
-            variant="primary"
-          >
-            {action.label}
-          </Button>
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              data-testid="lesson-model-action"
+              onClick={action.onClick}
+              size="sm"
+              variant="primary"
+            >
+              {action.label}
+            </Button>
+            {decline === undefined ? null : (
+              <Button
+                data-testid="lesson-model-decline"
+                onClick={decline.onClick}
+                size="sm"
+                variant="ghost"
+              >
+                {decline.label}
+              </Button>
+            )}
+          </div>
         )}
       </div>
       {onSkip ? (

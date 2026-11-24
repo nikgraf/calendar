@@ -26,14 +26,6 @@ public class SolunivoSpeechModule: Module {
 
     Events("onWords", "onParakeetProgress")
 
-    OnCreate {
-      if let caches = try? FileManager.default.url(
-        for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-      {
-        let folder = caches.appendingPathComponent("parakeet", isDirectory: true)
-        Task { await ParakeetEngine.shared.configure(folder: folder) }
-      }
-    }
 
     // JS reloaded (or the app's host went away) mid-phrase: nothing is
     // left to finish it, so the microphone closes and the phrase goes, and
@@ -165,7 +157,7 @@ public class SolunivoSpeechModule: Module {
 
     // Whether Parakeet's files are here in full, and the room they take.
     AsyncFunction("parakeetState") { () async -> [String: Any] in
-      await ParakeetEngine.shared.state().json
+      await Self.engine().state().json
     }
 
     // Fetches what is missing of Parakeet's files, reporting
@@ -174,7 +166,7 @@ public class SolunivoSpeechModule: Module {
     AsyncFunction("parakeetDownload") { (promise: Promise) in
       let module = WeakModule(self)
       let task = self.downloads.start {
-        try await ParakeetEngine.shared.download { fraction in
+        try await Self.engine().download { fraction in
           module.value?.sendEvent("onParakeetProgress", ["fraction": fraction])
         }
       }
@@ -196,13 +188,13 @@ public class SolunivoSpeechModule: Module {
 
     AsyncFunction("parakeetRemove") { [downloads] () async throws in
       downloads.cancel()
-      try await ParakeetEngine.shared.remove()
+      try await Self.engine().remove()
     }
 
     // Dictation reads with Parakeet, with these names as its vocabulary
     // (the models load in the background), or no longer does.
     AsyncFunction("parakeetUse") { (on: Bool, vocabulary: [String]) async in
-      await ParakeetEngine.shared.use(on: on, vocabulary: vocabulary)
+      await Self.engine().use(on: on, vocabulary: vocabulary)
     }
 
     // The Speech Spike page (Settings › Advanced): any version, any
@@ -210,7 +202,7 @@ public class SolunivoSpeechModule: Module {
     AsyncFunction("parakeetSpikeLoad") {
       (version: String, vocabulary: [String]) async throws -> [String: Any] in
       let module = WeakModule(self)
-      let loadMs = try await ParakeetEngine.shared.spikeLoad(
+      let loadMs = try await Self.engine().spikeLoad(
         version: version, vocabulary: vocabulary
       ) { progress in
         module.value?.sendEvent(
@@ -220,12 +212,24 @@ public class SolunivoSpeechModule: Module {
     }
 
     AsyncFunction("parakeetSpikeTranscribe") { (uri: String) async throws -> [String: Any] in
-      try await ParakeetEngine.shared.spikeTranscribe(uri: uri).json
+      try await Self.engine().spikeTranscribe(uri: uri).json
     }
 
     AsyncFunction("parakeetSpikeRelease") { () async in
-      await ParakeetEngine.shared.spikeRelease()
+      await Self.engine().spikeRelease()
     }
+  }
+
+  /// Parakeet's engine, its files in the app's caches: set before every
+  /// call, so none can reach it before it knows where they are.
+  private static func engine() async -> ParakeetEngine {
+    if let caches = try? FileManager.default.url(
+      for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+    {
+      await ParakeetEngine.shared.configure(
+        folder: caches.appendingPathComponent("parakeet", isDirectory: true))
+    }
+    return ParakeetEngine.shared
   }
 
   private static func message(_ error: Error) -> String {

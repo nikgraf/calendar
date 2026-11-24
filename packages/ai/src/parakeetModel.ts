@@ -140,3 +140,79 @@ export const parakeetCopy = (
       };
   }
 };
+
+/** The Create lesson's banner offer, as `lessonModelCopy` words the Assistant's alone. */
+export interface LessonOffer {
+  /** `both`: the Assistant's model and Parakeet; `parakeet`: Parakeet alone; else the Assistant's own. */
+  readonly action?: {
+    readonly kind: 'both' | 'download' | 'mobile' | 'parakeet' | 'retry';
+    readonly label: string;
+  };
+  /** Parakeet is offered: "Without Parakeet" switches it off (Settings › Dictation can switch it on again). */
+  readonly decline?: string;
+  readonly progress?: number;
+  readonly text: string;
+}
+
+/**
+ * The Create lesson's offer: the Assistant's model as `lessonModelCopy`
+ * words it (`assistant`, absent once it was here before the lesson), and
+ * Parakeet beside it while it is on and not here — optional, but in the
+ * same button: Download Both. "Without Parakeet" is the person's no and
+ * switches it off. Undefined when neither has anything to say.
+ */
+export const lessonOffer = (
+  assistant:
+    | {
+        readonly action?: {
+          readonly kind: 'download' | 'mobile' | 'retry';
+          readonly label: string;
+        };
+        readonly progress?: number;
+        readonly text: string;
+      }
+    | undefined,
+  parakeet: ParakeetState,
+  { assistantBytes, device }: { readonly assistantBytes: number; readonly device: AssistantDevice },
+): LessonOffer | undefined => {
+  const wanted = parakeet.on && parakeet.files.kind === 'absent';
+  const line = `Dictation can also read with Parakeet, a speech model on this ${device} that writes the names and places you say better: ${sizeLabel(PARAKEET_BYTES)} more.`;
+  const decline = 'Without Parakeet';
+  if (assistant === undefined) {
+    return wanted
+      ? {
+          action: { kind: 'parakeet', label: `Download Parakeet (${sizeLabel(PARAKEET_BYTES)})` },
+          decline,
+          text: line,
+        }
+      : undefined;
+  }
+  if (wanted && assistant.action?.kind === 'download') {
+    return {
+      ...assistant,
+      action: {
+        kind: 'both',
+        label: `Download Both (${sizeLabel(assistantBytes + PARAKEET_BYTES)})`,
+      },
+      decline,
+      text: `${assistant.text} ${line}`,
+    };
+  }
+  if (wanted && assistant.action === undefined) {
+    return {
+      ...assistant,
+      action: { kind: 'parakeet', label: `Download Parakeet (${sizeLabel(PARAKEET_BYTES)})` },
+      decline,
+      text: `${assistant.text} ${line}`,
+    };
+  }
+  if (parakeet.on && parakeet.files.kind === 'downloading') {
+    const progress = percent(parakeet.files.progress);
+    return {
+      ...assistant,
+      ...(assistant.progress === undefined ? { progress } : {}),
+      text: `${assistant.text} Parakeet: ${String(progress)} %.`,
+    };
+  }
+  return assistant;
+};
