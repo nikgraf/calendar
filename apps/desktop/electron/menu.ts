@@ -1,3 +1,4 @@
+import { ACKNOWLEDGEMENTS, creditLine } from '@calendar/core/acknowledgements';
 import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 import { showSettingsWindow } from './windows.ts';
 
@@ -9,6 +10,15 @@ import { showSettingsWindow } from './windows.ts';
  * running windowless. The other menus are the stock roles.
  */
 export const installApplicationMenu = (): void => {
+  // About Solunivo credits what the app ships and downloads; the licence
+  // texts ride beside it in Resources (THIRD_PARTY_NOTICES.md).
+  app.setAboutPanelOptions({
+    credits: [
+      ...ACKNOWLEDGEMENTS.map(creditLine),
+      '',
+      'The licence texts: THIRD_PARTY_NOTICES.md in the app’s Resources.',
+    ].join('\n'),
+  });
   const template: Array<MenuItemConstructorOptions> = [
     {
       label: app.name,
