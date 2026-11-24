@@ -37,6 +37,8 @@ const native = vi.hoisted(() => {
     }>,
     /** Sessions finished or cancelled: the module answers nothing for them again. */
     gone: new Set<number>(),
+    /** Set: the next read waits until the test lets it through. */
+    readHeld: undefined as Promise<void> | undefined,
     /** Set: the next finish waits until the test lets it through. */
     finishHeld: undefined as Promise<void> | undefined,
     /** Set: `finish` rejects with it. */
@@ -91,6 +93,9 @@ vi.mock('expo', () => ({
       },
       read: async (session: number) => {
         native.calls.push(`read ${session}`);
+        const held = native.readHeld;
+        native.readHeld = undefined;
+        await held;
         if (native.readError) {
           throw native.readError;
         }
@@ -192,6 +197,7 @@ beforeEach(() => {
   native.finishQueue.length = 0;
   native.finishError = undefined;
   native.finishHeld = undefined;
+  native.readHeld = undefined;
   native.gone.clear();
   native.startError = undefined;
   notes.clear();
@@ -542,6 +548,40 @@ describe('appleSpeech', () => {
       });
       await speech.read();
       native.finishQueue.push({ segments: [] });
+      await expect(speech.finish()).resolves.toMatchObject({
+        apple: 'Lunch with Sara',
+        text: 'Lunch with Sarah',
+      });
+    });
+
+    it('still delivers the phrase when dictation ends before the module’s read failed', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      let release: (() => void) | undefined;
+      native.readHeld = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const read = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // "That's all" while the module still reads: the session is finished, not dropped.
+      await speech.cancel();
+      release?.();
+      await expect(read).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' }, mark: 0 });
+      expect(startCalls()).toEqual(['start 1 processed', 'read 1', 'finish 1']);
+      expect(native.listeners.size).toBe(0);
+    });
+
+    it('lets a noise pause read that way go before the next phrase', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push({ segments: [] });
+      await expect(speech.read()).resolves.toEqual({ heard: undefined, mark: 0 });
+      // Never cut (a hold began meanwhile): the held phrase keeps Parakeet's reading.
+      native.finishQueue.push({
+        ...phrase('Lunch with Sara'),
+        parakeet: { raw: 'Lunch with Sarah', replacements: [], text: 'Lunch with Sarah' },
+      });
       await expect(speech.finish()).resolves.toMatchObject({
         apple: 'Lunch with Sara',
         text: 'Lunch with Sarah',

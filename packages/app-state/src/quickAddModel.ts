@@ -352,7 +352,10 @@ export const useQuickAddModel = ({
   const sendHeard = async (own: Flight, heard: Heard) => {
     setPhrase(heard.text);
     setSending(heard.text);
-    setError(null);
+    // A listening lost while the phrase waited (`failed`) keeps its message.
+    if (!own.orphan) {
+      setError(null);
+    }
     try {
       const message = await phraseRef.current(heard.text, heard);
       if (!own.dropped) {

@@ -81,6 +81,8 @@ interface Listening {
   fallback?: Promise<SpeechRead | undefined> | undefined;
   readonly onLost: (() => void) | undefined;
   readonly onWords: (source: WordsSource, text: string) => void;
+  /** The module is reading the phrase with the microphone open (`read`), not answered yet. */
+  reading?: Promise<unknown> | undefined;
   readonly remove: () => void;
   readonly said: Said;
   readonly session: number;
@@ -156,7 +158,8 @@ const joinedOr = (before: string | undefined, text: string | undefined) => {
 
 /** A reading after the phrase read before it, as one. Parakeet's only when it read both. */
 const after = (before: SpeechRead | undefined, read: SpeechRead): SpeechRead => {
-  if (!before) {
+  // A noise pause read that way and never cut holds nothing to go before.
+  if (!before || before.segments.length === 0) {
     return read;
   }
   // Nothing followed it (no audio, so no other reading either).
@@ -268,9 +271,15 @@ export const appleSpeech: SpeechToText = {
       return;
     }
     active.remove();
-    await loadSpeechModule()
-      ?.cancel(active.session)
-      .catch(() => undefined);
+    const native = loadSpeechModule();
+    if (native && active.reading && !active.fallback) {
+      // A phrase is on its way and may still have to be read the fallback
+      // way: ending the session as a finish does keeps its audio for that
+      // (the microphone closes all the same), and nothing opens again.
+      void readAfresh(native, active).catch(() => undefined);
+      return;
+    }
+    await native?.cancel(active.session).catch(() => undefined);
   },
   cut: (mark) => {
     const active = current;
@@ -326,13 +335,19 @@ export const appleSpeech: SpeechToText = {
       return phraseIn(await active.fallback);
     }
     let result: Awaited<ReturnType<Native['read']>>;
+    const reading = native.read(active.session);
+    active.reading = reading;
     try {
-      result = await native.read(active.session);
+      result = await reading;
     } catch (error) {
       // On the iPhone the reading beside the live recognisers can fail
       // where the Mac's does not: the phrase is still read and sent.
       recordDictationError('read', error);
       return phraseIn(await readAfresh(native, active));
+    } finally {
+      if (active.reading === reading) {
+        active.reading = undefined;
+      }
     }
     return result ? { heard: heardIn(after(active.uncut, result)), mark: result.mark } : undefined;
   },
