@@ -26,7 +26,7 @@ import {
  * Recurring series on the real API: masters round-trip with
  * `singleEvents=false`, an instance edit becomes an exception under
  * Google's `<master>_<basetime>` id, a "this and following" split leaves
- * an UNTIL master plus a new one (also on an RDATE occurrence the rule
+ * an UNTIL master plus a new one (refused on an RDATE occurrence the rule
  * skips), a set of only RDATE lines expands like Google's, a series
  * rename spares exceptions, and a new rule keeps the exceptions whose
  * slots it still draws and cancels the rest.
@@ -267,56 +267,52 @@ describe('live Google: recurring series', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
-  it.live('this-and-following on an RDATE occurrence its rule skips keeps it, as Google does', () =>
-    Effect.gen(function* () {
-      const { engine, mutations, scratch: google } = yield* bootstrap(config);
-      const start = hoursFromNow(2);
-      const weekday = WEEKDAYS[new Date(start).getUTCDay()]!;
-      // Two days after the second occurrence: a day the rule skips.
-      const extra = start + WEEK + 2 * DAY;
-      const master = yield* mutations.createEvent({
-        accountId: LIVE_ACCOUNT_ID,
-        calendarId: calendar(),
-        endUtc: start + HOUR,
-        isAllDay: false,
-        recurrence: [`RRULE:FREQ=WEEKLY;BYDAY=${weekday};COUNT=4`, `RDATE:${compactUtc(extra)}`],
-        startTimeZone: 'UTC',
-        startUtc: start,
-        title: titleFor(config, 'rdate-split'),
-      });
-      yield* drain(mutations);
-      yield* mutations.updateRecurring({
-        ...target(master.id, extra),
-        changes: { title: `${master.title} (tail)` },
-        scope: 'following',
-      });
-      yield* drain(mutations);
-      expect(yield* pendingOps).toEqual([]);
-      yield* engine.syncAll();
-      const events = yield* EventRepo;
-      const tail = (yield* events.getWindow(0, Number.MAX_SAFE_INTEGER)).masters.find(
-        (row) => row.title === `${master.title} (tail)`,
-      );
-      expect(tail).toBeDefined();
-      // Google's own expansion of both halves: the extra date starts the tail…
-      const onGoogle = (yield* Effect.forEach([master.id, tail!.id], (id) =>
-        google.listInstances(calendar(), id),
-      ))
-        .flat()
-        .map((instance) => Date.parse(instance.start?.dateTime ?? ''))
-        .sort((a, b) => a - b);
-      expect(onGoogle).toEqual([start, start + WEEK, extra, start + 2 * WEEK, start + 3 * WEEK]);
-      // …and the calendar draws the same after a pull.
-      const from = start - HOUR;
-      const to = start + 4 * WEEK;
-      const drawn = assembleWindow(yield* events.getWindow(from, to), from, to)
-        .filter(
-          (event) => event.recurringEventId === master.id || event.recurringEventId === tail!.id,
-        )
-        .map((event) => event.startUtc)
-        .sort((a, b) => a - b);
-      expect(drawn).toEqual(onGoogle);
-    }).pipe(Effect.provide(liveEngineLayer(config))),
+  it.live(
+    'this-and-following on an RDATE occurrence its rule skips is refused, the series untouched',
+    () =>
+      Effect.gen(function* () {
+        const { engine, mutations, scratch: google } = yield* bootstrap(config);
+        const start = hoursFromNow(2);
+        const weekday = WEEKDAYS[new Date(start).getUTCDay()]!;
+        // Two days after the second occurrence: a day the rule skips.
+        const extra = start + WEEK + 2 * DAY;
+        const master = yield* mutations.createEvent({
+          accountId: LIVE_ACCOUNT_ID,
+          calendarId: calendar(),
+          endUtc: start + HOUR,
+          isAllDay: false,
+          recurrence: [`RRULE:FREQ=WEEKLY;BYDAY=${weekday};COUNT=4`, `RDATE:${compactUtc(extra)}`],
+          startTimeZone: 'UTC',
+          startUtc: start,
+          title: titleFor(config, 'rdate-split'),
+        });
+        yield* drain(mutations);
+        const series = [start, start + WEEK, extra, start + 2 * WEEK, start + 3 * WEEK];
+        expect(yield* instanceStarts(google, master.id)).toEqual(series);
+        // A split there would restart the rule on the extra date's weekday
+        // (#365): refused before anything is written or queued.
+        const error = yield* Effect.flip(
+          mutations.updateRecurring({
+            ...target(master.id, extra),
+            changes: { title: `${master.title} (tail)` },
+            scope: 'following',
+          }),
+        );
+        expect(error._tag).toBe('RecurringSplitUnsupportedError');
+        expect(yield* pendingOps).toEqual([]);
+        expect((yield* google.getEvent(calendar(), master.id)).summary).toBe(master.title);
+        expect(yield* instanceStarts(google, master.id)).toEqual(series);
+        // …and the calendar still draws Google's expansion after a pull.
+        yield* engine.syncAll();
+        const events = yield* EventRepo;
+        const from = start - HOUR;
+        const to = start + 4 * WEEK;
+        const drawn = assembleWindow(yield* events.getWindow(from, to), from, to)
+          .filter((event) => event.recurringEventId === master.id)
+          .map((event) => event.startUtc)
+          .sort((a, b) => a - b);
+        expect(drawn).toEqual(series);
+      }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
   it.live('a series rename reaches the master and overwrites an exception’s title', () =>
