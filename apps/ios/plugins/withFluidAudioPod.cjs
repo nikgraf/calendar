@@ -1,5 +1,7 @@
-// FluidAudio (the Speech Spike page's Parakeet, modules/solunivo-parakeet)
-// is pinned here to the commit the Mac measurements ran (2026-11-23): its
+// FluidAudio (Parakeet, which reads dictation's phrases: packages/ai/swift/
+// ParakeetBridge.swift in modules/solunivo-speech) is pinned here to the
+// commit the measurements ran (2026-11-23, #378), as in the Mac helper's
+// Package.swift: its
 // releases on CocoaPods trunk stop at 0.7.8, far behind the podspec in
 // its repository, so the pod comes from git. Written into the Podfile, so a
 // local build, EAS and CI all get the same one.

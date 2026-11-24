@@ -16,14 +16,22 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
+  # Parakeet (ParakeetBridge.swift). Pinned in the Podfile to a commit
+  # (plugins/withFluidAudioPod.cjs): the releases on CocoaPods trunk stop
+  # at 0.7.8.
+  s.dependency 'FluidAudio'
   s.frameworks = 'AVFAudio', 'Speech'
 
-  # Swift/Objective-C compatibility
+  # FluidAudio builds arm64 alone for the simulator (and leaves x86_64 out
+  # of the app target): this pod has to match, or its x86_64 slice
+  # imports a FluidAudio without one ("unsupported Swift architecture").
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386 x86_64',
   }
 
-  # SpeechBridge.swift is a symlink to packages/ai/swift — the single
-  # source shared with the macOS helper. CocoaPods follows it.
+  # SpeechBridge.swift and ParakeetBridge.swift are symlinks to
+  # packages/ai/swift — the single sources shared with the macOS helper.
+  # CocoaPods follows them.
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
 end

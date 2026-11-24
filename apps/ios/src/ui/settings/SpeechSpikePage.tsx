@@ -1,9 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
-import {
-  loadParakeetModule,
-  type ParakeetVersion,
-} from '../../../modules/solunivo-parakeet/index.ts';
+import { loadParakeet, type ParakeetVersion } from '../../../modules/solunivo-speech/index.ts';
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
 import { loadAssistantModel, releaseAssistantModel } from '../../assistantRuntime.ts';
 import { llamaHolder } from '../../llamaOwner.ts';
@@ -92,21 +89,23 @@ const deviceFiles = (): ClipFiles | undefined => {
 };
 
 const parakeetPort = (): ParakeetPort | undefined => {
-  const native = loadParakeetModule();
+  const native = loadParakeet();
   if (native === undefined) {
     return undefined;
   }
   return {
     load: async (version, vocabulary, onProgress) => {
-      const listening = native.addListener('onProgress', ({ fraction }) => onProgress(fraction));
+      const listening = native.addListener('onParakeetProgress', ({ fraction }) =>
+        onProgress(fraction),
+      );
       try {
-        return await native.load(version, vocabulary);
+        return await native.parakeetSpikeLoad(version, vocabulary);
       } finally {
         listening.remove();
       }
     },
-    release: () => native.release(),
-    transcribe: (uri) => native.transcribe(uri),
+    release: () => native.parakeetSpikeRelease(),
+    transcribe: (uri) => native.parakeetSpikeTranscribe(uri),
   };
 };
 

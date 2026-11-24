@@ -211,15 +211,19 @@ pods already declares both. A processing mail citing ITMS-91053 after an
 upload would mean that changed. The model itself is data the app
 downloads (`solunivo-model-download`, a background `URLSession`), not code.
 
-FluidAudio (Parakeet speech recognition, for the Speech Spike page only:
-`modules/solunivo-parakeet`) is linked in both variants too, as a pod from
+FluidAudio (Parakeet, which reads dictation's phrases:
+`packages/ai/swift/ParakeetBridge.swift`, compiled into
+`modules/solunivo-speech`) is linked in both variants too, as a pod from
 its git repository pinned to a commit (`plugins/withFluidAudioPod.cjs`):
 its releases on CocoaPods trunk stop at 0.7.8. Moving the pin moves the
 native fingerprint. It brings no privacy manifest either; the API it
 touches that Apple asks a reason for is file timestamps (its model cache
 and downloader), which the generated manifest already declares. Its
-models are data: the page fetches them from Hugging Face into the app's
-caches on the first load, and Nik's recordings from this repository.
+models are data, fetched from Hugging Face into the app's caches when
+the user agrees, at pinned commits. The Mac helper links the same
+commit as a SwiftPM dependency (`apps/desktop/helper/Package.swift`,
+`Package.resolved` committed); the helper's build fetches it from
+GitHub.
 
 Two comparison caveats, both fail-safe. The baseline is the latest
 _finished_ build, not "what testers run": installs still on an older

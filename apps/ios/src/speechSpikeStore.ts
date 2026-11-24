@@ -1,4 +1,4 @@
-import type { ParakeetHeard, ParakeetVersion } from '../modules/solunivo-parakeet/index.ts';
+import type { ParakeetHeard, ParakeetVersion } from '../modules/solunivo-speech/index.ts';
 import type { SpikeClip } from './speechSpikeClips.ts';
 import { type GroupScore, scoreClip, scoreGroup } from './speechSpikeScore.ts';
 import type { DeviceMemory } from './modelSpikeStore.ts';
@@ -23,7 +23,7 @@ export interface ClipFiles {
   readonly share: (name: string, text: string) => Promise<void>;
 }
 
-/** `solunivo-parakeet`, as the store calls it. */
+/** Parakeet's half of `solunivo-speech`, as the store calls it. */
 export interface ParakeetPort {
   readonly load: (
     version: ParakeetVersion,
@@ -45,7 +45,7 @@ export interface SpeechSpikeDeps {
   readonly keepAwake: (on: boolean) => void;
   readonly memory: () => DeviceMemory | undefined;
   readonly now: () => number;
-  /** Undefined on a binary built without `solunivo-parakeet`. */
+  /** Undefined on a binary built without Parakeet. */
   readonly parakeet: ParakeetPort | undefined;
   /** The people's names, the vocabulary when they are asked for. */
   readonly people: ReadonlyArray<string>;
