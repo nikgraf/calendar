@@ -103,9 +103,9 @@ function ParakeetSection() {
           <Footer testID="parakeet-status">{copy.line}</Footer>
           <Footer>
             Parakeet reads each phrase again on this iPhone, listening for the names of the people
-            and places in your calendar, and writes names and places better. Off, or until it is
-            here, dictation uses Apple’s recogniser alone. NVIDIA’s Parakeet, as moondream’s Ultra,
-            CC BY 4.0.
+            and places in your calendar and contacts, and writes names and places better. Off, or
+            until it is here, dictation uses Apple’s recogniser alone. NVIDIA’s Parakeet, as
+            moondream’s Ultra, CC BY 4.0.
           </Footer>
         </>
       }

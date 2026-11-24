@@ -62,7 +62,7 @@ export const ACKNOWLEDGEMENTS: ReadonlyArray<Acknowledgement> = [
     licence: 'CC-BY-4.0',
     name: 'Parakeet TDT-CTC 110M',
     url: 'https://huggingface.co/nvidia/parakeet-tdt_ctc-110m',
-    what: 'Listens for the names of the people and places in your calendar while Parakeet reads.',
+    what: 'Listens for the names of the people and places in your calendar and contacts while Parakeet reads.',
   },
   {
     by: 'FluidInference',

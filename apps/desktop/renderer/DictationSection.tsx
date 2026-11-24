@@ -83,9 +83,9 @@ function ParakeetSection() {
       <h2 className="font-medium">Parakeet</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         Parakeet reads each phrase again on this Mac, listening for the names of the people and
-        places in your calendar, and writes names and places better. Off, or until it is here,
-        dictation uses Apple&rsquo;s recogniser alone. NVIDIA&rsquo;s Parakeet, as moondream&rsquo;s
-        Ultra, CC BY 4.0.
+        places in your calendar and contacts, and writes names and places better. Off, or until it
+        is here, dictation uses Apple&rsquo;s recogniser alone. NVIDIA&rsquo;s Parakeet, as
+        moondream&rsquo;s Ultra, CC BY 4.0.
       </p>
       <label className="mt-3 flex items-center gap-2 text-sm">
         <input

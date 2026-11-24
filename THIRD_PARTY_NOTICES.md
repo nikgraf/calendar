@@ -22,7 +22,7 @@ Licence: Creative Commons Attribution 4.0 (CC-BY-4.0), <https://creativecommons.
 
 ## Parakeet TDT-CTC 110M
 
-By NVIDIA. Listens for the names of the people and places in your calendar while Parakeet reads. <https://huggingface.co/nvidia/parakeet-tdt_ctc-110m>
+By NVIDIA. Listens for the names of the people and places in your calendar and contacts while Parakeet reads. <https://huggingface.co/nvidia/parakeet-tdt_ctc-110m>
 
 Changes: Converted to Core ML by FluidInference (FluidInference/parakeet-ctc-110m-coreml).
 
