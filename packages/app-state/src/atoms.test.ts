@@ -63,6 +63,7 @@ const makeStubClient = () => {
     deleteMirror: () => fail('not stubbed'),
     deleteRecurring: () => fail('not stubbed'),
     deleteTask: () => Effect.void,
+    dictationVocabulary: () => Effect.succeed({ people: [], places: [] }),
     discardPendingOp: () => Effect.void,
     exportSettings: () =>
       Effect.sync(() => {
