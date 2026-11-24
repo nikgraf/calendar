@@ -2,10 +2,13 @@ import {
   heardFromSegments,
   listenedLocale,
   MicrophoneDeniedError,
+  type PhraseRead,
   SpeechUnsupportedError,
   type SpeechToText,
+  type WordsSource,
 } from '@calendar/ai';
-import { loadSpeechModule } from '../modules/solunivo-speech/index.ts';
+import { loadSpeechModule, type SpeechRead } from '../modules/solunivo-speech/index.ts';
+import { recordDictationError } from './crashLog.ts';
 import { dictationLanguage, secondLanguage } from './dictationLanguages.ts';
 import { voiceProcessing } from './voiceProcessing.ts';
 
@@ -64,9 +67,156 @@ const prepareIn = async (native: Native) => {
   }
 };
 
-/** The listening, by the id this adapter gave it, and its words' subscription. */
-let current: { readonly remove: () => void; readonly session: number } | undefined;
+/** Words of a listening, by recogniser. */
+type Said = Record<WordsSource, string>;
+
+/**
+ * The listening: the module's session for it now, its words' subscription,
+ * and what the caller gave its start. `said`: each recogniser's words of
+ * the whole listening, which a session opened again after a failed reading
+ * goes on from.
+ */
+interface Listening {
+  readonly onLost: (() => void) | undefined;
+  readonly onWords: (source: WordsSource, text: string) => void;
+  readonly remove: () => void;
+  readonly said: Said;
+  readonly session: number;
+  /**
+   * A phrase read the fallback way and not yet let go of (`cut`): its
+   * audio went with the session it was in, so a reading that follows
+   * (the phrase grew) begins with it.
+   */
+  uncut?: SpeechRead | undefined;
+}
+
+let current: Listening | undefined;
 let sessions = 0;
+
+const nothingSaid = (): Said => ({ accurate: '', quick: '' });
+
+const joinWords = (before: string, text: string) =>
+  before === '' ? text : text === '' ? before : `${before} ${text}`;
+
+/**
+ * Opens the microphone for a new session of the module. Its words reach
+ * `onWords` after `before`, the words of the listening's earlier sessions,
+ * so the caller keeps seeing all of them since its listening began.
+ */
+const openSession = async (
+  native: Native,
+  onWords: Listening['onWords'],
+  before: Said,
+): Promise<{
+  readonly remove: () => void;
+  readonly said: Said;
+  readonly session: number;
+  readonly sources: ReadonlyArray<WordsSource>;
+}> => {
+  const { locale, second } = languagesFor(native);
+  sessions += 1;
+  const session = sessions;
+  const said = { ...before };
+  // Subscribed before the microphone opens: no word arrives unheard.
+  const subscription = native.addListener('onWords', (event) => {
+    if (event.session === session) {
+      said[event.source] = joinWords(before[event.source], event.text);
+      onWords(event.source, said[event.source]);
+    }
+  });
+  const remove = () => {
+    subscription.remove();
+  };
+  try {
+    const { sources } = await (second === undefined
+      ? (
+          native.start as (
+            session: number,
+            locale: string,
+            voiceProcessing: boolean,
+          ) => ReturnType<Native['start']>
+        )(session, locale, voiceProcessing.get())
+      : native.start(session, locale, voiceProcessing.get(), second));
+    return { remove, said, session, sources };
+  } catch (error) {
+    remove();
+    throw error;
+  }
+};
+
+const heardIn = (result: SpeechRead) =>
+  heardFromSegments(result.segments, result.other, result.parakeet?.text);
+
+const joinedOr = (before: string | undefined, text: string | undefined) => {
+  const joined = joinWords(before ?? '', text ?? '');
+  return joined === '' ? undefined : joined;
+};
+
+/** A reading after the phrase read before it, as one. Parakeet's only when it read both. */
+const after = (before: SpeechRead | undefined, read: SpeechRead): SpeechRead => {
+  if (!before) {
+    return read;
+  }
+  const other = joinedOr(before.other, read.other);
+  const parakeet =
+    before.parakeet && read.parakeet
+      ? {
+          raw: joinWords(before.parakeet.raw, read.parakeet.raw),
+          replacements: [...before.parakeet.replacements, ...read.parakeet.replacements],
+          text: joinWords(before.parakeet.text, read.parakeet.text),
+        }
+      : undefined;
+  return {
+    ...(other === undefined ? {} : { other }),
+    ...(parakeet === undefined ? {} : { parakeet }),
+    segments: [...before.segments, ...read.segments],
+  };
+};
+
+/**
+ * The phrase so far could not be read with the microphone open: it is
+ * read the way a finished listening is (the microphone closes, the live
+ * recognisers stop first), and the microphone opens again for what comes
+ * next. Words said while it is closed go unheard. A listening given up
+ * meanwhile is not opened again.
+ */
+const readAfresh = async (native: Native, active: Listening): Promise<PhraseRead | undefined> => {
+  let result: SpeechRead | null;
+  try {
+    result = await native.finish(active.session);
+  } catch (error) {
+    recordDictationError('finish', error);
+    throw error;
+  }
+  if (current !== active) {
+    return undefined;
+  }
+  active.remove();
+  if (result === null) {
+    // The module let the listening go: nothing will end it now.
+    current = undefined;
+    active.onLost?.();
+    return undefined;
+  }
+  const read = after(active.uncut, result);
+  try {
+    const next = await openSession(native, active.onWords, active.said);
+    if (current === active) {
+      current = { ...active, ...next, uncut: read };
+    } else {
+      next.remove();
+      await native.cancel(next.session).catch(() => undefined);
+    }
+  } catch (error) {
+    recordDictationError('start', error);
+    if (current === active) {
+      current = undefined;
+      active.onLost?.();
+    }
+  }
+  // The new session holds nothing of this phrase: there is nothing to cut.
+  return { heard: heardIn(read), mark: 0 };
+};
 
 /**
  * Apple's on-device SpeechAnalyzer through the app's own module
@@ -76,7 +226,8 @@ let sessions = 0;
  * with it (`finish`). Audio never leaves the device and is
  * never written to a file. The module is loaded lazily: a binary built
  * before it (an OTA update on an older build) offers no dictation rather
- * than crashing at launch.
+ * than crashing at launch. What the module answers when it fails is kept
+ * for Settings › Advanced › Diagnostics.
  */
 export const appleSpeech: SpeechToText = {
   cancel: async () => {
@@ -93,6 +244,7 @@ export const appleSpeech: SpeechToText = {
   cut: (mark) => {
     const active = current;
     if (active) {
+      active.uncut = undefined;
       loadSpeechModule()?.cut(active.session, mark);
     }
   },
@@ -104,10 +256,13 @@ export const appleSpeech: SpeechToText = {
       return undefined;
     }
     active.remove();
-    const result = await native.finish(active.session);
-    return result
-      ? heardFromSegments(result.segments, result.other, result.parakeet?.text)
-      : undefined;
+    try {
+      const result = await native.finish(active.session);
+      return result ? heardIn(after(active.uncut, result)) : undefined;
+    } catch (error) {
+      recordDictationError('finish', error);
+      throw error;
+    }
   },
   isPrepared: () => {
     const native = loadSpeechModule();
@@ -131,15 +286,18 @@ export const appleSpeech: SpeechToText = {
     if (!active || !native) {
       return undefined;
     }
-    const result = await native.read(active.session);
-    return result
-      ? {
-          heard: heardFromSegments(result.segments, result.other, result.parakeet?.text),
-          mark: result.mark,
-        }
-      : undefined;
+    let result: Awaited<ReturnType<Native['read']>>;
+    try {
+      result = await native.read(active.session);
+    } catch (error) {
+      // On the iPhone the reading beside the live recognisers can fail
+      // where the Mac's does not: the phrase is still read and sent.
+      recordDictationError('read', error);
+      return readAfresh(native, active);
+    }
+    return result ? { heard: heardIn(after(active.uncut, result)), mark: result.mark } : undefined;
   },
-  start: async ({ onWords, signal }) => {
+  start: async ({ onLost, onWords, signal }) => {
     const native = loadSpeechModule();
     if (!native) {
       throw unsupported();
@@ -159,42 +317,29 @@ export const appleSpeech: SpeechToText = {
     void import('./parakeetRuntime.ts')
       .then(({ beforeListening }) => beforeListening())
       .catch(() => undefined);
-    sessions += 1;
-    const session = sessions;
-    // Subscribed before the microphone opens: no word arrives unheard.
-    const subscription = native.addListener('onWords', (event) => {
-      if (event.session === session) {
-        onWords(event.source, event.text);
-      }
-    });
-    const remove = () => {
-      subscription.remove();
-    };
-    let sources: ReadonlyArray<'accurate' | 'quick'>;
+    let opened: Awaited<ReturnType<typeof openSession>>;
     try {
-      ({ sources } = await (second === undefined
-        ? (
-            native.start as (
-              session: number,
-              locale: string,
-              voiceProcessing: boolean,
-            ) => ReturnType<Native['start']>
-          )(session, locale, voiceProcessing.get())
-        : native.start(session, locale, voiceProcessing.get(), second)));
+      opened = await openSession(native, onWords, nothingSaid());
     } catch (error) {
-      remove();
+      recordDictationError('start', error);
       throw error;
     }
     // Given up while the microphone was opening: this phrase only goes.
     // The current one may be a newer caller's.
     if (signal?.aborted) {
-      remove();
-      await native.cancel(session).catch(() => undefined);
+      opened.remove();
+      await native.cancel(opened.session).catch(() => undefined);
       return undefined;
     }
     // The module dropped the phrase before when this one started.
     current?.remove();
-    current = { remove, session };
-    return { sources };
+    current = {
+      onLost,
+      onWords,
+      remove: opened.remove,
+      said: opened.said,
+      session: opened.session,
+    };
+    return { sources: opened.sources };
   },
 };

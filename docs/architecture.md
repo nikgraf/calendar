@@ -153,7 +153,14 @@ a phrase is read once more, whole, with plain SpeechTranscriber,
 alternatives kept, either with the microphone left open (`read`, which
 answers a `mark` where its audio ended; `cut` with that mark lets go of
 the phrase once it landed, and the next reading begins after it) or as
-it closes (`finish`, everything since the last cut). Before a phrase's
+it closes (`finish`, everything since the last cut). On the iPhone a
+`read` the module rejects (it failed on build 59 for every phrase, where
+the Mac's reads beside its live recognisers) falls back in the adapter
+(`appleSpeech.ts`): the phrase is finished and read as one, the
+microphone opens again in a new session whose words go on from the
+listening's, and that reading is kept until its `cut`, so a phrase
+that grows is read whole. What the module answered is kept in
+Settings › Advanced › Diagnostics (`crashLog.ts`). Before a phrase's
 first words the session keeps only 8 s of the room, so a long wait is
 not read again; past 90 s the oldest audio goes. Each reading: each segment of the reading comes
 with the readings the recogniser weighed for it (the first is the
