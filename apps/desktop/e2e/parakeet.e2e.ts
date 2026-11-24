@@ -121,9 +121,10 @@ describe('Settings › AI Model explains the Assistant', () => {
     expect(
       await settings.evaluate(($) => $.all('[data-testid^="assistant-flow-step-"]').length),
     ).toBe(4);
-    expect(
-      await settings.evaluate(($) => $.text('[data-testid="assistant-model-speech-status"]')),
-    ).toBe('Not on this Mac yet.');
+    // The speech row appears once main answered with Parakeet's state.
+    await settings.waitUntil(
+      ($) => $.text('[data-testid="assistant-model-speech-status"]') === 'Not on this Mac yet.',
+    );
 
     await settings.clickTestId('assistant-model-speech-action');
     await settings.waitUntil(

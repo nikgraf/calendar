@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { flowModels, flowSteps, phrasesModelStatus, speechModelStatus } from './assistantFlow.ts';
+import { flowSteps, phrasesModelStatus, speechModelStatus } from './assistantFlow.ts';
 
 const SIZE = 833_592_288;
 const iPhone = { device: 'iPhone', network: undefined, size: SIZE } as const;
@@ -10,13 +10,6 @@ describe('flowSteps', () => {
     expect(steps.map((step) => step.model)).toEqual([undefined, 'speech', 'phrases', undefined]);
     expect(steps[3]?.text).toContain('click Save');
     expect(flowSteps('iPhone')[3]?.text).toContain('tap Save');
-  });
-
-  it('lists the phrases model first, the speech model as optional', () => {
-    expect(flowModels(SIZE).map(({ model, optional }) => ({ model, optional }))).toEqual([
-      { model: 'phrases', optional: false },
-      { model: 'speech', optional: true },
-    ]);
   });
 });
 

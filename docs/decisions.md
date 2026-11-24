@@ -1587,8 +1587,8 @@ was cut (pruned 2026-11-17).
   and Settings (iOS › Assistant, Mac › AI Model) show four steps and the
   phrases and speech models (`assistantFlow.ts`). Download Models, and
   Download Only Phrases Model as the smaller button. Rejected: "nothing
-  leaves the device" (a named place goes to Apple Maps). Open: the notice
-  and Diagnostics still say "the Assistant's model".
+  leaves the device" (a named place goes to Apple Maps). Open: the
+  runtime's error texts and Diagnostics still say "the Assistant's model".
 - **The draft thread** (2026-10-12, #183) — a new item is
   a thread of drafts, not a one-shot prefill: the first phrase makes the
   draft(s), every later phrase in the same field changes them, Undo takes

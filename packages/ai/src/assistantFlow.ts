@@ -30,7 +30,6 @@ export interface FlowStep {
 }
 
 export interface FlowModelInfo {
-  readonly bytes: number;
   /** What it does, in a few words. */
   readonly does: string;
   readonly name: string;
@@ -38,7 +37,7 @@ export interface FlowModelInfo {
   readonly optional: boolean;
 }
 
-export const FLOW_MODELS: Readonly<Record<FlowModel, Omit<FlowModelInfo, 'bytes'>>> = {
+export const FLOW_MODELS: Readonly<Record<FlowModel, FlowModelInfo>> = {
   phrases: {
     does: 'Turns what you say into an event',
     name: 'Phrases Model',
@@ -75,14 +74,6 @@ export const flowSteps = (device: AssistantDevice): ReadonlyArray<FlowStep> => [
 /** Where the two downloads come from, and the one lookup that leaves the device. */
 export const FLOW_DOWNLOADS =
   'The models download once: the phrases model from GitHub, the speech model from Hugging Face. A place you name is looked up in Apple Maps.';
-
-/** The two models with their sizes, phrases first. */
-export const flowModels = (
-  assistantBytes: number,
-): ReadonlyArray<FlowModelInfo & { readonly model: FlowModel }> => [
-  { ...FLOW_MODELS.phrases, bytes: assistantBytes, model: 'phrases' },
-  { ...FLOW_MODELS.speech, bytes: PARAKEET_BYTES, model: 'speech' },
-];
 
 /** One model's row in Settings: where it stands, its progress, and the one action it offers. */
 export interface FlowModelStatus {

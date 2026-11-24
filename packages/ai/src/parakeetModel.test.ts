@@ -37,7 +37,7 @@ describe('lessonOffer', () => {
       explain: true,
       more: 'The speech model spells the names and places you say better. It runs on this Mac too: 712 MB.',
     });
-    const downloading = { progress: 40, text: 'Downloading the Assistant’s model · 40 %.' };
+    const downloading = { progress: 40, text: 'Downloading the phrases model · 40 %.' };
     expect(
       lessonOffer(downloading, absent, { assistantBytes: ASSISTANT_BYTES, device: 'Mac' }),
     ).toMatchObject({ action: { kind: 'parakeet' }, decline: 'Skip Speech Model', progress: 40 });

@@ -84,7 +84,8 @@ export function CalendarScreen() {
     startSync();
     registerBackgroundRefresh();
     // The Assistant's model: picked up where the last launch left it. The
-    // Create lesson and the Assistant's notice offer the download.
+    // Create lesson, Settings › Assistant and the Assistant's notice offer
+    // the download.
     startAssistantModel();
     startParakeet();
     const subscription = AppState.addEventListener('change', (state) => {

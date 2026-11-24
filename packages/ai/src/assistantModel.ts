@@ -3,7 +3,8 @@
  * Qwen3.5 0.8B trained for the tuned path (`tuned.ts`), one GGUF file
  * (Q8_0) published on GitHub (`nikgraf/calendar-models`, its README says
  * how it was made and from what). Each device downloads it once, after
- * the person asks for it (the Create lesson, the Assistant's notice), and
+ * the person asks for it (the Create lesson, the Assistant's notice,
+ * Settings › Assistant on iOS and › AI Model on the Mac), and
  * checks it by size and SHA-256 before it is loaded. A new version is a
  * new release: the version changes, and it starts unasked (todo.md: how
  * it reaches someone who had the last one).
@@ -133,18 +134,18 @@ const UNSUPPORTED: Readonly<Record<AssistantDevice, Readonly<Record<UnsupportedR
     iPhone: {
       fixture: 'The Assistant runs on the test model in this build.',
       memory: 'The Assistant needs an iPhone with 8 GB of memory. The form still makes an event.',
-      module: 'This build cannot download the Assistant’s model; the next TestFlight build can.',
-      off: 'The Assistant’s model is switched off in this build. The form still makes an event.',
-      runtime: 'This build cannot run the Assistant’s model; the next TestFlight build can.',
-      simulator: 'The simulator downloads the Assistant’s model only from a file it is pointed at.',
+      module: 'This build cannot download the phrases model; the next TestFlight build can.',
+      off: 'The phrases model is switched off in this build. The form still makes an event.',
+      runtime: 'This build cannot run the phrases model; the next TestFlight build can.',
+      simulator: 'The simulator downloads the phrases model only from a file it is pointed at.',
     },
     Mac: {
       fixture: 'The Assistant runs on the test model in this build.',
       memory: 'The Assistant needs a Mac with 8 GB of memory. The form still makes an event.',
-      module: 'This build cannot download the Assistant’s model.',
-      off: 'The Assistant’s model is switched off in this run. The form still makes an event.',
-      runtime: 'This build cannot run the Assistant’s model. The form still makes an event.',
-      simulator: 'The Assistant’s model is not available here.',
+      module: 'This build cannot download the phrases model.',
+      off: 'The phrases model is switched off in this run. The form still makes an event.',
+      runtime: 'This build cannot run the phrases model. The form still makes an event.',
+      simulator: 'The phrases model is not available here.',
     },
   };
 
@@ -181,7 +182,7 @@ export const noticeCopy = (
         ? {
             action: { kind: 'download', label: `Update${sized}` },
             lines: [
-              `A new version of the Assistant’s model is ready. It runs on this ${device} and is a download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
+              `A new version of the phrases model is ready. It runs on this ${device} and is a download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
             ],
           }
         : {
@@ -192,21 +193,21 @@ export const noticeCopy = (
           };
     case 'waiting':
       if (state.for === 'network') {
-        return { lines: ['Waiting for a connection to download the Assistant’s model.', soon] };
+        return { lines: ['Waiting for a connection to download the phrases model.', soon] };
       }
       return network?.expensive === true || network?.constrained !== true
         ? {
             action: { kind: 'mobile', label: `Use Mobile Data${sized}` },
-            lines: [`The Assistant’s model downloads when this ${device} is on Wi-Fi.`, soon],
+            lines: [`The phrases model downloads when this ${device} is on Wi-Fi.`, soon],
           }
         : {
             action: { kind: 'mobile', label: `Download Now${sized}` },
-            lines: ['The Assistant’s model waits while Low Data Mode is on.', soon],
+            lines: ['The phrases model waits while Low Data Mode is on.', soon],
           };
     case 'downloading': {
       const percent = percentOf(state.received, state.total);
       return {
-        lines: [`Downloading the Assistant’s model: ${String(percent)} %`, soon],
+        lines: [`Downloading the phrases model: ${String(percent)} %`, soon],
         progress: percent,
       };
     }
@@ -258,22 +259,22 @@ export const lessonModelCopy = (
       case 'declined':
         return `${flowPromise(device)} The model is a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, try the demo below.`;
       case 'downloading':
-        return `Downloading the Assistant’s model · ${String(progress ?? 0)} %. It goes on if you leave. ${meanwhile}`;
+        return `Downloading the phrases model · ${String(progress ?? 0)} %. It goes on if you leave. ${meanwhile}`;
       case 'verifying':
         return `Checking the downloaded model… ${meanwhile}`;
       case 'waiting':
         if (state.for === 'network') {
-          return `The Assistant’s model downloads once this ${device} is online. ${meanwhile}`;
+          return `The phrases model downloads once this ${device} is online. ${meanwhile}`;
         }
         // As the notice tells them apart: on Wi-Fi in Low Data Mode, or on mobile data.
         return options.network?.expensive === true || options.network?.constrained !== true
-          ? `The Assistant’s model downloads when this ${device} is on Wi-Fi. ${meanwhile}`
-          : `The Assistant’s model waits while Low Data Mode is on. ${meanwhile}`;
+          ? `The phrases model downloads when this ${device} is on Wi-Fi. ${meanwhile}`
+          : `The phrases model waits while Low Data Mode is on. ${meanwhile}`;
       case 'failed':
-        return `The download of the Assistant’s model did not finish: ${sentence(state.message)} ${meanwhile}`;
+        return `The download of the phrases model did not finish: ${sentence(state.message)} ${meanwhile}`;
       case 'unsupported':
         return state.reason === 'memory'
-          ? `This ${device} can’t run the Assistant’s model: it needs 8 GB of memory. The demo shows what it does; the Form makes your events.`
+          ? `This ${device} can’t run the phrases model: it needs 8 GB of memory. The demo shows what it does; the Form makes your events.`
           : `${UNSUPPORTED[device][state.reason]} The demo shows what the Assistant does.`;
       case 'ready':
         return `The Assistant is ready, on this ${device}. Say it your way now: “make it Thursday”, “an hour later”.`;
@@ -315,7 +316,7 @@ export const createRowNote = (
       };
     }
     case 'verifying':
-      return { asked: true, progress: 100, subtitle: 'Checking the Assistant’s model' };
+      return { asked: true, progress: 100, subtitle: 'Checking the phrases model' };
     case 'waiting':
       return {
         asked: true,

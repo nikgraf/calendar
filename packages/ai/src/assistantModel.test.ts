@@ -64,7 +64,7 @@ describe('noticeCopy', () => {
     ).toMatchObject({
       action: { kind: 'download', label: 'Update (834 MB)' },
       lines: [
-        'A new version of the Assistant’s model is ready. It runs on this Mac and is a download of 834 MB.',
+        'A new version of the phrases model is ready. It runs on this Mac and is a download of 834 MB.',
       ],
     });
   });
@@ -75,7 +75,7 @@ describe('noticeCopy', () => {
       { device: 'iPhone', network: WIFI, size: SIZE },
     );
     expect(copy.lines).toEqual([
-      'Downloading the Assistant’s model: 43 %',
+      'Downloading the phrases model: 43 %',
       'The Assistant will be available soon. You can use the Form meanwhile.',
     ]);
     expect(copy.progress).toBe(43);
@@ -191,7 +191,7 @@ describe('lessonModelCopy', () => {
 
   it('points an iPhone that cannot run it to the Form, and says when the model is ready', () => {
     expect(lessonModelCopy({ kind: 'unsupported', reason: 'memory' }, iPhone).text).toBe(
-      'This iPhone can’t run the Assistant’s model: it needs 8 GB of memory. The demo shows what it does; the Form makes your events.',
+      'This iPhone can’t run the phrases model: it needs 8 GB of memory. The demo shows what it does; the Form makes your events.',
     );
     expect(lessonModelCopy({ kind: 'ready', path: '/m' }, iPhone).text).toContain(
       'The Assistant is ready, on this iPhone.',

@@ -481,7 +481,7 @@ describe('Create with AI before the Assistant’s model is here: the demo, and t
       ($) => $.text('[data-testid="lesson-model-action"]') === 'Try Again',
     );
     expect(await cdp.evaluate(($) => $.text('[data-testid="lesson-banner-note"]'))).toContain(
-      'The download of the Assistant’s model did not finish',
+      'The download of the phrases model did not finish',
     );
   });
 });
