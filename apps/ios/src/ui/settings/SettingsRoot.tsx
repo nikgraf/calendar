@@ -159,6 +159,12 @@ export function SettingsRoot() {
             title="Notifications"
           />
           <NavRow
+            href="/settings/assistant"
+            leading={<IconTile color={colors.primary} name="sparkles" />}
+            testID="settings-row-assistant"
+            title="Assistant"
+          />
+          <NavRow
             href="/settings/dictation"
             leading={<IconTile color={colors['event-blue-edge']} name="mic.fill" />}
             testID="settings-row-dictation"

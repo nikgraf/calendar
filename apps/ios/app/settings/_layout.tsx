@@ -69,6 +69,7 @@ export default function SettingsLayout() {
             <Stack.Screen name="read-code" options={{ title: 'Read a Code' }} />
             <Stack.Screen name="advanced" options={{ title: 'Advanced' }} />
             <Stack.Screen name="acknowledgements" options={{ title: 'Acknowledgements' }} />
+            <Stack.Screen name="assistant" options={{ title: 'Assistant' }} />
             <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
             <Stack.Screen name="pr-preview" options={{ title: 'PR Preview' }} />
             <Stack.Screen name="model-spike" options={{ title: 'Model Spike' }} />

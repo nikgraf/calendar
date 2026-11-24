@@ -15,7 +15,8 @@ import {
   secondLanguage,
 } from './ai/dictationSettings.ts';
 import { useParakeetState } from './ai/parakeetModel.ts';
-import { SETTINGS_BUTTON_CLASS, TEXT_ACTION_CLASS } from './ui/buttonStyles.ts';
+import { SETTINGS_HASH } from './settingsPanes.ts';
+import { SETTINGS_BUTTON_CLASS, TEXT_ACTION_CLASS, TEXT_LINK_CLASS } from './ui/buttonStyles.ts';
 import { FIELD_CLASS, LABEL_CLASS } from './ui/fieldStyles.ts';
 
 /** What the recogniser has, for the language listened in. */
@@ -80,12 +81,19 @@ function ParakeetSection() {
   };
   return (
     <section className="rounded-popover bg-surface-subtle p-4" data-testid="dictation-parakeet">
-      <h2 className="font-medium">Parakeet</h2>
+      <h2 className="font-medium">Speech Model</h2>
       <p className="mt-1 text-sm text-ink-secondary">
-        Parakeet reads each phrase again on this Mac, listening for the names of the people and
-        places in your calendar and contacts, and writes names and places better. Off, or until it
-        is here, dictation uses Apple&rsquo;s recogniser alone. NVIDIA&rsquo;s Parakeet, as
-        moondream&rsquo;s Ultra, CC BY 4.0.
+        The speech model listens to each phrase again on this Mac and spells the people and places
+        from your calendar and contacts. Off, or until it is downloaded, Apple&rsquo;s words go as
+        they are. NVIDIA&rsquo;s Parakeet, as moondream&rsquo;s Ultra, CC BY 4.0.{' '}
+        <button
+          className={TEXT_LINK_CLASS}
+          data-testid="dictation-how-assistant-works"
+          onClick={() => window.location.replace(`${SETTINGS_HASH}/model`)}
+          type="button"
+        >
+          How the Assistant works
+        </button>
       </p>
       <label className="mt-3 flex items-center gap-2 text-sm">
         <input
@@ -133,7 +141,7 @@ function ParakeetSection() {
             onClick={() => void window.calendarBridge.parakeetRemove()}
             type="button"
           >
-            Delete Parakeet
+            Delete Speech Model
           </button>
         ) : null}
       </div>

@@ -61,8 +61,8 @@ const secondValue = (
 /** Asks before the files go: getting them back is the download again. */
 const confirmDelete = () => {
   Alert.alert(
-    'Delete Parakeet?',
-    'Its 712 MB leave this iPhone. Dictation uses Apple’s recogniser until you download it again.',
+    'Delete the Speech Model?',
+    'Its 712 MB leave this iPhone. Dictation uses Apple’s words as they are until you download it again.',
     [
       { style: 'cancel', text: 'Cancel' },
       { onPress: () => void parakeet().remove(), style: 'destructive', text: 'Delete' },
@@ -102,14 +102,13 @@ function ParakeetSection() {
         <>
           <Footer testID="parakeet-status">{copy.line}</Footer>
           <Footer>
-            Parakeet reads each phrase again on this iPhone, listening for the names of the people
-            and places in your calendar and contacts, and writes names and places better. Off, or
-            until it is here, dictation uses Apple’s recogniser alone. NVIDIA’s Parakeet, as
-            moondream’s Ultra, CC BY 4.0.
+            The speech model listens to each phrase again on this iPhone and spells the people and
+            places from your calendar and contacts. Off, or until it is downloaded, Apple’s words go
+            as they are. NVIDIA’s Parakeet, as moondream’s Ultra, CC BY 4.0.
           </Footer>
         </>
       }
-      header="Parakeet"
+      header="Speech Model"
     >
       <SwitchRow
         onValueChange={(next) => void parakeet().setOn(next)}
@@ -124,10 +123,15 @@ function ParakeetSection() {
         <ActionRow
           onPress={confirmDelete}
           testID="parakeet-delete"
-          title="Delete Parakeet"
+          title="Delete Speech Model"
           tone="destructive"
         />
       ) : null}
+      <NavRow
+        href="/settings/assistant"
+        testID="dictation-how-assistant-works"
+        title="How the Assistant Works"
+      />
     </Section>
   );
 }
