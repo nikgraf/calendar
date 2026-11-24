@@ -1564,15 +1564,15 @@ was cut (pruned 2026-11-17).
   package's prebuilt binary, a memory entitlement, scoring on the phone.
   Open: Apple's six hung calls, the prompt read again on every call.
 - **A page that measures Parakeet on the iPhone** (2026-11-23, #378) —
-  Settings › Advanced › Speech Spike loads NVIDIA's Parakeet (Ultra or v3,
-  FluidAudio's Core ML port, a git pod pinned to a commit) into the app,
-  beside the Assistant's model if asked, runs Nik's 104 recordings and
-  scores them on the phone as the Mac did. Mac, Ultra with the people as
-  vocabulary: English sentences 16 % of words wrong against Apple's 30 %,
-  every full name right; German sentences and short turns no better than
-  Apple's. Rejected: Redux (worse than Apple, 2 GB on the Neural Engine),
-  places as vocabulary (a listed place not said gets written in), wiring
-  it into dictation before the phone's memory is known. Open: the iPhone run.
+  Settings › Advanced › Speech Spike loads Parakeet (Ultra or v3, FluidAudio's
+  Core ML port, a git pod pinned to a commit), beside the Assistant's model
+  if asked, runs Nik's 104 recordings and scores them on the phone. An
+  iPhone 16 scores as the Mac: Ultra with the people listed writes 16 % of
+  English words wrong (Apple 30 %) and every full name right, holds about
+  770 MB, loads in 0.5 s after a one-time minute. Rejected: Redux (worse than
+  Apple, 2 GB); the places listed (a switch, 7 % wrong, but a listed place
+  gets written over other words). Open: 2.83 of 3.54 GB beside the
+  Assistant's model, one memory warning; wiring it into dictation.
 - **The draft thread** (2026-10-12, #183) — a new item is
   a thread of drafts, not a one-shot prefill: the first phrase makes the
   draft(s), every later phrase in the same field changes them, Undo takes
