@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Row, Section } from './GroupedList.tsx';
+import { type LocationUndo, typedOver, undoTyping } from './locationUndo.ts';
 import { SheetButton } from './SheetButton.tsx';
 import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
@@ -25,10 +26,9 @@ import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } 
  * place is the pick (its coordinates resolved for the map); Done, or the
  * keyboard's Done, keeps the text as typed, since free text is always a
  * valid location, and with the field cleared the location is gone.
- * Cancel and a swipe down undo the typing: the text from before the
- * first keystroke comes back (its pin counts again with it:
- * `geoMatches`), unless something other than the screen changed the
- * location since. The field already suggests places for the text it
+ * Cancel and a swipe down undo the typing: the text from before it
+ * comes back (its pin counts again with it: `geoMatches`), and a turn
+ * that landed in between stays (`locationUndo.ts`). The field already suggests places for the text it
  * opens on.
  */
 export function LocationSheet({
@@ -44,10 +44,8 @@ export function LocationSheet({
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
-  // What the screen typed: the text before its first keystroke, which
-  // Cancel puts back, and the last text it wrote, which says the location
-  // is still its own (a turn already in flight can land after a keystroke).
-  const [typed, setTyped] = useState<{ before: string; wrote: string } | undefined>(undefined);
+  // What the screen's typing changed, for Cancel (`locationUndo.ts`).
+  const [undo, setUndo] = useState<LocationUndo | undefined>(undefined);
   const field = useLocationField({
     location,
     onPick: (suggestion) => {
@@ -56,7 +54,7 @@ export function LocationSheet({
     },
     searchesAtOnce: true,
     setLocation: (text) => {
-      setTyped((kept) => ({ before: kept?.before ?? location, wrote: text }));
+      setUndo((kept) => typedOver(kept, location, text));
       setLocation(text);
     },
   });
@@ -68,8 +66,9 @@ export function LocationSheet({
   };
   const cancel = () => {
     Keyboard.dismiss();
-    if (typed && location === typed.wrote && typed.before !== location) {
-      setLocation(typed.before);
+    const back = undoTyping(undo, location);
+    if (back !== undefined) {
+      setLocation(back);
     }
     onClose();
   };
