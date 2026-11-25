@@ -62,15 +62,12 @@ export function LocationField({
       {choosing ? (
         <LocationSheet
           location={location}
-          onCancel={() => setChoosing(false)}
-          onDone={(text) => {
-            setChoosing(false);
-            model.setLocation(text);
-          }}
+          onClose={() => setChoosing(false)}
           onPick={(suggestion) => {
             setChoosing(false);
             void model.pickPlace(suggestion);
           }}
+          setLocation={model.setLocation}
         />
       ) : null}
     </FieldFlash>

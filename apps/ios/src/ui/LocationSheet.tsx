@@ -18,52 +18,56 @@ import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } 
 /**
  * The editor's location, chosen on a screen of its own as iOS does it: a
  * search field pinned at the top, MapKit's places filling the space down
- * to the keyboard — typed into the form, they opened under it. A tapped
+ * to the keyboard — typed into the form, they opened under it. The field
+ * edits the editor's location as it is typed, as the form's field did:
+ * each keystroke is a hand edit (hands-free dictation stops listening at
+ * the first), and a turn that lands before one shows here too. A tapped
  * place is the pick (its coordinates resolved for the map); Done, or the
  * keyboard's Done, keeps the text as typed, since free text is always a
- * valid location, and with the field cleared takes the location away.
- * Cancel and a swipe down leave the editor as it was. The field opens on
- * the location the editor holds and already suggests places for it.
+ * valid location, and with the field cleared the location is gone.
+ * Cancel and a swipe down put back the text the screen opened on, once
+ * something was typed (its pin counts again with it: `geoMatches`). The
+ * field already suggests places for the text it opens on.
  */
 export function LocationSheet({
   location,
-  onCancel,
-  onDone,
+  onClose,
   onPick,
+  setLocation,
 }: {
-  /** The editor's location when the sheet opened: the field starts on it. */
   location: string;
-  onCancel: () => void;
-  onDone: (location: string) => void;
+  onClose: () => void;
   onPick: (suggestion: PlaceSuggestion) => void;
+  setLocation: (location: string) => void;
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
-  const [opened] = useState(location);
-  const [text, setText] = useState(location);
-  // Every way out lets go of the keyboard first: a sheet unmounted while
-  // its field holds it can leave the keyboard up over the editor.
-  const cancel = () => {
-    Keyboard.dismiss();
-    onCancel();
-  };
+  // What Cancel puts back, kept from the first keystroke on.
+  const [before, setBefore] = useState<string | undefined>(undefined);
   const field = useLocationField({
-    location: text,
+    location,
     onPick: (suggestion) => {
       Keyboard.dismiss();
       onPick(suggestion);
     },
     searchesAtOnce: true,
-    setLocation: setText,
+    setLocation: (text) => {
+      setBefore((kept) => kept ?? location);
+      setLocation(text);
+    },
   });
-  // Text left as it opened is no edit: Done then writes nothing back.
+  // Every way out lets go of the keyboard first: a sheet unmounted while
+  // its field holds it can leave the keyboard up over the editor.
   const done = () => {
     Keyboard.dismiss();
-    if (text === opened) {
-      onCancel();
-    } else {
-      onDone(text);
+    onClose();
+  };
+  const cancel = () => {
+    Keyboard.dismiss();
+    if (before !== undefined && before !== location) {
+      setLocation(before);
     }
+    onClose();
   };
 
   return (
@@ -85,8 +89,8 @@ export function LocationSheet({
           accessibilityLabel="Location"
           autoCorrect={false}
           autoFocus
-          // The system ⓧ: one tap empties the field, and Done then takes
-          // the location away.
+          // The system ⓧ: one tap empties the field, and with it the
+          // location.
           clearButtonMode="while-editing"
           onChangeText={field.setText}
           onSubmitEditing={done}
@@ -95,7 +99,7 @@ export function LocationSheet({
           returnKeyType="done"
           style={styles.search}
           testID="location-input"
-          value={text}
+          value={location}
         />
         <ScrollView
           automaticallyAdjustKeyboardInsets

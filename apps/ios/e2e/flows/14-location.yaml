@@ -30,7 +30,8 @@ name: The location screen suggests places, maps a picked one, and the row's ⓧ 
     id: 'location-suggestion'
     index: 0
     optional: true
-# Offline, no place came: Done keeps the text as typed.
+# Offline, no place came: Done keeps the text as typed (it is already
+# the editor's, written as it was typed).
 - tapOn:
     id: 'location-done'
     optional: true
@@ -42,6 +43,20 @@ name: The location screen suggests places, maps a picked one, and the row's ⓧ 
 # The title's keyboard did not come back (Maestro reports no focus, but
 # it sees the keyboard's keys).
 - assertNotVisible: 'space'
+# Typed into and cancelled, the screen puts the location back.
+- tapOn:
+    id: 'location-field'
+- inputText: ' zzz'
+- assertVisible:
+    id: 'location-input'
+    text: '.*zzz'
+- tapOn:
+    id: 'location-cancel'
+- assertNotVisible:
+    id: 'location-field'
+    text: '.*zzz.*'
+- assertVisible:
+    id: 'location-clear'
 # The row's ⓧ takes the location away in one press.
 - tapOn:
     id: 'location-clear'
@@ -50,10 +65,8 @@ name: The location screen suggests places, maps a picked one, and the row's ⓧ 
 - assertVisible:
     id: 'location-field'
     text: 'Location'
-# Nothing is saved: leave the sheet as we found it. Cancel asks first
-# if the editor counts the round trip as an edit.
+# Nothing is saved: leave the sheet as we found it. The title typed is
+# an edit, so Cancel asks first.
 - tapOn: 'Cancel'
-- tapOn:
-    text: 'Discard Changes'
-    optional: true
+- tapOn: 'Discard Changes'
 - assertVisible: 'Today'
