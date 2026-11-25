@@ -100,12 +100,15 @@ export interface Score {
          * it (the transcript fails too, or is what was heard to the
          * letter). `unjudged`: failing on other words than the transcript's,
          * which was never read (a turn that passed when it ran and fails a
-         * rescore). Absent in reports from before it was counted.
+         * rescore). `noDraft`: heard, but the turns before it left no draft
+         * for its words to change, so nothing read them. Absent in reports
+         * from before it was counted.
          */
         readonly heard?:
           | {
               readonly lostAfter: number;
               readonly lostHearing: number;
+              readonly noDraft: number;
               readonly ok: number;
               readonly unjudged: number;
             }
@@ -138,9 +141,16 @@ export interface PlaceTally {
  * that fails on other words than the transcript's, which was never read,
  * is not judged: a run reads it for every such turn, a rescore only where
  * the run did. A report from before the transcript was kept is read as it
- * was made: no reading means the words were heard right.
+ * was made: no reading means the words were heard right. A heard turn
+ * that had no draft to change was lost before anything read its words.
  */
-const heardWhere = (turn: TurnReport): 'lostAfter' | 'lostHearing' | 'ok' | 'unjudged' => {
+const heardWhere = (
+  turn: TurnReport,
+): 'lostAfter' | 'lostHearing' | 'noDraft' | 'ok' | 'unjudged' => {
+  // No outcome: the turns before it made no draft, and its words were never read.
+  if (turn.outcome === undefined || turn.outcome === null) {
+    return 'noDraft';
+  }
   if (turn.failed.length === 0) {
     return 'ok';
   }
@@ -203,7 +213,7 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
   const durations: Array<number> = [];
   const rates: Array<number> = [];
   const audio = { failed: 0, missing: 0, skipped: 0, transcribed: 0 };
-  const heard = { lostAfter: 0, lostHearing: 0, ok: 0, unjudged: 0 };
+  const heard = { lostAfter: 0, lostHearing: 0, noDraft: 0, ok: 0, unjudged: 0 };
   const places = { asked: 0, errors: 0, missed: 0, offered: 0, taken: 0, text: 0 };
   for (const benchCase of cases) {
     for (const turn of benchCase.turns) {
@@ -398,13 +408,13 @@ export const formatReport = (
         .join(', ')}`,
     );
     if (score.recordings.heard !== undefined) {
-      const { lostAfter, lostHearing, ok, unjudged } = score.recordings.heard;
+      const { lostAfter, lostHearing, noDraft, ok, unjudged } = score.recordings.heard;
       lines.push(
         `   heard turns: ${String(ok)}/${String(transcribed)} pass · ${String(lostHearing)} lost to the hearing (the transcript passes) · ${String(lostAfter)} lost after it (the transcript fails too, or is what was heard)${
           unjudged > 0
             ? ` · ${String(unjudged)} not judged (the transcript was never read: scored again from a run they passed)`
             : ''
-        }`,
+        }${noDraft > 0 ? ` · ${String(noDraft)} with no draft to change (the turns before made none)` : ''}`,
       );
     }
   }

@@ -144,7 +144,8 @@ thread does. The report keeps the raw model answers per turn.
   location is right when the app's lookup takes the place or offers it
   to pick, whatever the text reads (a name heard as "Figelmuller" that
   still finds Figlmüller), and by its text where the lookup finds none
-  or is not asked; `repeat` (`freq`, `interval`, `count`, `untilMonth`, `byDay` as
+  or is not asked, and where a later turn left the location as it was
+  (the place found is then the one the draft had); `repeat` (`freq`, `interval`, `count`, `untilMonth`, `byDay` as
   weekday codes for a weekly rule and with their place in the month for
   a monthly one, `1TU` the first Tuesday and `-1FR` the last Friday, or
   `null`);
@@ -255,7 +256,8 @@ open and the blind ones apart. For the heard turns it says where each
 failing one was lost: to the hearing (the transcript passes: a word was
 misheard, or the model read the recogniser's punctuation and spelling
 another way) or after it (the transcript fails too, or is what was
-heard: the model, a convention, the lookup); and for the
+heard: the model, a convention, the lookup), with the heard turns
+whose first phrase had made no draft counted apart; and for the
 places asked of MapKit, how many were taken unasked, offered to pick,
 right by their text alone, or missed. A heard turn keeps every reading
 (`readings`: Apple's, the second language's, and Parakeet's words

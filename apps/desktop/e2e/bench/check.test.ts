@@ -293,6 +293,17 @@ describe('check', () => {
     expect(check(expectation, heard(), undefined, TODAY).notes).toEqual(['location=Figli Muller']);
     const written = drafted(event({ location: 'Figlmüller' }, { place: lookup({}) }));
     expect(check(expectation, written, undefined, TODAY).failed).toEqual([]);
+    // A later turn that left the location as it was: the lookup found the place the draft
+    // had, which says nothing of the turn, so the text decides ("it's in Vienna", ignored).
+    const narrowed = { locationIs: 'kaffemik, vienna', place: ['Kaffemik'] };
+    const found = lookup({ offered: 1, taken: true });
+    const before = event({ location: 'Kaffemik' });
+    const ignored = drafted(event({ location: 'Kaffemik' }, { place: found }));
+    expect(check(narrowed, ignored, before, TODAY).notes).toEqual([
+      'location=Kaffemik, kept as it was',
+    ]);
+    const followed = drafted(event({ location: 'Kaffemik Wien' }, { place: found }));
+    expect(check(narrowed, followed, before, TODAY).failed).toEqual([]);
     // A place found does not excuse one where none was said.
     expect(
       check(
