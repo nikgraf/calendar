@@ -27,13 +27,45 @@ import type { HelperClient } from './providers.ts';
  *
  * MapKit throttles searches (about fifty a minute, then every one fails
  * for a while): a lookup waits until it fits in `CALLS_PER_MINUTE`, never
- * inside itself (its own timeouts would count the wait).
+ * inside itself (its own timeouts would count the wait). A lookup one of
+ * whose calls failed or gave no answer in time (the network gone for a
+ * moment, the limit met by another run) is asked again after a pause, a
+ * few times; what its last try could not reach is its to report.
  */
 
 const CALLS_PER_MINUTE = 40;
 /** MapKit calls one lookup makes at most: a search, the completer and its five rows, four readings. */
 const CALLS_PER_LOOKUP = 11;
 const MINUTE_MS = 60_000;
+/** A lookup MapKit let down is asked this often in all, this long apart. */
+const LOOKUP_TRIES = 3;
+const RETRY_PAUSE_MS = 30_000;
+
+/**
+ * A lookup asked again while its calls fail: the first answer without a
+ * failed call, or the last try's with what failed in it.
+ */
+export const askAgain = async <Answer extends { readonly failures: ReadonlyArray<string> }>(
+  ask: () => Promise<Answer>,
+  {
+    pause = (ms: number) =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, ms);
+      }),
+    tries = LOOKUP_TRIES,
+  }: {
+    readonly pause?: (ms: number) => Promise<void>;
+    readonly tries?: number;
+  } = {},
+): Promise<Answer> => {
+  for (let tried = 1; ; tried += 1) {
+    const answer = await ask();
+    if (answer.failures.length === 0 || tried >= tries) {
+      return answer;
+    }
+    await pause(RETRY_PAUSE_MS);
+  }
+};
 
 export interface PlaceLookup {
   /** The candidates for a place as a draft names it, and the MapKit calls of this lookup that failed or gave no answer in time. */
@@ -156,26 +188,28 @@ export const placeLookup = (helper: HelperClient): PlaceLookup => {
       await new Promise((resolve) => setTimeout(resolve, oldest + MINUTE_MS - now + 50));
     }
   };
-  return {
-    ask: async (near, payload) => {
-      await room();
-      current += 1;
-      const mine = current;
-      const candidates = await Effect.runPromise(
-        locationHandlers.placeCandidates(payload).pipe(Effect.provide(layerFor(near, client))),
-      );
-      return {
-        candidates,
-        failures: calls
-          .filter((call) => call.lookup === mine)
-          .flatMap((call) =>
-            call.error !== undefined
-              ? [call.error]
-              : call.settled
-                ? []
-                : [`${call.method}: no answer in time`],
-          ),
-      };
-    },
+  const once = async (
+    near: string,
+    payload: Parameters<typeof locationHandlers.placeCandidates>[0],
+  ) => {
+    await room();
+    current += 1;
+    const mine = current;
+    const candidates = await Effect.runPromise(
+      locationHandlers.placeCandidates(payload).pipe(Effect.provide(layerFor(near, client))),
+    );
+    return {
+      candidates,
+      failures: calls
+        .filter((call) => call.lookup === mine)
+        .flatMap((call) =>
+          call.error !== undefined
+            ? [call.error]
+            : call.settled
+              ? []
+              : [`${call.method}: no answer in time`],
+        ),
+    };
   };
+  return { ask: (near, payload) => askAgain(() => once(near, payload)) };
 };
