@@ -1,5 +1,5 @@
 appId: com.solunivo.app.dev
-name: The location field suggests places and maps a picked one
+name: The location screen suggests places, maps a picked one, and the row's ⓧ removes it
 # No `ci` tag: the suggestions and the map come from real MapKit on the
 # simulator, so this flow needs the network. Run it locally with
 # `pnpm test:e2e:ios`; the waits are optional so an offline run still
@@ -7,17 +7,19 @@ name: The location field suggests places and maps a picked one
 ---
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-new-event.yaml
-# A keyboard would cover the lower fields and Maestro's visibility check
-# ignores it: dismiss any on a plain label above it first (see 03).
-- tapOn: 'Starts'
-- waitForAnimationToEnd:
-    timeout: 5000
+# A title typed first keeps its focus up to the tap on the row (XCTest's
+# typing hid its keyboard, so the row is in reach): the location screen
+# must not hand the keyboard back to it when it closes.
+- tapOn:
+    id: 'event-title'
+- inputText: 'Solunivo e2e place'
 - scrollUntilVisible:
     element:
-      id: 'location-input'
+      id: 'location-field'
     direction: DOWN
+# The row opens the location screen, its search field focused.
 - tapOn:
-    id: 'location-input'
+    id: 'location-field'
 - inputText: 'Apple Park'
 - extendedWaitUntil:
     visible:
@@ -28,13 +30,30 @@ name: The location field suggests places and maps a picked one
     id: 'location-suggestion'
     index: 0
     optional: true
+# Offline, no place came: Done keeps the text as typed.
+- tapOn:
+    id: 'location-done'
+    optional: true
 - extendedWaitUntil:
     visible:
       id: 'open-in-maps'
     timeout: 15000
     optional: true
-# Nothing is saved: leave the sheet as we found it. The location typed is
-# an edit, so Cancel asks first.
+# The title's keyboard did not come back (Maestro reports no focus, but
+# it sees the keyboard's keys).
+- assertNotVisible: 'space'
+# The row's ⓧ takes the location away in one press.
+- tapOn:
+    id: 'location-clear'
+- assertNotVisible:
+    id: 'location-clear'
+- assertVisible:
+    id: 'location-field'
+    text: 'Location'
+# Nothing is saved: leave the sheet as we found it. Cancel asks first
+# if the editor counts the round trip as an edit.
 - tapOn: 'Cancel'
-- tapOn: 'Discard Changes'
+- tapOn:
+    text: 'Discard Changes'
+    optional: true
 - assertVisible: 'Today'

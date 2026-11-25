@@ -229,7 +229,7 @@ export function EventEditForm({
       </Section>
 
       <Section tight>
-        <LocationField model={model} />
+        <LocationField model={model} readOnly={readOnly} />
       </Section>
       <LocationMap place={model} />
 

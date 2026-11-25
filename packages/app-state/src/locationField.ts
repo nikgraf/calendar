@@ -11,19 +11,30 @@ export interface LocationFieldOptions {
   readonly location: string;
   /** Resolves and applies a picked row (the editor model's pickPlace). */
   readonly onPick: (suggestion: PlaceSuggestion) => void;
+  /**
+   * Suggests places for the text it starts with, not only once typed
+   * into: the iOS location screen, opened to choose a place. The desktop
+   * combobox sits in the form, where its text alone asks for nothing.
+   */
+  readonly searchesAtOnce?: boolean;
   readonly setLocation: (location: string) => void;
 }
 
 /**
  * The location typeahead's state machine, shared by the desktop combobox
- * and the iOS field. The input edits the location text directly — free
+ * and the iOS location screen. The input edits the location text directly — free
  * text is always a valid location; a suggestion only adds coordinates.
  * Suggestions appear once the user types (never for the text the editor
- * opened with), debounced, and not for URLs or meeting links; "stale"
+ * opened with, unless `searchesAtOnce`), debounced, and not for URLs or meeting links; "stale"
  * rows belong to an earlier query and can be seen but not picked.
  */
-export const useLocationField = ({ location, onPick, setLocation }: LocationFieldOptions) => {
-  const [typing, setTyping] = useState(false);
+export const useLocationField = ({
+  location,
+  onPick,
+  searchesAtOnce = false,
+  setLocation,
+}: LocationFieldOptions) => {
+  const [typing, setTyping] = useState(searchesAtOnce);
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
 
