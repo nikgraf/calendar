@@ -171,8 +171,17 @@ was written; re-verify before starting one.
       and surnames neither language has as a word that the calendar has
       never named (Kaffemik before the first event there) and street
       addresses; Parakeet's wrong replacements from a real list
-      (measured with the clips' places: "nach acht" → "Naschmarkt").
+      (measured with the clips' places: "nach acht" → "Naschmarkt"; and
+      on the voice cases, with an address book as the list: a contact's
+      first name said alone takes the next word with it into the full
+      name, "Sarah morgen" → "Sarah Novak", "Anna in" → "Anna Lee",
+      "at Klein(od)" → "David Klein", six of the 104 recordings and
+      each one lost, beside eleven full names it put right).
       MapKit's structured city/region/country fields in a native build.
+      The voice cases say what a change does to the whole way
+      (`apps/desktop/e2e/bench/README.md` → Recordings): on an English
+      phone with Parakeet, 26 of the 79 places asked are missed and 18
+      are only offered (2026-11-25, #384).
 - [ ] Dictation follow-ups (`docs/decisions.md` → AI, "Dictation ends
       on its words, and shows them"; measured on synthetic phrases
       only) — the pauses (900 / 1,200 ms), Reduce Background Noise and
@@ -181,8 +190,10 @@ was written; re-verify before starting one.
       offered from the bar while it listens
       (`AVCaptureDevice.showSystemUserInterface`; Settings only shows the
       mode, since iOS offers the modes while recording, #325);
-      real-room recordings in the bench, replayed through the session
-      and the rule (and whether a quick recogniser that goes
+      real-room recordings in the bench (it hears a recording through
+      the session since #384; what ends a phrase is not replayed, and
+      the recordings so far are read aloud in a quiet room), replayed
+      through the rule too (and whether a quick recogniser that goes
       deaf one word behind the accurate one ever cuts a phrase short:
       the rule ends on the quick words then, a case constructed in
       review but never seen in the recordings, where both cures cost
@@ -241,7 +252,16 @@ was written; re-verify before starting one.
       file at launch, so someone who had it has no Assistant until they
       tap Update (keeping it until the new one is checked costs a second
       834 MB). Not checked on a device: the iPhone's transfer across a
-      quit and a network change.
+      quit and a network change. On the voice cases (#384) the model
+      reads a recogniser's writing other than the same words typed: a
+      comma and a period turn a concert's "um acht" from 20:00 into
+      08:00, and "Zurich" for "Zürich" keeps a flight's destination in
+      the title, so the next version's phrases should be written as the
+      recognisers write them (their punctuation, numbers and spellings),
+      measured on those cases. They also show "David am Praterstern
+      abholen, morgen um halb sechs" read as a to-do at 05:30 without
+      its place (the English sentence is an event at 17:30), "Drinks …
+      um neun" at 09:00, and "from Friday to Sunday" as one day.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no

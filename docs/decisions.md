@@ -1366,6 +1366,16 @@ was cut (pruned 2026-11-17).
 
 ## AI
 
+- **The way from a recording to a draft is measured** (2026-11-26, #384) —
+  nothing said which step loses a dictated phrase: the model bench read
+  written phrases, the place bench stored readings. Nik's 104 recordings
+  are model-bench cases (`voice`), heard through the helper's listening
+  as the app hears a phrase (Parakeet with the address book's names
+  too), read by the model, their place asked of MapKit. English phone,
+  v2: 50 pass with Parakeet (48 lost to the hearing, 6 after it; 97 as
+  written), 13 with Apple alone. Rejected: a bench of its own, MapKit
+  in every run, each clip heard in its own language. Open: real rooms,
+  unscripted speech, where a phrase ends; todo.md has what the runs found.
 - **Words that change nothing are answered, not a version** (2026-11-16,
   #336) — a phrase that leaves every draft as it was (no field shown, no
   question, no day for an undated to-do, no slots of its own, an assumed
