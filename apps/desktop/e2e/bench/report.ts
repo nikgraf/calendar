@@ -94,10 +94,17 @@ export interface Score {
         /**
          * Of the transcribed turns, where each failing one was lost: to the
          * hearing (the words as said pass), or after it (they fail too, or
-         * were heard word for word). Absent in reports from before it was counted.
+         * were heard word for word). `unjudged`: misheard and failing, its
+         * words as said never read (a turn that passed when it ran and
+         * fails a rescore). Absent in reports from before it was counted.
          */
         readonly heard?:
-          | { readonly lostAfter: number; readonly lostHearing: number; readonly ok: number }
+          | {
+              readonly lostAfter: number;
+              readonly lostHearing: number;
+              readonly ok: number;
+              readonly unjudged: number;
+            }
           | undefined;
         readonly missing: number;
         readonly skipped: number;
@@ -119,6 +126,23 @@ export interface PlaceTally {
   /** Not found by the lookup, the text names it all the same. */
   readonly text: number;
 }
+
+/**
+ * Where a heard turn stands. A failing one was lost to the hearing when
+ * its words as said pass, and after it when they fail too or were heard
+ * word for word (the turn's own failure is theirs). One that was misheard
+ * and has no reading of its words as said is not judged: a run reads them
+ * for every such turn, a rescore only where the run did.
+ */
+const heardWhere = (turn: TurnReport): 'lostAfter' | 'lostHearing' | 'ok' | 'unjudged' => {
+  if (turn.failed.length === 0) {
+    return 'ok';
+  }
+  if (turn.said !== undefined) {
+    return turn.said.ok ? 'lostHearing' : 'lostAfter';
+  }
+  return turn.wordErrorRate === 0 ? 'lostAfter' : 'unjudged';
+};
 
 /** What the run's place lookup made of a turn's location, as its stored outcome holds it. */
 const placeOf = (turn: TurnReport): PlaceOutcome | undefined =>
@@ -171,7 +195,7 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
   const durations: Array<number> = [];
   const rates: Array<number> = [];
   const audio = { failed: 0, missing: 0, skipped: 0, transcribed: 0 };
-  const heard = { lostAfter: 0, lostHearing: 0, ok: 0 };
+  const heard = { lostAfter: 0, lostHearing: 0, ok: 0, unjudged: 0 };
   const places = { asked: 0, errors: 0, missed: 0, offered: 0, taken: 0, text: 0 };
   for (const benchCase of cases) {
     for (const turn of benchCase.turns) {
@@ -187,10 +211,7 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
         rates.push(turn.wordErrorRate);
       }
       if (turn.audio === 'transcribed') {
-        // The transcript ran only for a failing turn the recogniser erred on: without it, the words were right.
-        const where =
-          turn.failed.length === 0 ? 'ok' : turn.said?.ok === true ? 'lostHearing' : 'lostAfter';
-        heard[where] += 1;
+        heard[heardWhere(turn)] += 1;
       }
       const place = placeOf(turn);
       if (place !== undefined) {
@@ -368,9 +389,13 @@ export const formatReport = (
         .join(', ')}`,
     );
     if (score.recordings.heard !== undefined) {
-      const { lostAfter, lostHearing, ok } = score.recordings.heard;
+      const { lostAfter, lostHearing, ok, unjudged } = score.recordings.heard;
       lines.push(
-        `   heard turns: ${String(ok)}/${String(transcribed)} pass · ${String(lostHearing)} lost to the hearing (the words as said pass) · ${String(lostAfter)} lost after it (the words as said fail too)`,
+        `   heard turns: ${String(ok)}/${String(transcribed)} pass · ${String(lostHearing)} lost to the hearing (the words as said pass) · ${String(lostAfter)} lost after it (the words as said fail too)${
+          unjudged > 0
+            ? ` · ${String(unjudged)} not judged (misheard, and the words as said never read: scored again from a run they passed)`
+            : ''
+        }`,
       );
     }
   }

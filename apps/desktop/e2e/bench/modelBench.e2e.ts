@@ -485,6 +485,8 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         }
         return;
       }
+      // A folder without Parakeet's files stops the run: its phrases would be Apple's words under Parakeet's name.
+      await speech?.ready();
       const available = await benchProviders(helper, log);
       if (available.length === 0) {
         log(

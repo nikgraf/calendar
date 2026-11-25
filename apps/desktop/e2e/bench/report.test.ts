@@ -75,7 +75,7 @@ describe('scoreOf', () => {
     expect(score.medianMs).toBe(2000);
     expect(score.recordings).toEqual({
       failed: 0,
-      heard: { lostAfter: 0, lostHearing: 1, ok: 0 },
+      heard: { lostAfter: 0, lostHearing: 1, ok: 0, unjudged: 0 },
       missing: 0,
       skipped: 0,
       transcribed: 1,
@@ -117,13 +117,15 @@ describe('scoreOf', () => {
           // Lost after it: the words as said fail too, and words heard right that fail.
           heard({ failed: ['time'], said: { notes: [], ok: false }, wordErrorRate: 0.1 }),
           heard({ failed: ['time'], wordErrorRate: 0 }),
+          // Misheard and failing, its words as said never read (it passed when it ran): not judged.
+          heard({ failed: ['time'], wordErrorRate: 0.3 }),
           // A typed turn is no heard one.
           turn({ failed: ['title'] }),
         ],
       },
     ];
     const score = scoreOf(cases);
-    expect(score.recordings?.heard).toEqual({ lostAfter: 2, lostHearing: 1, ok: 3 });
+    expect(score.recordings?.heard).toEqual({ lostAfter: 2, lostHearing: 1, ok: 3, unjudged: 1 });
     expect(score.places).toEqual({
       asked: 4,
       errors: 1,
@@ -134,8 +136,10 @@ describe('scoreOf', () => {
     });
     const text = formatReport(report(cases));
     expect(text).toContain(
-      'heard turns: 3/6 pass · 1 lost to the hearing (the words as said pass) · 2 lost after it (the words as said fail too)',
+      'heard turns: 3/7 pass · 1 lost to the hearing (the words as said pass) · 2 lost after it (the words as said fail too) · 1 not judged (misheard, and the words as said never read: scored again from a run they passed)',
     );
+    // Nothing to say of it where every failing turn was judged.
+    expect(formatReport(report(CASES))).not.toContain('not judged');
     expect(text).toContain(
       'places asked of MapKit: 4 · taken 1 · offered 1 · right as text only 1 · missed 1 (1 with a MapKit call that failed or gave no answer in time: a miss may be that)',
     );

@@ -128,6 +128,8 @@ export interface Speech {
     languages: { readonly locale: string; readonly other: string },
     names: ReadonlyArray<string>,
   ) => Promise<Hearing>;
+  /** Before the first recording: a run that names Parakeet's folder has its files there, or stops. */
+  readonly ready: () => Promise<void>;
 }
 
 const wait = (ms: number): Promise<void> =>
@@ -141,7 +143,26 @@ interface Finished {
   readonly segments: ReadonlyArray<TranscriptSegment>;
 }
 
-export const helperSpeech = (helper: HelperClient, device: Device): Speech => {
+/**
+ * How often a phrase is said again to a Parakeet that gave no reading: a
+ * phrase waits four seconds for it and goes without it (`readLimit`), and
+ * its first load after a download takes about half a minute.
+ */
+const PARAKEET_TRIES = 8;
+
+export const helperSpeech = (
+  helper: HelperClient,
+  device: Device,
+  {
+    pace = wait,
+    pcm: samplesOf = pcmOf,
+  }: {
+    /** The wait between two blocks of audio. */
+    readonly pace?: (ms: number) => Promise<void>;
+    /** A recording's samples: 16 kHz, one channel, 16-bit. */
+    readonly pcm?: (path: string) => Buffer;
+  } = {},
+): Speech => {
   const prepared = new Map<string, Promise<unknown>>();
   let sessions = 0;
   /** The names Parakeet listens for now: told again only when they change. */
@@ -157,9 +178,34 @@ export const helperSpeech = (helper: HelperClient, device: Device): Speech => {
     }
     return waiting;
   };
+  /** One phrase through a listening of its own: streamed, then read whole. */
+  const listen = async (
+    samples: Buffer,
+    { locale, other }: { readonly locale: string; readonly other: string },
+  ): Promise<Finished> => {
+    const session = ++sessions;
+    await helper.request('speech.start', { locale, other, session });
+    try {
+      // At the microphone's pace: the listening lets go of audio from before the first words it wrote.
+      const quiet = Buffer.alloc(BLOCK_BYTES);
+      for (let at = 0; at < samples.length; at += BLOCK_BYTES) {
+        const block = samples.subarray(at, at + BLOCK_BYTES);
+        await helper.request('speech.audio', { pcmBase64: block.toString('base64'), session });
+        await pace(BLOCK_MS);
+      }
+      for (let waited = 0; waited < PAUSE_MS; waited += BLOCK_MS) {
+        await helper.request('speech.audio', { pcmBase64: quiet.toString('base64'), session });
+        await pace(BLOCK_MS);
+      }
+    } catch (error) {
+      await helper.request('speech.cancel', { session }).catch(() => undefined);
+      throw error;
+    }
+    return (await helper.request('speech.finish', { session })) as Finished;
+  };
   return {
-    hear: async (path, { locale, other }, names) => {
-      await prepare(locale, other);
+    hear: async (path, languages, names) => {
+      await prepare(languages.locale, languages.other);
       if (device.parakeet !== undefined) {
         const key = JSON.stringify(names);
         if (key !== listeningFor) {
@@ -170,31 +216,44 @@ export const helperSpeech = (helper: HelperClient, device: Device): Speech => {
           });
           listeningFor = key;
         }
+        // As the app does when a phrase starts: the models load while it is said.
+        await helper.request('parakeet.prepare', { folder: device.parakeet });
       }
-      const pcm = pcmOf(path);
-      const session = ++sessions;
-      await helper.request('speech.start', { locale, other, session });
-      try {
-        // At the microphone's pace: the listening lets go of audio from before the first words it wrote.
-        const quiet = Buffer.alloc(BLOCK_BYTES);
-        for (let at = 0; at < pcm.length; at += BLOCK_BYTES) {
-          const block = pcm.subarray(at, at + BLOCK_BYTES);
-          await helper.request('speech.audio', { pcmBase64: block.toString('base64'), session });
-          await wait(BLOCK_MS);
+      const samples = samplesOf(path);
+      let result = await listen(samples, languages);
+      // Words that Parakeet did not read are Apple's alone, which is another run's result:
+      // said again while its models load, and a failed hearing when it never reads.
+      for (
+        let tries = 1;
+        device.parakeet !== undefined &&
+        result.segments.length > 0 &&
+        result.parakeet === undefined;
+        tries += 1
+      ) {
+        if (tries >= PARAKEET_TRIES) {
+          throw new Error(
+            `Parakeet gave no reading in ${String(PARAKEET_TRIES)} tries (MODEL_BENCH_PARAKEET=${device.parakeet})`,
+          );
         }
-        for (let waited = 0; waited < PAUSE_MS; waited += BLOCK_MS) {
-          await helper.request('speech.audio', { pcmBase64: quiet.toString('base64'), session });
-          await wait(BLOCK_MS);
-        }
-      } catch (error) {
-        await helper.request('speech.cancel', { session }).catch(() => undefined);
-        throw error;
+        result = await listen(samples, languages);
       }
-      const result = (await helper.request('speech.finish', { session })) as Finished;
       return {
         heard: heardFromSegments(result.segments, result.other, result.parakeet?.text),
         ...(result.parakeet === undefined ? {} : { parakeet: result.parakeet }),
       };
+    },
+    ready: async () => {
+      if (device.parakeet === undefined) {
+        return;
+      }
+      const files = (await helper.request('parakeet.state', { folder: device.parakeet })) as {
+        readonly here?: boolean;
+      };
+      if (files.here !== true) {
+        throw new Error(
+          `MODEL_BENCH_PARAKEET names a folder without Parakeet's files: ${device.parakeet}`,
+        );
+      }
     },
   };
 };
