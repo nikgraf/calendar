@@ -148,7 +148,7 @@ export function Rows({ children, first }: { children: ReactNode; first?: boolean
 }
 
 /**
- * A row that is a text field — the editor's Title, Location, Notes and
+ * A row that is a text field — the editor's Title, Notes and
  * URL: the field fills the row, so a tap anywhere in it lands in the
  * field, and a multiline one grows with its text. The ink is set: a
  * TextInput's defaults to black whatever the appearance.

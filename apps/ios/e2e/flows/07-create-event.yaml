@@ -87,14 +87,17 @@ tags:
       - runFlow: ../common/open-event-editor.yaml
       # Free text needs no geocoder or network to offer directions. CI
       # disables geo; this checks the detail's links before any lookup.
+      # The row opens the location screen; Done keeps the text as typed.
       - scrollUntilVisible:
           element:
-            id: 'location-input'
+            id: 'location-field'
           direction: DOWN
           timeout: 10000
       - tapOn:
-          id: 'location-input'
+          id: 'location-field'
       - inputText: 'Museumsplatz 1, Vienna'
+      - tapOn:
+          id: 'location-done'
       - tapOn:
           id: 'event-save'
       # Saving closes the sheet; reopen the event to read the saved place.

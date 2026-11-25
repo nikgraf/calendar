@@ -18,7 +18,7 @@ tags:
     element:
       id: 'find-time'
       above:
-        id: 'location-input'
+        id: 'location-field'
     direction: DOWN
     timeout: 10000
 - tapOn:

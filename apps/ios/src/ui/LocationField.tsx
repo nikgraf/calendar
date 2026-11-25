@@ -1,50 +1,109 @@
-import { useLocationField, type useEventEditorModel } from '@calendar/app-state';
+import type { useEventEditorModel } from '@calendar/app-state';
+import { useState } from 'react';
+import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { FieldFlash } from './FlashView.tsx';
-import { FieldRow, Row, Rows } from './GroupedList.tsx';
+import { Glyph } from './GroupedList.tsx';
+import { LocationSheet } from './LocationSheet.tsx';
+import { type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
- * The location field, with MapKit's suggestions as rows
- * under it while it is typed into (the form's ScrollView keeps taps alive
- * with keyboardShouldPersistTaps). Free text is always a valid location;
- * a tapped row writes its label and resolves coordinates for the map.
- * The state machine is useLocationField, shared with the desktop combobox.
+ * The editor's Location row: the location as text, a tap opens the
+ * location screen (`LocationSheet`) to search for a place or type one,
+ * and the ⓧ takes the location away in one press. Read-only, it is just
+ * the text.
  */
-export function LocationField({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
-  const { acceptEnter, choose, dismiss, open, setText, stale, suggestions } = useLocationField({
-    location: model.location,
-    onPick: (suggestion) => void model.pickPlace(suggestion),
-    setLocation: model.setLocation,
-  });
+export function LocationField({
+  model,
+  readOnly,
+}: {
+  model: ReturnType<typeof useEventEditorModel>;
+  readOnly: boolean;
+}) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
+  const [choosing, setChoosing] = useState(false);
+  const { location } = model;
 
   return (
-    <Rows>
-      <FieldFlash bleedX={0} bleedY={0} field="location" radius={0}>
-        <FieldRow
-          accessibilityLabel="Location"
-          autoCorrect={false}
-          // Deferred: a tap on a suggestion row blurs the input first, and an
-          // immediate dismiss would unmount the row under the finger.
-          onBlur={() => setTimeout(dismiss, 200)}
-          onChangeText={setText}
-          onSubmitEditing={acceptEnter}
-          placeholder="Location"
-          returnKeyType="done"
-          testID="location-input"
-          value={model.location}
+    <FieldFlash bleedX={0} bleedY={0} field="location" radius={0}>
+      <View style={styles.row}>
+        <Pressable
+          accessibilityHint={readOnly ? undefined : 'Opens the location search'}
+          accessibilityLabel={location === '' ? 'Location' : `Location, ${location}`}
+          accessibilityRole="button"
+          disabled={readOnly}
+          onPress={() => {
+            // A field still focused (the title, just typed) would get the
+            // keyboard back over the form once the sheet goes: UIKit
+            // restores the first responder its presenter had.
+            Keyboard.dismiss();
+            setChoosing(true);
+          }}
+          style={({ pressed }) => [styles.text, pressed && styles.pressed]}
+          testID="location-field"
+        >
+          <Text numberOfLines={2} style={location === '' ? styles.placeholder : styles.value}>
+            {location === '' ? 'Location' : location}
+          </Text>
+        </Pressable>
+        {location === '' || readOnly ? null : (
+          <Pressable
+            accessibilityLabel="Remove location"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => model.setLocation('')}
+            style={styles.clear}
+            testID="location-clear"
+          >
+            <Glyph name="xmark.circle.fill" size={20} tintColor={colors['border-strong']} />
+          </Pressable>
+        )}
+      </View>
+      {choosing ? (
+        <LocationSheet
+          location={location}
+          onClose={() => setChoosing(false)}
+          onPick={(suggestion) => {
+            setChoosing(false);
+            void model.pickPlace(suggestion);
+          }}
+          setLocation={model.setLocation}
         />
-      </FieldFlash>
-      {open
-        ? suggestions.map((place) => (
-            <Row
-              disabled={stale}
-              key={`${place.title}\u001f${place.subtitle ?? ''}`}
-              onPress={() => choose(place)}
-              subtitle={place.subtitle}
-              testID="location-suggestion"
-              title={place.title}
-            />
-          ))
-        : null}
-    </Rows>
+      ) : null}
+    </FieldFlash>
   );
 }
+
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    clear: {
+      paddingLeft: 8,
+      paddingRight: 16,
+    },
+    placeholder: {
+      color: colors['text-secondary'],
+      fontSize: 17,
+      lineHeight: 22,
+    },
+    pressed: {
+      backgroundColor: colors.border,
+    },
+    row: {
+      alignItems: 'center',
+      flexDirection: 'row',
+    },
+    text: {
+      alignSelf: 'stretch',
+      flex: 1,
+      justifyContent: 'center',
+      minHeight: 52,
+      paddingLeft: 16,
+      paddingRight: 16,
+      paddingVertical: 15,
+    },
+    value: {
+      color: colors.text,
+      fontSize: 17,
+      lineHeight: 22,
+    },
+  });

@@ -2149,7 +2149,11 @@ gateway carries all of it. Details, limits and the threat model:
   misses for 3 days, hits refreshed in the background after 14 days,
   pruned to 2000 rows, wiped from Settings) for its map; these lookup
   results are never mirrored. Typing never geocodes — the typeahead
-  (`searchPlaces`) and a picked row do. The typeahead asks MapKit's completer, which reads only
+  (`searchPlaces`) and a picked row do. On iOS the typeahead has a
+  screen of its own (`LocationSheet`): the editor's Location row opens it
+  with its search field at the top, so the places fill the space down to
+  the keyboard; Done keeps the text as typed, and the row's ⓧ removes the
+  location in one press. The typeahead asks MapKit's completer, which reads only
   how a name begins; where it answers fewer rows than asked for and none
   is the text itself, the latest text goes to the search too, which
   reads a misspelling ("kaffeemik"), and the places it names come first
