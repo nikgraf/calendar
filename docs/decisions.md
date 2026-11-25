@@ -1644,7 +1644,16 @@ was cut (pruned 2026-11-17).
   accessibility text sizes.
 - **Location follows the event time on iOS** (2026-11-05, #294) — the create
   and edit sheets use the desktop order. The dates and “Find a time”
-  come before Location, with suggestions and the map under its field.
+  come before Location, with the map under its row.
+- **The iOS location is chosen on a screen of its own** (2026-11-25, #383)
+  — typed into the form, the suggestions opened under the keyboard. The
+  Location row opens a page sheet with the search field on top, writing
+  each keystroke through as the field did (hands-free stops at the
+  first); Done or the keyboard's ✓ keeps free text, Cancel undoes the
+  typing but not a turn that landed meanwhile. The row's ⓧ removes the
+  location in one press. Rejected: scrolling the field up on focus, and
+  again as results arrive (the page moves under the finger). Open: the
+  empty state as Current Location and recent places.
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
   and German cues, a search verb or question beside a time word) to the
