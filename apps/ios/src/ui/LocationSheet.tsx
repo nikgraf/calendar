@@ -25,9 +25,11 @@ import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } 
  * place is the pick (its coordinates resolved for the map); Done, or the
  * keyboard's Done, keeps the text as typed, since free text is always a
  * valid location, and with the field cleared the location is gone.
- * Cancel and a swipe down put back the text the screen opened on, once
- * something was typed (its pin counts again with it: `geoMatches`). The
- * field already suggests places for the text it opens on.
+ * Cancel and a swipe down undo the typing: the text from before the
+ * first keystroke comes back (its pin counts again with it:
+ * `geoMatches`), unless something other than the screen changed the
+ * location since. The field already suggests places for the text it
+ * opens on.
  */
 export function LocationSheet({
   location,
@@ -42,8 +44,10 @@ export function LocationSheet({
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
-  // What Cancel puts back, kept from the first keystroke on.
-  const [before, setBefore] = useState<string | undefined>(undefined);
+  // What the screen typed: the text before its first keystroke, which
+  // Cancel puts back, and the last text it wrote, which says the location
+  // is still its own (a turn already in flight can land after a keystroke).
+  const [typed, setTyped] = useState<{ before: string; wrote: string } | undefined>(undefined);
   const field = useLocationField({
     location,
     onPick: (suggestion) => {
@@ -52,7 +56,7 @@ export function LocationSheet({
     },
     searchesAtOnce: true,
     setLocation: (text) => {
-      setBefore((kept) => kept ?? location);
+      setTyped((kept) => ({ before: kept?.before ?? location, wrote: text }));
       setLocation(text);
     },
   });
@@ -64,8 +68,8 @@ export function LocationSheet({
   };
   const cancel = () => {
     Keyboard.dismiss();
-    if (before !== undefined && before !== location) {
-      setLocation(before);
+    if (typed && location === typed.wrote && typed.before !== location) {
+      setLocation(typed.before);
     }
     onClose();
   };
