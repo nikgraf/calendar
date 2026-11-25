@@ -99,15 +99,18 @@ export function FlashView({
   );
 }
 
-/** A `FlashView` that stays marked while the editor's step on show changed `field` (null: never). */
+/** A `FlashView` that stays marked while the editor's step on show changed `field`, or any of several (null: never). */
 export function FieldFlash({
   field,
   ...rest
-}: Omit<Parameters<typeof FlashView>[0], 'flash'> & { field: FlashField | null }) {
+}: Omit<Parameters<typeof FlashView>[0], 'flash'> & {
+  field: FlashField | ReadonlyArray<FlashField> | null;
+}) {
   const marks = useContext(FieldFlashContext);
+  const fields = field === null ? [] : typeof field === 'string' ? [field] : field;
   return (
     <FlashView
-      flash={marks && field !== null && marks.fields.has(field) ? marks.key : null}
+      flash={marks && fields.some((one) => marks.fields.has(one)) ? marks.key : null}
       lasting
       {...rest}
     />
