@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Row, Section } from './GroupedList.tsx';
-import { type LocationUndo, typedOver, undoTyping } from './locationUndo.ts';
+import { type LocationUndo, seenLocation, typedOver, undoTyping } from './locationUndo.ts';
 import { SheetButton } from './SheetButton.tsx';
 import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
@@ -28,8 +28,8 @@ import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } 
  * valid location, and with the field cleared the location is gone.
  * Cancel and a swipe down undo the typing: the text from before it
  * comes back (its pin counts again with it: `geoMatches`), and a turn
- * that landed in between stays (`locationUndo.ts`). The field already suggests places for the text it
- * opens on.
+ * that landed in between stays (`locationUndo.ts`). The field already
+ * suggests places for the text it opens on.
  */
 export function LocationSheet({
   location,
@@ -46,6 +46,12 @@ export function LocationSheet({
   const styles = useStyles(makeStyles);
   // What the screen's typing changed, for Cancel (`locationUndo.ts`).
   const [undo, setUndo] = useState<LocationUndo | undefined>(undefined);
+  // Each location a render shows is seen once, as it arrives.
+  const [shown, setShown] = useState(location);
+  if (shown !== location) {
+    setShown(location);
+    setUndo(seenLocation(undo, location));
+  }
   const field = useLocationField({
     location,
     onPick: (suggestion) => {

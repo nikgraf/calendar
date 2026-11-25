@@ -10,18 +10,27 @@ export interface LocationUndo {
 }
 
 /**
- * A keystroke writes `text` over `location`. What Cancel puts back is the
- * text from before the screen's typing, taken again when something else
- * changed the location since the screen's last write: that change stays.
+ * A keystroke writes `text` over `location`. The text from before the
+ * typing is kept from the first keystroke on. Nothing here asks whether
+ * `location` is still the screen's: two keystrokes can arrive before a
+ * render, both over the same `location`, and the second would read the
+ * first's write as someone else's. `seenLocation` answers that instead.
  */
 export const typedOver = (
   undo: LocationUndo | undefined,
   location: string,
   text: string,
-): LocationUndo => ({
-  before: undo !== undefined && undo.wrote === location ? undo.before : location,
-  wrote: text,
-});
+): LocationUndo => ({ before: undo?.before ?? location, wrote: text });
+
+/**
+ * The location as a render shows it. Not the screen's last write: a turn
+ * changed it, and that change is what Cancel now puts back, so it stays.
+ */
+export const seenLocation = (
+  undo: LocationUndo | undefined,
+  location: string,
+): LocationUndo | undefined =>
+  undo === undefined || undo.wrote === location ? undo : { before: location, wrote: location };
 
 /**
  * The text Cancel puts back, if any: only while the location still reads
