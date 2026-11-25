@@ -110,7 +110,10 @@ export function EventEditForm({
   const guests = existing?.attendees ?? [];
 
   /* Start and end each get a row, a day and a time: a multi-day or
-     overnight event ends on a later day (Calendar's Starts/Ends). */
+     overnight event ends on a later day (Calendar's Starts/Ends). A
+     changed day or time marks the whole row, as every other field's
+     mark does; an all-day event's changed times mark the All-day row. */
+  const timeMarks = isAllDay ? 'date' : (['date', 'time'] as const);
   const datePickers = (
     which: 'end' | 'start',
     day: string,
@@ -118,30 +121,22 @@ export function EventEditForm({
     setDay: (next: string) => void,
     setTime: (next: string) => void,
   ) => (
-    <View style={styles.pickerPair}>
-      <FieldFlash
-        bleedY={2}
-        field="date"
-        testID={which === 'start' ? 'event-date' : 'event-end-date'}
-      >
+    <View style={styles.pickerPair} testID={which === 'start' ? 'event-date' : 'event-end-date'}>
+      <DateTimePicker
+        display="compact"
+        mode="date"
+        onValueChange={(_, picked) => setDay(dateStringFromPicker(picked, timeZone))}
+        timeZoneName={timeZone}
+        value={dateForPicker(day, undefined, timeZone)}
+      />
+      {isAllDay ? null : (
         <DateTimePicker
           display="compact"
-          mode="date"
-          onValueChange={(_, picked) => setDay(dateStringFromPicker(picked, timeZone))}
+          mode="time"
+          onValueChange={(_, picked) => setTime(timeStringFromPicker(picked, timeZone))}
           timeZoneName={timeZone}
-          value={dateForPicker(day, undefined, timeZone)}
+          value={dateForPicker(day, time, timeZone)}
         />
-      </FieldFlash>
-      {isAllDay ? null : (
-        <FieldFlash bleedY={2} field="time">
-          <DateTimePicker
-            display="compact"
-            mode="time"
-            onValueChange={(_, picked) => setTime(timeStringFromPicker(picked, timeZone))}
-            timeZoneName={timeZone}
-            value={dateForPicker(day, time, timeZone)}
-          />
-        </FieldFlash>
       )}
     </View>
   );
@@ -211,16 +206,20 @@ export function EventEditForm({
             value={isAllDay}
           />
         </FieldFlash>
-        <Row
-          accessory={datePickers('start', date, startTime, setDate, setStartTime)}
-          testID="event-start"
-          title="Starts"
-        />
-        <Row
-          accessory={datePickers('end', endDate, endTime, setEndDate, setEndTime)}
-          testID="event-end"
-          title="Ends"
-        />
+        <FieldFlash bleedX={0} bleedY={0} field={timeMarks} radius={0}>
+          <Row
+            accessory={datePickers('start', date, startTime, setDate, setStartTime)}
+            testID="event-start"
+            title="Starts"
+          />
+        </FieldFlash>
+        <FieldFlash bleedX={0} bleedY={0} field={timeMarks} radius={0}>
+          <Row
+            accessory={datePickers('end', endDate, endTime, setEndDate, setEndTime)}
+            testID="event-end"
+            title="Ends"
+          />
+        </FieldFlash>
         {zoneLines ? (
           <RowSlot>
             <ZoneLines lines={zoneLines} textStyle={styles.hint} />
