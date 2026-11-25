@@ -118,6 +118,8 @@ interface Words {
   /** Each recogniser's own words, for the report. */
   readonly readings?: TurnReport['readings'];
   readonly text: string;
+  /** What a heard recording says, word for word: the report keeps it beside what was heard. */
+  readonly transcript?: string | undefined;
   readonly wordErrorRate?: number | undefined;
 }
 
@@ -194,6 +196,7 @@ const hear = async (
     reading: hearing.heard,
     readings: readingsOf(hearing),
     text: heard,
+    transcript: input.transcript,
     wordErrorRate: wordErrorRate(input.transcript, heard),
   };
 };
@@ -333,14 +336,14 @@ const runCase = async (
       reading: heard.reading,
     });
     const result = check(turn.expect, outcome, draft, today);
-    // The recogniser erred and the turn failed: would the words as said have passed?
+    // The turn failed on words that are not the transcript's to the letter (a word misheard, or
+    // only the recogniser's punctuation and spelling): would the words as written have passed?
     let said: TurnReport['said'];
     if (
       heard.audio === 'transcribed' &&
-      heard.wordErrorRate !== undefined &&
-      heard.wordErrorRate > 0 &&
       result.failed.length > 0 &&
-      'transcript' in turn.input
+      'transcript' in turn.input &&
+      heard.text !== turn.input.transcript
     ) {
       // Its calls are not the turn's: a list of their own, not kept.
       model.begin();

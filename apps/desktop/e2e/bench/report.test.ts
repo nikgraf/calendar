@@ -114,18 +114,31 @@ describe('scoreOf', () => {
             said: { notes: [], ok: true },
             wordErrorRate: 0.5,
           }),
-          // Lost after it: the words as said fail too, and words heard right that fail.
+          // Lost after it: the transcript fails too, and words heard to the letter that fail.
           heard({ failed: ['time'], said: { notes: [], ok: false }, wordErrorRate: 0.1 }),
+          heard({ failed: ['time'], heard: 'at 8', transcript: 'at 8', wordErrorRate: 0 }),
+          // Failing on other words than the transcript's, which was never read (it passed when
+          // it ran): not judged, whether a word differs or only a mark.
+          heard({ failed: ['time'], heard: 'at ate', transcript: 'at 8', wordErrorRate: 0.5 }),
+          heard({ failed: ['time'], heard: 'At 8.', transcript: 'at 8', wordErrorRate: 0 }),
+          // A report from before the transcript was kept: no reading meant the words were right.
           heard({ failed: ['time'], wordErrorRate: 0 }),
-          // Misheard and failing, its words as said never read (it passed when it ran): not judged.
           heard({ failed: ['time'], wordErrorRate: 0.3 }),
+          // Only the recogniser's marks differ, and the transcript passes: the hearing's.
+          heard({
+            failed: ['time'],
+            heard: 'Concert, at eight.',
+            said: { notes: [], ok: true },
+            transcript: 'Concert at eight',
+            wordErrorRate: 0,
+          }),
           // A typed turn is no heard one.
           turn({ failed: ['title'] }),
         ],
       },
     ];
     const score = scoreOf(cases);
-    expect(score.recordings?.heard).toEqual({ lostAfter: 2, lostHearing: 1, ok: 3, unjudged: 1 });
+    expect(score.recordings?.heard).toEqual({ lostAfter: 3, lostHearing: 2, ok: 3, unjudged: 3 });
     expect(score.places).toEqual({
       asked: 4,
       errors: 1,
@@ -136,8 +149,10 @@ describe('scoreOf', () => {
     });
     const text = formatReport(report(cases));
     expect(text).toContain(
-      'heard turns: 3/7 pass · 1 lost to the hearing (the words as said pass) · 2 lost after it (the words as said fail too) · 1 not judged (misheard, and the words as said never read: scored again from a run they passed)',
+      'heard turns: 3/11 pass · 2 lost to the hearing (the transcript passes) · 3 lost after it (the transcript fails too, or is what was heard) · 3 not judged (the transcript was never read: scored again from a run they passed)',
     );
+    // A turn heard word for word whose transcript still reads another way says so on its line.
+    expect(text).toContain('heard "Concert, at eight." (WER 0%, the transcript passes)');
     // Nothing to say of it where every failing turn was judged.
     expect(formatReport(report(CASES))).not.toContain('not judged');
     expect(text).toContain(

@@ -43,9 +43,9 @@ export interface TurnReport {
       }
     | undefined;
   /**
-   * The transcript's own parse, run when the recogniser erred and the turn
-   * failed: whose fault it was. Its outcome is kept, so the verdict can be
-   * scored again with the turn's (`rescore.ts`).
+   * The transcript's own parse, run when the turn failed on words that are
+   * not the transcript's to the letter: whose fault it was. Its outcome is
+   * kept, so the verdict can be scored again with the turn's (`rescore.ts`).
    */
   readonly said?:
     | {
@@ -54,6 +54,8 @@ export interface TurnReport {
         readonly outcome?: unknown;
       }
     | undefined;
+  /** What a heard recording says, word for word. Absent in reports from before it was kept. */
+  readonly transcript?: string | undefined;
   readonly wordErrorRate?: number | undefined;
 }
 
@@ -93,10 +95,12 @@ export interface Score {
         readonly failed: number;
         /**
          * Of the transcribed turns, where each failing one was lost: to the
-         * hearing (the words as said pass), or after it (they fail too, or
-         * were heard word for word). `unjudged`: misheard and failing, its
-         * words as said never read (a turn that passed when it ran and
-         * fails a rescore). Absent in reports from before it was counted.
+         * hearing (the transcript passes: a word misheard, or the
+         * recogniser's punctuation and spelling read another way), or after
+         * it (the transcript fails too, or is what was heard to the
+         * letter). `unjudged`: failing on other words than the transcript's,
+         * which was never read (a turn that passed when it ran and fails a
+         * rescore). Absent in reports from before it was counted.
          */
         readonly heard?:
           | {
@@ -129,10 +133,12 @@ export interface PlaceTally {
 
 /**
  * Where a heard turn stands. A failing one was lost to the hearing when
- * its words as said pass, and after it when they fail too or were heard
- * word for word (the turn's own failure is theirs). One that was misheard
- * and has no reading of its words as said is not judged: a run reads them
- * for every such turn, a rescore only where the run did.
+ * its transcript passes, and after it when that fails too or is what was
+ * heard to the letter (the turn's own failure is the transcript's). One
+ * that fails on other words than the transcript's, which was never read,
+ * is not judged: a run reads it for every such turn, a rescore only where
+ * the run did. A report from before the transcript was kept is read as it
+ * was made: no reading means the words were heard right.
  */
 const heardWhere = (turn: TurnReport): 'lostAfter' | 'lostHearing' | 'ok' | 'unjudged' => {
   if (turn.failed.length === 0) {
@@ -141,7 +147,9 @@ const heardWhere = (turn: TurnReport): 'lostAfter' | 'lostHearing' | 'ok' | 'unj
   if (turn.said !== undefined) {
     return turn.said.ok ? 'lostHearing' : 'lostAfter';
   }
-  return turn.wordErrorRate === 0 ? 'lostAfter' : 'unjudged';
+  const asWritten =
+    turn.transcript === undefined ? turn.wordErrorRate === 0 : turn.heard === turn.transcript;
+  return asWritten ? 'lostAfter' : 'unjudged';
 };
 
 /** What the run's place lookup made of a turn's location, as its stored outcome holds it. */
@@ -292,10 +300,11 @@ const caseLine = (benchCase: CaseReport): string => {
     if (turn.notes.length > 0) {
       details.push(`${label}${turn.notes.join(', ')}`);
     }
+    // A word misheard, or a failing turn whose transcript was read (its words differ by a mark at least).
     if (
       turn.audio === 'transcribed' &&
       turn.wordErrorRate !== undefined &&
-      turn.wordErrorRate > 0
+      (turn.wordErrorRate > 0 || (turn.said !== undefined && turn.failed.length > 0))
     ) {
       details.push(
         `${label}heard "${turn.heard ?? ''}" (WER ${percent(turn.wordErrorRate)}${
@@ -391,9 +400,9 @@ export const formatReport = (
     if (score.recordings.heard !== undefined) {
       const { lostAfter, lostHearing, ok, unjudged } = score.recordings.heard;
       lines.push(
-        `   heard turns: ${String(ok)}/${String(transcribed)} pass · ${String(lostHearing)} lost to the hearing (the words as said pass) · ${String(lostAfter)} lost after it (the words as said fail too)${
+        `   heard turns: ${String(ok)}/${String(transcribed)} pass · ${String(lostHearing)} lost to the hearing (the transcript passes) · ${String(lostAfter)} lost after it (the transcript fails too, or is what was heard)${
           unjudged > 0
-            ? ` · ${String(unjudged)} not judged (misheard, and the words as said never read: scored again from a run they passed)`
+            ? ` · ${String(unjudged)} not judged (the transcript was never read: scored again from a run they passed)`
             : ''
         }`,
       );

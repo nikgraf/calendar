@@ -28,7 +28,7 @@ and tooling, on zsh).
 | `MODEL_BENCH_COMPARE`         | An earlier report (JSON) to print the difference to: the cases that flipped, the fields that moved, and how often chance alone would flip as many cases one way. A run of several models or arms compares each with its own earlier report; a run of one model on one arm (`MODEL_BENCH_APPLE=0`, one pipeline) compares it with whatever report is named, another model's too (v2 beside v3).                                                                                                                                                                                                                                                                                                                                                                                     |
 | `MODEL_BENCH_BLIND`           | `show`: the blind cases are printed like the open ones. For fixing an expectation, never while briefs or prompts are written (see Blind cases).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `MODEL_BENCH_TODAY`           | The day the run reads its phrases on (`YYYY-MM-DD`); default the clock's. What "this week" and "Friday" mean moves with the day, so two runs are compared on one day: name the earlier run's (its report's `today`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `MODEL_BENCH_RESCORE`         | Earlier reports (files, or a folder of them, comma-separated) scored again by the checks as they are now, without asking any model; each is written as a new report that names the run it came from, in its file name too. A recorded turn's "the transcript passes" is scored again where the report kept the transcript's outcome, and left out where it did not: a heard turn that passed when it ran and fails now is counted as not judged, since its words as said were never read. A place is scored by the lookup the report kept. A case that is gone, or has other turns or words than the model answered, stays as the report had it and is named. For a change to the checks or to an expectation alone; a changed address book, recording or place name needs a run.  |
+| `MODEL_BENCH_RESCORE`         | Earlier reports (files, or a folder of them, comma-separated) scored again by the checks as they are now, without asking any model; each is written as a new report that names the run it came from, in its file name too. A recorded turn's "the transcript passes" is scored again where the report kept the transcript's outcome, and left out where it did not: a heard turn that passed when it ran and fails now is counted as not judged, since its transcript was never read. A place is scored by the lookup the report kept. A case that is gone, or has other turns or words than the model answered, stays as the report had it and is named. For a change to the checks or to an expectation alone; a changed address book, recording or place name needs a run.      |
 | `MODEL_BENCH_OUT`             | Where reports go; default `output/bench/` (gitignored).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Arms
@@ -121,9 +121,10 @@ thread does. The report keeps the raw model answers per turn.
 - `input` is `{ "text" }`, or `{ "audio", "transcript" }`: a file under
   `audio/` and what it says, word for word. The recording is heard as
   the app hears a phrase (Recordings, below); the transcript gives the
-  word error rate, and when the hearing erred and the turn failed, the
-  transcript is parsed too, so the table says whether the words as said
-  would have passed. A missing file runs as its transcript
+  word error rate, and when the turn failed on words that are not the
+  transcript's to the letter (a word misheard, or only the recogniser's
+  punctuation and spelling), the transcript is parsed too, so the table
+  says whether the words as said would have passed. A missing file runs as its transcript
   (`audio: "missing"` in the report).
 - `expect` says where a person would put it — never a literal date, the
   bench runs on "today". `weekday` (ISO, 1 Monday) or `dayOffset` (0
@@ -251,8 +252,10 @@ rate), ran as their transcript for want of a file or because the
 recogniser could not read it, or were skipped. Below the score it prints
 the open cases passed per tag and, where the run held blind cases, the
 open and the blind ones apart. For the heard turns it says where each
-failing one was lost: to the hearing (the words as said pass) or after
-it (they fail too: the model, a convention, the lookup); and for the
+failing one was lost: to the hearing (the transcript passes: a word was
+misheard, or the model read the recogniser's punctuation and spelling
+another way) or after it (the transcript fails too, or is what was
+heard: the model, a convention, the lookup); and for the
 places asked of MapKit, how many were taken unasked, offered to pick,
 right by their text alone, or missed. A heard turn keeps every reading
 (`readings`: Apple's, the second language's, and Parakeet's words
@@ -468,7 +471,7 @@ Parakeet's folder is the one the app downloads into (the dev variant's
 `~/Library/Application Support/@calendar/desktop/parakeet` once Settings
 › Dictation fetched it), or any folder the helper's `parakeet.download`
 filled. The table's last lines say how many heard turns pass, how many
-were lost to the hearing (the words as said pass) and how many after it,
+were lost to the hearing (the transcript passes) and how many after it,
 and what MapKit made of the places. A selection by `voice` alone also
 takes the cases with "invoice" in their name: name both tags.
 
