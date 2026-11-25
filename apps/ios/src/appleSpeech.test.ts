@@ -27,6 +27,24 @@ const native = vi.hoisted(() => {
     listsLanguages: true,
     microphone: true,
     prepareError: undefined as Error | undefined,
+    /** Set: `read` rejects with it, as it does on an iPhone beside the live recognisers. */
+    readError: undefined as Error | undefined,
+    /** What each read does in turn, before `readError` applies: wait, then fail or answer. */
+    readPlan: [] as Array<{ error?: Error; held?: Promise<void> }>,
+    /** The phrases `finish` answers in turn; `finishes` once they ran out. */
+    finishQueue: [] as Array<{
+      other?: string;
+      parakeet?: { raw: string; replacements: ReadonlyArray<never>; text: string };
+      segments: ReadonlyArray<{ alternatives: ReadonlyArray<string>; text: string }>;
+    }>,
+    /** Sessions finished or cancelled: the module answers nothing for them again. */
+    gone: new Set<number>(),
+    /** Set: the next finish waits until the test lets it through. */
+    finishHeld: undefined as Promise<void> | undefined,
+    /** Set: `finish` rejects with it. */
+    finishError: undefined as Error | undefined,
+    /** Set: the next start fails with it. */
+    startError: undefined as Error | undefined,
     /** Set: the next start waits until the test lets it through. */
     held: undefined as Promise<void> | undefined,
   };
@@ -45,10 +63,24 @@ vi.mock('expo', () => ({
       },
       cancel: async (session: number) => {
         native.calls.push(`cancel ${session}`);
+        native.gone.add(session);
+      },
+      cut: (session: number, mark: number) => {
+        native.calls.push(`cut ${session} ${mark}`);
       },
       finish: async (session: number) => {
         native.calls.push(`finish ${session}`);
-        return native.finishes;
+        if (native.gone.has(session)) {
+          return null;
+        }
+        native.gone.add(session);
+        const held = native.finishHeld;
+        native.finishHeld = undefined;
+        await held;
+        if (native.finishError) {
+          throw native.finishError;
+        }
+        return native.finishQueue.shift() ?? native.finishes;
       },
       ...(native.listsLanguages
         ? { languages: async () => ({ automatic: 'de-AT', available: ['de-AT', 'en-US'] }) }
@@ -59,12 +91,33 @@ vi.mock('expo', () => ({
           throw native.prepareError;
         }
       },
+      read: async (session: number) => {
+        native.calls.push(`read ${session}`);
+        const plan = native.readPlan.shift();
+        if (plan) {
+          await plan.held;
+          if (plan.error) {
+            throw plan.error;
+          }
+        } else if (native.readError) {
+          throw native.readError;
+        }
+        if (native.gone.has(session)) {
+          return null;
+        }
+        return native.finishes ? { ...native.finishes, mark: 48_000 } : native.finishes;
+      },
       requestMicrophone: async () => native.microphone,
       start: async (session: number, locale: string, voiceProcessing: boolean, other?: string) => {
         native.calls.push(
           `start ${session} ${voiceProcessing ? 'processed' : 'plain'}${locale === 'en-US' ? '' : ` ${locale}`}${other === 'auto' ? '' : ` second ${other ?? 'none'}`}`,
         );
         await native.held;
+        const failure = native.startError;
+        native.startError = undefined;
+        if (failure) {
+          throw failure;
+        }
         return { sources: ['accurate'] };
       },
     };
@@ -75,6 +128,7 @@ vi.mock('expo', () => ({
 const notes = vi.hoisted(() => new Map<string, string>());
 const VOICE = 'voice-processing.json';
 const LANGUAGES = 'dictation-languages.json';
+const DICTATION_ERROR = 'last-dictation-error.txt';
 
 vi.mock('expo-file-system', () => ({
   File: class {
@@ -88,9 +142,24 @@ vi.mock('expo-file-system', () => ({
     textSync() {
       return notes.get(this.name) ?? '';
     }
+    writeSync(text: string) {
+      notes.set(this.name, text);
+    }
   },
   Paths: { document: '/documents' },
 }));
+
+/** A phrase as the module reads it whole. */
+const phrase = (text: string) => ({ segments: [{ alternatives: [], text }] });
+
+/** Holds the next finish until the returned function lets it through. */
+const holdFinish = () => {
+  let release: (() => void) | undefined;
+  native.finishHeld = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return () => release?.();
+};
 
 const say = (event: Words) => {
   for (const listener of native.listeners) {
@@ -130,6 +199,13 @@ beforeEach(() => {
   native.listeners.clear();
   native.microphone = true;
   native.prepareError = undefined;
+  native.readError = undefined;
+  native.readPlan.length = 0;
+  native.finishQueue.length = 0;
+  native.finishError = undefined;
+  native.finishHeld = undefined;
+  native.gone.clear();
+  native.startError = undefined;
   notes.clear();
 });
 
@@ -301,5 +377,267 @@ describe('appleSpeech', () => {
     await expect(speech.prepare()).rejects.toMatchObject(unsupported);
     native.prepareError = new Error('failed: The network connection was lost.');
     await expect(speech.prepare()).rejects.toThrow('network connection');
+  });
+
+  it('reads the phrase so far with the microphone left open', async () => {
+    const speech = await loadSpeech();
+    await speech.start({ onWords: noWords });
+    await expect(speech.read()).resolves.toEqual({
+      heard: {
+        segments: [{ alternatives: ['Lunch with Sara'], text: 'Lunch with Sarah' }],
+        text: 'Lunch with Sarah',
+      },
+      mark: 48_000,
+    });
+    speech.cut(48_000);
+    expect(startCalls()).toEqual(['start 1 processed', 'read 1', 'cut 1 48000']);
+    expect(notes.has(DICTATION_ERROR)).toBe(false);
+  });
+
+  describe('when the reading beside the live recognisers fails', () => {
+    beforeEach(() => {
+      native.readError = new Error('SpeechError: failed: The operation couldn’t be completed.');
+    });
+
+    it('reads it as a finished phrase, opens the microphone again and keeps the error', async () => {
+      const speech = await loadSpeech();
+      const heard: Array<string> = [];
+      await speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) });
+      say({ session: 1, source: 'accurate', text: 'Lunch with Sarah' });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+
+      await expect(speech.read()).resolves.toEqual({
+        heard: { segments: phrase('Lunch with Sarah').segments, text: 'Lunch with Sarah' },
+        mark: 0,
+      });
+      expect(startCalls()).toEqual([
+        'start 1 processed',
+        'read 1',
+        'finish 1',
+        'start 2 processed',
+      ]);
+      expect(notes.get(DICTATION_ERROR)).toMatch(/\nread: Error: SpeechError: failed/);
+
+      // The words go on from the listening's, the old session's are gone.
+      say({ session: 1, source: 'accurate', text: 'stale' });
+      say({ session: 2, source: 'accurate', text: 'tomorrow' });
+      expect(heard).toEqual(['accurate: Lunch with Sarah', 'accurate: Lunch with Sarah tomorrow']);
+      expect(native.listeners.size).toBe(1);
+
+      // The next phrase is read and finished in the new session.
+      speech.cut(0);
+      native.finishQueue.push(phrase('Tomorrow at one'));
+      await expect(speech.finish()).resolves.toMatchObject({ text: 'Tomorrow at one' });
+      expect(startCalls().slice(-2)).toEqual(['cut 2 0', 'finish 2']);
+    });
+
+    it('reads a phrase that grew before it landed whole', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'), phrase('tomorrow at one'));
+      await speech.read();
+      // Not cut: words followed before it landed, and it is read again.
+      await expect(speech.read()).resolves.toMatchObject({
+        heard: { text: 'Lunch with Sarah tomorrow at one' },
+        mark: 0,
+      });
+      speech.cut(0);
+      native.finishQueue.push(phrase('Dinner instead'));
+      await expect(speech.read()).resolves.toMatchObject({ heard: { text: 'Dinner instead' } });
+    });
+
+    it('opens nothing again for a listening given up while it was read', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      let release: (() => void) | undefined;
+      native.held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const read = speech.read();
+      // The new session is on its way when the editor closes.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await speech.cancel();
+      release?.();
+      await read;
+      expect(startCalls()).toEqual([
+        'start 1 processed',
+        'read 1',
+        'finish 1',
+        'start 2 processed',
+        // The finished session's cancel finds nothing; the opened one's closes it.
+        'cancel 1',
+        'cancel 2',
+      ]);
+      expect(native.listeners.size).toBe(0);
+    });
+
+    it('tells the listener its listening is lost when the microphone cannot open again', async () => {
+      const speech = await loadSpeech();
+      const lost = vi.fn();
+      await speech.start({ onLost: lost, onWords: noWords });
+      native.startError = new Error('SpeechError: no microphone');
+      await expect(speech.read()).resolves.toMatchObject({ mark: 0 });
+      // Told once the phrase reached the editor, so its message is the last word.
+      expect(lost).not.toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(lost).toHaveBeenCalledOnce();
+      expect(notes.get(DICTATION_ERROR)).toMatch(/\nstart: Error: SpeechError: no microphone/);
+      await expect(speech.read()).resolves.toBeUndefined();
+    });
+
+    it('fails as before when the finished reading fails too', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishError = new Error('SpeechError: failed: busy');
+      await expect(speech.read()).rejects.toThrow('busy');
+      expect(notes.get(DICTATION_ERROR)).toMatch(/\nfinish: Error: SpeechError: failed: busy/);
+    });
+
+    it('still delivers the phrase on its way when dictation ends while it is read', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const release = holdFinish();
+      const read = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // "That's all" with nothing said since: the editor cancels, the phrase still lands.
+      await speech.cancel();
+      release();
+      await expect(read).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' }, mark: 0 });
+      expect(startCalls()).toEqual(['start 1 processed', 'read 1', 'finish 1', 'cancel 1']);
+    });
+
+    it('gives a finish meanwhile the phrase being read', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const release = holdFinish();
+      const read = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // A hold lifted: the editor reads everything since the last phrase landed.
+      const finished = speech.finish();
+      release();
+      await expect(finished).resolves.toMatchObject({ text: 'Lunch with Sarah' });
+      await read;
+      expect(startCalls()).toEqual(['start 1 processed', 'read 1', 'finish 1']);
+      expect(native.listeners.size).toBe(0);
+    });
+
+    it('gives a second read meanwhile the same phrase, without finishing again', async () => {
+      const speech = await loadSpeech();
+      const lost = vi.fn();
+      await speech.start({ onLost: lost, onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const release = holdFinish();
+      const first = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const second = speech.read();
+      release();
+      await expect(first).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' } });
+      await expect(second).resolves.toMatchObject({ heard: { text: 'Lunch with Sarah' } });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(lost).not.toHaveBeenCalled();
+      expect(startCalls()).toEqual([
+        'start 1 processed',
+        'read 1',
+        'finish 1',
+        'start 2 processed',
+      ]);
+    });
+
+    it('keeps Parakeet’s reading of the phrase when nothing follows it', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push({
+        ...phrase('Lunch with Sara'),
+        parakeet: { raw: 'Lunch with Sarah', replacements: [], text: 'Lunch with Sarah' },
+      });
+      await speech.read();
+      native.finishQueue.push({ segments: [] });
+      await expect(speech.finish()).resolves.toMatchObject({
+        apple: 'Lunch with Sara',
+        text: 'Lunch with Sarah',
+      });
+    });
+
+    it('lets a noise pause read that way go before the next phrase', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push({ segments: [] });
+      await expect(speech.read()).resolves.toEqual({ heard: undefined, mark: 0 });
+      // Never cut (a hold began meanwhile): the held phrase keeps Parakeet's reading.
+      native.finishQueue.push({
+        ...phrase('Lunch with Sara'),
+        parakeet: { raw: 'Lunch with Sarah', replacements: [], text: 'Lunch with Sarah' },
+      });
+      await expect(speech.finish()).resolves.toMatchObject({
+        apple: 'Lunch with Sara',
+        text: 'Lunch with Sarah',
+      });
+    });
+
+    it('opens nothing again over a newer start begun while the phrase was read', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      const release = holdFinish();
+      const read = speech.read();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const newer = speech.start({ onWords: noWords });
+      release();
+      await read;
+      await expect(newer).resolves.toEqual({ sources: ['accurate'] });
+      expect(startCalls()).toEqual([
+        'start 1 processed',
+        'read 1',
+        'finish 1',
+        'start 2 processed',
+      ]);
+      native.finishQueue.push(phrase('Dinner'));
+      await expect(speech.finish()).resolves.toMatchObject({ text: 'Dinner' });
+    });
+
+    it('cancels a reopened listening in the module', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      native.finishQueue.push(phrase('Lunch with Sarah'));
+      await speech.read();
+      speech.cut(0);
+      await speech.cancel();
+      expect(startCalls()).toEqual([
+        'start 1 processed',
+        'read 1',
+        'finish 1',
+        'start 2 processed',
+        'cut 2 0',
+        'cancel 2',
+      ]);
+    });
+
+    it('never brings back a phrase another reading sent while its own read failed', async () => {
+      const speech = await loadSpeech();
+      await speech.start({ onWords: noWords });
+      let release: (() => void) | undefined;
+      native.readPlan.push(
+        {
+          error: new Error('SpeechError: failed: busy'),
+          held: new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+        },
+        {},
+      );
+      native.readError = undefined;
+      native.finishes = { segments: [{ alternatives: [], text: 'Lunch tomorrow' }] };
+      // The phrase grew while it was read: the editor reads it again, that reading lands.
+      const first = speech.read();
+      await expect(speech.read()).resolves.toMatchObject({ heard: { text: 'Lunch tomorrow' } });
+      speech.cut(48_000);
+      native.finishQueue.push(phrase('Lunch tomorrow'));
+      release?.();
+      await first;
+      native.finishQueue.push(phrase('Dinner'));
+      await expect(speech.finish()).resolves.toMatchObject({ text: 'Dinner' });
+    });
   });
 });

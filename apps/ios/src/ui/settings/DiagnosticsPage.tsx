@@ -11,7 +11,12 @@ import { AccessibilityInfo, Platform } from 'react-native';
 import { appleLanguageModel } from '../../appleModel.ts';
 import { speech } from '../../speech.ts';
 import { assistantDownload, useAssistantModelState } from '../../assistantRuntime.ts';
-import { clearLastRenderError, readLastRenderError } from '../../crashLog.ts';
+import {
+  clearLastDictationError,
+  clearLastRenderError,
+  readLastDictationError,
+  readLastRenderError,
+} from '../../crashLog.ts';
 import { readLaunchTimes } from '../../launchTiming.ts';
 import { launchLine, launchTitle, launchTotal } from '../../launchTimes.ts';
 import {
@@ -47,6 +52,7 @@ export function DiagnosticsPage() {
   const [dictation, setDictation] = useState('checking…');
   const [reminderListCount, setReminderListCount] = useState<number | undefined>();
   const [lastError, setLastError] = useState(readLastRenderError);
+  const [dictationError, setDictationError] = useState(readLastDictationError);
   const [launches] = useState(readLaunchTimes);
 
   // Every answer to Check Again is read out, the same one twice included.
@@ -197,6 +203,24 @@ export function DiagnosticsPage() {
               value={launchTotal(record)}
             />
           ))}
+        </Section>
+      ) : null}
+      {dictationError ? (
+        <Section
+          footer={
+            <Footer selectable testID="diagnostics-dictation-error">
+              {`${dictationError.at}: ${dictationError.detail}`}
+            </Footer>
+          }
+          header="Last Dictation Error"
+        >
+          <ActionRow
+            onPress={() => {
+              clearLastDictationError();
+              setDictationError(null);
+            }}
+            title="Clear"
+          />
         </Section>
       ) : null}
       {lastError ? (
