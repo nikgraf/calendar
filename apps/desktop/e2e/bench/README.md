@@ -471,8 +471,15 @@ That is an English phone with German as its second language, Parakeet
 downloaded: every clip is heard in English, the German sentences too.
 Parakeet's folder is the one the app downloads into (the dev variant's
 `~/Library/Application Support/@calendar/desktop/parakeet` once Settings
-› Dictation fetched it), or any folder the helper's `parakeet.download`
-filled. The table's last lines say how many heard turns pass, how many
+› Dictation fetched it), or one the built helper filled (712 MB from
+Hugging Face, at the commits the app pins; it prints its progress and
+`{"result":{},"id":1}` when both models are there, then Ctrl-C):
+
+```bash
+(echo '{"id":1,"method":"parakeet.download","params":{"folder":"<absolute folder>"}}'; cat) | apps/desktop/helper/.build/release/solunivo-model-helper
+```
+
+The table's last lines say how many heard turns pass, how many
 were lost to the hearing (the transcript passes) and how many after it,
 and what MapKit made of the places. A selection by `voice` alone also
 takes the cases with "invoice" in their name: name both tags.
@@ -483,3 +490,48 @@ compared by those lines: `MODEL_BENCH_COMPARE` leaves a recording heard
 in other words out of its flips. MapKit's answers move with its data and
 the network, so a place count is a measure of the day, and a run meant
 to compare two models leaves `MODEL_BENCH_PLACES` out.
+
+### Where the recordings stand
+
+One voice reading aloud in a quiet room (2026-11-23), heard by an
+English phone with German as its second language, read by Assistant v2
+(the published file on the bundled `llama-server`) as of Wednesday
+2026-11-25, the places asked of MapKit that day, at `ac5539c8`:
+
+| Heard with         | Pass   | Lost to the hearing | Lost after it | Words wrong | Places taken · offered · text alone · missed |
+| ------------------ | ------ | ------------------- | ------------- | ----------- | -------------------------------------------- |
+| The transcripts    | 97/104 |                     | 7             |             | not asked                                    |
+| Parakeet and Apple | 50/104 | 48                  | 6             | 22%         | 33 · 18 · 2 · 26 of 79                       |
+| Apple alone        | 13/104 | 84                  | 7             | 62%         | 4 · 13 · 0 · 39 of 56                        |
+
+- The hearing loses nearly every phrase that is lost: v2 reads 97 of
+  the 104 as they are written.
+- With Parakeet, by set: the English sentences 15 of 40, the German ones
+  21 of 40 (on a phone that listens in English: Parakeet reads both
+  languages), the English turns 7 of 16, the German ones 7 of 8. Of the
+  48 phrases lost to the hearing the place is wrong in 33, the title in
+  22, the day in 8.
+- Parakeet's names: it replaced words in 17 phrases. Eleven are full
+  names put right ("Thomas Kapfmeder" → Thomas Karpfeneder). In six a
+  first name said alone took the next word with it into the contact's
+  full name ("Sarah morgen" → "Sarah Novak", "Anna in" → "Anna Lee",
+  "at Klein(od)" → "David Klein"), and each of those phrases is lost.
+- The model reads a recogniser's writing other than the same words
+  typed: "Konzert am Karlsplatz, nächsten Donnerstag um acht." is 08:00,
+  the transcript without the comma and the period 20:00; "Flight to
+  Zurich" keeps the destination in the title, "Flight to Zürich" makes
+  it the place. Both count as lost to the hearing.
+- Lost after the hearing, with Parakeet, six that fail as written too:
+  the two "abholen" sentences (written, they are read as to-dos, which
+  hold no place), the two weekends "from Friday to Sunday" (no draft of
+  several days), "it's in Vienna" (the venue replaced by the city) and
+  a hike that keeps its hill in the title.
+- Apple's recogniser alone passes 13: none of the 48 German phrases (it
+  listens in English, and the second language's reading reaches only
+  the place lookup) and 13 of the 56 English ones, where Parakeet
+  passes 22. Every phrase it passes, Parakeet passes too. Fewer places
+  are asked there because fewer drafts name one.
+
+What the numbers are not: a phone's microphone, a room with noise or
+other voices, speech that is not read aloud, or a phrase cut where the
+speaker paused. Every clip is one whole phrase.
