@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-02.m4a",
+        "transcript": "Kaffee mit Thomas Karpfeneder im Café Prückel am Freitag um drei"
+      },
+      "expect": {
+        "title": "kaffee mit thomas karpfeneder",
+        "weekday": 5,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": "prückel",
+        "place": ["Café Prückel"]
+      }
+    }
+  ]
+}

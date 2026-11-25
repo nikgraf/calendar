@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-11.m4a",
+        "transcript": "Kaffee mit Sarah im Kaffemik morgen um zehn"
+      },
+      "expect": {
+        "title": "kaffee mit sarah",
+        "dayOffset": 1,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "kaffemik",
+        "place": ["Kaffemik"]
+      }
+    }
+  ]
+}

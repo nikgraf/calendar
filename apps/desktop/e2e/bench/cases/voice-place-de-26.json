@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-26.m4a",
+        "transcript": "Mittagessen mit David im Schwarzen Kameel am Mittwoch um eins"
+      },
+      "expect": {
+        "title": "mittagessen mit david",
+        "weekday": 3,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": "schwarzen kameel",
+        "place": ["Zum Schwarzen Kameel"]
+      }
+    }
+  ]
+}

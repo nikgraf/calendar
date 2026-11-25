@@ -1,0 +1,29 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-turn", "flow", "location"],
+  "turns": [
+    {
+      "input": {
+        "text": "Shopping on Saturday at 2pm"
+      },
+      "expect": {
+        "title": "shopping",
+        "weekday": 6,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "location": null
+      }
+    },
+    {
+      "input": {
+        "audio": "turns/turn-15.m4a",
+        "transcript": "it's on Mariahilfer Straße"
+      },
+      "expect": {
+        "location": "mariahilfer",
+        "place": ["Mariahilfer Straße", "Mariahilfer Strasse"]
+      }
+    }
+  ]
+}

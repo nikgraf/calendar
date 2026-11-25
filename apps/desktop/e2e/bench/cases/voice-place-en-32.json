@@ -1,0 +1,19 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-32.m4a",
+        "transcript": "Flight to Zürich next Wednesday at half past six"
+      },
+      "expect": {
+        "title": ["flight", "flight to zürich", "flight to zurich"],
+        "weekday": 3,
+        "location": "zürich",
+        "place": ["Zürich", "Zurich"]
+      }
+    }
+  ]
+}

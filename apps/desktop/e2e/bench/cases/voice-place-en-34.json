@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-34.m4a",
+        "transcript": "Visit Stefan Müller in Klosterneuburg on Sunday at two"
+      },
+      "expect": {
+        "title": "visit stefan müller",
+        "weekday": 7,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "location": "klosterneuburg",
+        "place": ["Klosterneuburg"]
+      }
+    }
+  ]
+}

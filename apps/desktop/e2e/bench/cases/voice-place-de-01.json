@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-01.m4a",
+        "transcript": "Mittagessen mit Sarah morgen um eins im Figlmüller"
+      },
+      "expect": {
+        "title": "mittagessen mit sarah",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": "figlmüller",
+        "place": ["Figlmüller"]
+      }
+    }
+  ]
+}

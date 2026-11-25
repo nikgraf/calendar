@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-10.m4a",
+        "transcript": "Dinner with Katharina Gruber at Gasthaus Pöschl on Wednesday at half past seven"
+      },
+      "expect": {
+        "title": "dinner with katharina gruber",
+        "weekday": 3,
+        "startTime": "19:30",
+        "endTime": "20:30",
+        "location": "pöschl",
+        "place": ["Gasthaus Pöschl"]
+      }
+    }
+  ]
+}

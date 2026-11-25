@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-38.m4a",
+        "transcript": "Friseur in der Neubaugasse 12 am Donnerstag um vier"
+      },
+      "expect": {
+        "title": "friseur",
+        "weekday": 4,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "location": "neubaugasse 12",
+        "place": ["Neubaugasse 12"]
+      }
+    }
+  ]
+}

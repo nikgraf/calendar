@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-29.m4a",
+        "transcript": "Meet James Wright at Schottentor tomorrow at quarter to nine"
+      },
+      "expect": {
+        "title": ["meet james wright", "meeting with james wright"],
+        "dayOffset": 1,
+        "startTime": "08:45",
+        "endTime": "09:45",
+        "location": "schottentor",
+        "place": ["Schottentor"]
+      }
+    }
+  ]
+}

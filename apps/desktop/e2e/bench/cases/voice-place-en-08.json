@@ -1,0 +1,22 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-08.m4a",
+        "transcript": "Shopping with Emily Carter on Mariahilfer Straße on Saturday afternoon"
+      },
+      "expect": {
+        "title": "shopping with emily carter",
+        "weekday": 6,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "assumedTime": true,
+        "location": "mariahilfer",
+        "place": ["Mariahilfer Straße", "Mariahilfer Strasse"]
+      }
+    }
+  ]
+}

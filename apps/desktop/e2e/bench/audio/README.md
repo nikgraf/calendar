@@ -3,8 +3,11 @@
 One voice on an iPhone, recorded with Voice Memos as it comes (its
 Enhance Recording and Skip Silence options off), the phone held as when
 talking to the app. The places set and the short turns say which place
-and people names the recognisers hear; the scripted phrases give the
-model bench its word error rate.
+and people names the recognisers hear, and what becomes of each phrase
+on its way to a draft: every one is a case of the model bench
+(`../cases/voice-…`), heard as the app hears it, read by the Assistant's
+model and its place looked up (`../README.md` → Recordings). The
+scripted phrases are the clips the older cases ask for.
 
 People in a recording are made up, some with English names and some with
 German ones: Tom Baker, Emily Carter, James Wright, Sarah, Anna, Max and
@@ -34,7 +37,11 @@ as you would to a friend, not as an English speaker would.
 
 Recorded by Nik on 2026-11-23 in a quiet room, one memo per sentence,
 the words as written so that what the recogniser writes can be scored:
-`places/place-en-<#>.m4a` and `places/place-de-<#>.m4a`.
+`places/place-en-<#>.m4a` and `places/place-de-<#>.m4a`. The model
+bench's cases for them are `../cases/voice-place-en-<#>.json` and
+`…-de-<#>.json`: where a person would put the event, and MapKit's names
+for the place. The place bench's `nik-` cases are the same sentences as
+two recognisers once wrote them.
 
 | #   | Place (MapKit's name) | English                                                                         | German                                                                       |
 | --- | --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -89,7 +96,9 @@ recogniser has no sentence to lean on. This is where a name is misheard
 most ("in Vienna" was once written "Indiana").
 
 Recorded with the places set, one memo per row:
-`turns/turn-<#>.m4a`.
+`turns/turn-<#>.m4a`. Each is the second turn of a model bench case
+(`../cases/voice-turn-<#>.json`), after a typed phrase that makes the
+draft it changes.
 
 | #   | Say                                    |
 | --- | -------------------------------------- |

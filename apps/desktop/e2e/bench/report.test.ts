@@ -75,11 +75,77 @@ describe('scoreOf', () => {
     expect(score.medianMs).toBe(2000);
     expect(score.recordings).toEqual({
       failed: 0,
+      heard: { lostAfter: 0, lostHearing: 1, ok: 0 },
       missing: 0,
       skipped: 0,
       transcribed: 1,
       wordErrorRate: 1 / 3,
     });
+    expect(score.places).toBeUndefined();
+  });
+
+  it('says where each heard turn was lost, and what the lookup made of each place asked', () => {
+    const lookup = (found: {
+      errors?: ReadonlyArray<string>;
+      offered?: number;
+      taken?: boolean;
+    }) => ({
+      draft: { place: { candidates: [], errors: [], taken: false, ...found } },
+      kind: 'draft',
+    });
+    const heard = (over: Partial<TurnReport>) => turn({ audio: 'transcribed', ...over });
+    const cases: ReadonlyArray<CaseReport> = [
+      {
+        id: 'voices',
+        ok: false,
+        tags: [],
+        turns: [
+          // Passes as heard, its place taken.
+          heard({ outcome: lookup({ offered: 1, taken: true }), wordErrorRate: 0.2 }),
+          // Passes, its place among those to pick from.
+          heard({ outcome: lookup({ offered: 2 }), wordErrorRate: 0 }),
+          // The lookup found nothing, the text names it all the same.
+          heard({ outcome: lookup({}), wordErrorRate: 0 }),
+          // Lost to the hearing: the words as said pass.
+          heard({
+            checked: ['location'],
+            failed: ['location'],
+            outcome: lookup({ errors: ['geo.search: throttled'] }),
+            said: { notes: [], ok: true },
+            wordErrorRate: 0.5,
+          }),
+          // Lost after it: the words as said fail too, and words heard right that fail.
+          heard({ failed: ['time'], said: { notes: [], ok: false }, wordErrorRate: 0.1 }),
+          heard({ failed: ['time'], wordErrorRate: 0 }),
+          // A typed turn is no heard one.
+          turn({ failed: ['title'] }),
+        ],
+      },
+    ];
+    const score = scoreOf(cases);
+    expect(score.recordings?.heard).toEqual({ lostAfter: 2, lostHearing: 1, ok: 3 });
+    expect(score.places).toEqual({
+      asked: 4,
+      errors: 1,
+      missed: 1,
+      offered: 1,
+      taken: 1,
+      text: 1,
+    });
+    const text = formatReport(report(cases));
+    expect(text).toContain(
+      'heard turns: 3/6 pass · 1 lost to the hearing (the words as said pass) · 2 lost after it (the words as said fail too)',
+    );
+    expect(text).toContain(
+      'places asked of MapKit: 4 · taken 1 · offered 1 · right as text only 1 · missed 1 (1 with a MapKit call that failed or gave no answer in time: a miss may be that)',
+    );
+    // A report from before these were counted prints neither line.
+    const { heard: _heard, ...before } = score.recordings!;
+    const old = formatReport(
+      report(cases, { score: { ...score, places: undefined, recordings: before } }),
+    );
+    expect(old).not.toContain('heard turns');
+    expect(old).not.toContain('places asked');
   });
 
   it('leaves turns that never ran out of the latency, in the failures', () => {

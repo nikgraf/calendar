@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-22.m4a",
+        "transcript": "Radtour auf der Donauinsel nächsten Sonntag um zehn"
+      },
+      "expect": {
+        "title": "radtour",
+        "weekday": 7,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "donauinsel",
+        "place": ["Donauinsel"]
+      }
+    }
+  ]
+}

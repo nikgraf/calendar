@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-15.m4a",
+        "transcript": "Laufen im Augarten morgen früh um sieben"
+      },
+      "expect": {
+        "title": "laufen",
+        "dayOffset": 1,
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "location": "augarten",
+        "place": ["Augarten"]
+      }
+    }
+  ]
+}

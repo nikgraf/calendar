@@ -63,6 +63,14 @@ export const Expectation = Schema.Struct({
   month: Schema.optional(Schema.Number),
   /** Folded text the notes must contain. */
   notes: Schema.optional(Schema.String),
+  /**
+   * MapKit's names for the place meant, beside the text that names it
+   * (`location` or `locationIs`): where the run asks MapKit, the location
+   * is right when the app's lookup takes or offers a place whose name
+   * begins with one of them, whatever the text reads; where it does not
+   * (no helper, `MODEL_BENCH_PLACES=off`), or finds none, the text decides.
+   */
+  place: Schema.optional(Schema.Array(Schema.String)),
   /** The turn must be refused (an empty phrase, an end before its start). */
   rejected: Schema.optional(Schema.Boolean),
   /** Notifications as minutes before the start, in any order. */
@@ -132,6 +140,24 @@ const decodeCase = Schema.decodeUnknownSync(CaseFile);
 /** A weekday code as an expectation writes it: `MO`, or with its place in the month, `1MO`, `-1FR`. */
 const BY_DAY = /^(?:-1|[1-5])?(?:MO|TU|WE|TH|FR|SA|SU)$/u;
 
+/** A place meant comes with the text that names it: the text decides where MapKit is not asked. */
+const checkPlace = (parsed: typeof CaseFile.Type): void => {
+  for (const turn of parsed.turns) {
+    const { location, locationIs, place } = turn.expect;
+    if (place === undefined) {
+      continue;
+    }
+    if (place.length === 0 || place.some((name) => name.trim() === '')) {
+      throw new Error("place lists MapKit's names for the place meant");
+    }
+    if (typeof location !== 'string' && locationIs === undefined) {
+      throw new Error(
+        'place needs location or locationIs beside it: the text that names the place',
+      );
+    }
+  }
+};
+
 /** A case's repeat days are weekday codes: a typo there would be a case no answer can pass. */
 const checkByDay = (parsed: typeof CaseFile.Type): void => {
   for (const turn of parsed.turns) {
@@ -153,6 +179,7 @@ export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
       try {
         parsed = decodeCase(JSON.parse(readFileSync(join(dir, file), 'utf8')));
         checkByDay(parsed);
+        checkPlace(parsed);
       } catch (error) {
         throw new Error(`${file}: ${error instanceof Error ? error.message : String(error)}`, {
           cause: error,

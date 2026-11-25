@@ -1,0 +1,20 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-36.m4a",
+        "transcript": "Skifahren in Kitzbühel nächsten Samstag"
+      },
+      "expect": {
+        "title": "skifahren",
+        "weekday": 6,
+        "isAllDay": true,
+        "location": "kitzbühel",
+        "place": ["Kitzbühel"]
+      }
+    }
+  ]
+}

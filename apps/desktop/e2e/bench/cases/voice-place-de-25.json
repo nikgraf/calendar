@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-25.m4a",
+        "transcript": "Bier mit Max im Schweizerhaus am Donnerstag um sechs"
+      },
+      "expect": {
+        "title": "bier mit max",
+        "weekday": 4,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": "schweizerhaus",
+        "place": ["Schweizerhaus"]
+      }
+    }
+  ]
+}

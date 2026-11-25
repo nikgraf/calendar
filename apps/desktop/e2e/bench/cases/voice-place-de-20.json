@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-20.m4a",
+        "transcript": "Treffen mit Emily Carter im Volksgarten am Sonntag um drei"
+      },
+      "expect": {
+        "title": "treffen mit emily carter",
+        "weekday": 7,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": "volksgarten",
+        "place": ["Volksgarten"]
+      }
+    }
+  ]
+}

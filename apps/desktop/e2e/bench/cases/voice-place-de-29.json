@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-29.m4a",
+        "transcript": "Treffen mit James Wright am Schottentor morgen um Viertel vor neun"
+      },
+      "expect": {
+        "title": "treffen mit james wright",
+        "dayOffset": 1,
+        "startTime": "08:45",
+        "endTime": "09:45",
+        "location": "schottentor",
+        "place": ["Schottentor"]
+      }
+    }
+  ]
+}

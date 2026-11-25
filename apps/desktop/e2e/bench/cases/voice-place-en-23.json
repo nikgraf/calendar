@@ -1,0 +1,22 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-23.m4a",
+        "transcript": "Hike up the Kahlenberg with Katharina Gruber on Saturday morning"
+      },
+      "expect": {
+        "title": ["hike with katharina gruber", "hike up the kahlenberg with katharina gruber"],
+        "weekday": 6,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "assumedTime": true,
+        "location": "kahlenberg",
+        "place": ["Kahlenberg"]
+      }
+    }
+  ]
+}

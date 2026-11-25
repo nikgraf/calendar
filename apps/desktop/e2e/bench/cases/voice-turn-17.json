@@ -1,0 +1,29 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-turn", "flow", "location", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Kaffee am Freitag um 15 Uhr"
+      },
+      "expect": {
+        "title": "kaffee",
+        "weekday": 5,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": null
+      }
+    },
+    {
+      "input": {
+        "audio": "turns/turn-17.m4a",
+        "transcript": "im Café Prückel"
+      },
+      "expect": {
+        "location": "prückel",
+        "place": ["Café Prückel"]
+      }
+    }
+  ]
+}

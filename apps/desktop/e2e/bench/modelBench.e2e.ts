@@ -1,8 +1,14 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type LanguageModel, type QuickAddResult, type RefineResult } from '@calendar/ai';
-import type { Contact } from '@calendar/core';
+import {
+  type Heard as Reading,
+  type LanguageModel,
+  type QuickAddResult,
+  readingsFor,
+  type RefineResult,
+} from '@calendar/ai';
+import { type Contact, dictationVocabulary } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   type BenchCase,
@@ -20,6 +26,17 @@ import {
   type Outcome,
   wordErrorRate,
 } from './check.ts';
+import {
+  type Device,
+  deviceOf,
+  deviceText,
+  type Hearing,
+  helperSpeech,
+  languagesFor,
+  type Speech,
+} from './listening.ts';
+import { type PlaceLookup, placeLookup } from './placeLookup.ts';
+import { outcomeOf, type PlaceOutcome } from './places.ts';
 import { plainTurn } from './plain.ts';
 import {
   benchProviders,
@@ -27,9 +44,7 @@ import {
   connectHelper,
   findHelper,
   gitSha,
-  helperSpeech,
   recording,
-  type Speech,
 } from './providers.ts';
 import {
   type BenchReport,
@@ -72,45 +87,84 @@ import { tunedTurn } from './tuned.ts';
  * asking any model (`rescore.ts`).
  * MODEL_BENCH_CASES picks cases by id part or tag ("flow,de");
  * MODEL_BENCH_STT=off parses every recording's transcript instead of
- * transcribing; MODEL_BENCH_COMPARE names an earlier report to diff
+ * hearing it; MODEL_BENCH_COMPARE names an earlier report to diff
  * against; MODEL_BENCH_OUT the report folder (output/bench).
+ *
+ * A recording is heard as the app hears a phrase (`listening.ts`), on the
+ * device the run names: MODEL_BENCH_LANGUAGE the language it listens in
+ * (each case's own without it), MODEL_BENCH_SECOND_LANGUAGE the second
+ * one (a locale, `auto` or `off`; the bench's other language without
+ * it), MODEL_BENCH_PARAKEET the folder of Parakeet's files when it reads
+ * the phrase too, with the address book's names to listen for.
+ * MODEL_BENCH_PLACES=mapkit asks the app's place lookup for each place a
+ * case says is meant (`expect.place`), with the hearing's other readings
+ * of it, as a dictated turn does; without it the location's text decides.
  */
 
 const TIME_ZONE = 'Europe/Vienna';
 const BENCH_DIR = import.meta.dirname;
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
 
-interface Heard {
+/** The city the bench's user lives in (`TIME_ZONE`'s): where the place lookup's nearby is. */
+const NEAR = 'vienna';
+
+interface Words {
   readonly audio?: TurnReport['audio'];
-  /** Why the recording could not be transcribed; the transcript was parsed instead. */
+  /** Why the recording could not be heard; the transcript was parsed instead. */
   readonly error?: string | undefined;
   readonly heard?: string | undefined;
+  /** The whole reading, whose other readings the place lookup asks; never in the report. */
+  readonly reading?: Reading | undefined;
+  /** Each recogniser's own words, for the report. */
+  readonly readings?: TurnReport['readings'];
   readonly text: string;
   readonly wordErrorRate?: number | undefined;
 }
 
-/** One transcription per file and locale, however many providers run. */
-const transcriptions = new Map<string, Promise<string>>();
+interface Languages {
+  readonly locale: string;
+  readonly other: string;
+}
 
-const transcribe = (speech: Speech, path: string, locale: string): Promise<string> => {
-  const key = `${locale}:${path}`;
-  let waiting = transcriptions.get(key);
+/** One hearing per file, languages and names, however many providers run. */
+const hearings = new Map<string, Promise<Hearing>>();
+
+const listen = (
+  speech: Speech,
+  path: string,
+  languages: Languages,
+  names: ReadonlyArray<string>,
+): Promise<Hearing> => {
+  const key = JSON.stringify([path, languages.locale, languages.other, names]);
+  let waiting = hearings.get(key);
   if (waiting === undefined) {
-    waiting = speech
-      .prepare(locale)
-      .then(() => speech.transcribe(readFileSync(path), locale))
-      .then((heard) => heard ?? '');
-    waiting.catch(() => transcriptions.delete(key));
-    transcriptions.set(key, waiting);
+    waiting = speech.hear(path, languages, names);
+    waiting.catch(() => hearings.delete(key));
+    hearings.set(key, waiting);
   }
   return waiting;
 };
 
-/** The words a turn's input gives the parser: its text, or what the recogniser made of its recording. */
+/** What each recogniser wrote, as the report keeps it: only the readings there were. */
+const readingsOf = ({ heard, parakeet }: Hearing): TurnReport['readings'] => ({
+  ...(heard?.apple === undefined ? {} : { apple: heard.apple }),
+  ...(heard?.other === undefined ? {} : { other: heard.other }),
+  ...(parakeet === undefined ? {} : { parakeet }),
+});
+
+/** The words a turn's input gives the parser: its text, or what the app's listening made of its recording. */
 const hear = async (
   input: TurnInput,
-  { locale, speech }: { readonly locale: string; readonly speech: Speech | undefined },
-): Promise<Heard> => {
+  {
+    languages,
+    names,
+    speech,
+  }: {
+    readonly languages: Languages;
+    readonly names: ReadonlyArray<string>;
+    readonly speech: Speech | undefined;
+  },
+): Promise<Words> => {
   if ('text' in input) {
     return { text: input.text };
   }
@@ -121,9 +175,9 @@ const hear = async (
   if (speech === undefined) {
     return { audio: 'skipped', text: input.transcript };
   }
-  let heard: string;
+  let hearing: Hearing;
   try {
-    heard = await transcribe(speech, path, locale);
+    hearing = await listen(speech, path, languages, names);
   } catch (error) {
     // The recogniser's failure is the recording's; the words as said still measure the parser.
     return {
@@ -132,12 +186,65 @@ const hear = async (
       text: input.transcript,
     };
   }
+  // Nothing heard is an empty phrase, which the parser refuses.
+  const heard = hearing.heard?.text ?? '';
   return {
     audio: 'transcribed',
     heard,
+    reading: hearing.heard,
+    readings: readingsOf(hearing),
     text: heard,
     wordErrorRate: wordErrorRate(input.transcript, heard),
   };
+};
+
+/** One lookup per place text, readings and place meant, however many providers run. */
+const lookups = new Map<string, Promise<PlaceOutcome>>();
+
+/**
+ * The outcome with what the app's lookup makes of its location, where
+ * the turn's expectation says which place is meant and the run asks
+ * MapKit: the place as the draft names it and, for a recording, the
+ * hearing's other readings of it, as a dictated turn asks (`readingsFor`).
+ */
+const withPlace = async (
+  outcome: Outcome,
+  {
+    names,
+    places,
+    reading,
+  }: {
+    readonly names: ReadonlyArray<string> | undefined;
+    readonly places: PlaceLookup | undefined;
+    readonly reading: Reading | undefined;
+  },
+): Promise<Outcome> => {
+  if (places === undefined || names === undefined || outcome.kind !== 'draft') {
+    return outcome;
+  }
+  const { item } = outcome.draft;
+  const location = item.kind === 'event' ? (item.prefill.location ?? '').trim() : '';
+  if (location === '') {
+    return outcome;
+  }
+  const alternatives = reading === undefined ? [] : readingsFor(reading, location);
+  const key = JSON.stringify([location, alternatives, names]);
+  let waiting = lookups.get(key);
+  if (waiting === undefined) {
+    waiting = places
+      .ask(NEAR, { ...(alternatives.length > 0 ? { alternatives } : {}), location })
+      .then(({ candidates, failures }) => {
+        const found = outcomeOf(candidates, names, failures);
+        if (found.errors.length > 0) {
+          // A lookup MapKit let down is asked again the next time, not kept as a miss.
+          lookups.delete(key);
+        }
+        return found;
+      });
+    waiting.catch(() => lookups.delete(key));
+    lookups.set(key, waiting);
+  }
+  return { draft: { ...outcome.draft, place: await waiting }, kind: 'draft' };
 };
 
 const PIPELINES = ['tuned', 'plain'] as const;
@@ -167,29 +274,36 @@ const runCase = async (
   benchCase: BenchCase,
   {
     book,
+    device,
     model,
     pipeline,
+    places,
     speech,
     today,
   }: {
     readonly book: ReadonlyArray<Contact>;
+    readonly device: Device;
     readonly model: ReturnType<typeof recording>;
     readonly pipeline: Pipeline;
+    readonly places: PlaceLookup | undefined;
     readonly speech: Speech | undefined;
     readonly today: string;
   },
 ): Promise<CaseReport> => {
-  const locale = localeOf(benchCase);
+  const languages = languagesFor(device, localeOf(benchCase));
+  // The names Parakeet listens for: the address book's, as the app hands them on (no events here).
+  const vocabulary = dictationVocabulary([], book);
+  const names = [...vocabulary.people, ...vocabulary.places];
   const turns: Array<TurnReport> = [];
   // The thread's words so far, as heard: what a later turn leans on.
   const earlier: Array<string> = [];
   let draft: BenchDraft | undefined;
   for (const [index, turn] of benchCase.turns.entries()) {
-    const heard = await hear(turn.input, { locale, speech });
+    const heard = await hear(turn.input, { languages, names, speech });
     if (index > 0 && draft === undefined) {
       // The first phrase made nothing to change.
       const checked = checkWithoutDraft(turn.expect, today);
-      const { error, ...spoken } = heard;
+      const { error, reading: _reading, ...spoken } = heard;
       turns.push({
         ...spoken,
         calls: [],
@@ -206,12 +320,18 @@ const runCase = async (
     }
     const started = Date.now();
     const calls = model.begin();
-    const outcome: Outcome = await applyResult(
+    const applied = await applyResult(
       draft,
       await runTurn({ model: model.model, pipeline }, draft, heard.text, today, earlier),
       book,
     );
+    // The model's time: the place lookup may wait a minute for MapKit's limit.
     const ms = Date.now() - started;
+    const outcome: Outcome = await withPlace(applied, {
+      names: turn.expect.place,
+      places,
+      reading: heard.reading,
+    });
     const result = check(turn.expect, outcome, draft, today);
     // The recogniser erred and the turn failed: would the words as said have passed?
     let said: TurnReport['said'];
@@ -224,16 +344,20 @@ const runCase = async (
     ) {
       // Its calls are not the turn's: a list of their own, not kept.
       model.begin();
-      const transcriptOutcome = await applyResult(
-        draft,
-        await runTurn(
-          { model: model.model, pipeline },
+      // Typed, the words have no other readings: the place is asked as written.
+      const transcriptOutcome = await withPlace(
+        await applyResult(
           draft,
-          turn.input.transcript,
-          today,
-          earlier,
+          await runTurn(
+            { model: model.model, pipeline },
+            draft,
+            turn.input.transcript,
+            today,
+            earlier,
+          ),
+          book,
         ),
-        book,
+        { names: turn.expect.place, places, reading: undefined },
       );
       const transcriptCheck = check(turn.expect, transcriptOutcome, draft, today);
       said = {
@@ -242,7 +366,7 @@ const runCase = async (
         outcome: transcriptOutcome,
       };
     }
-    const { error, ...spoken } = heard;
+    const { error, reading: _reading, ...spoken } = heard;
     turns.push({
       ...spoken,
       calls,
@@ -319,10 +443,28 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
     const books = loadContacts(join(BENCH_DIR, 'contacts.json'));
     const helperBinary = findHelper();
     const helper = helperBinary === undefined ? undefined : connectHelper(helperBinary);
+    const device = deviceOf(process.env);
     const speech =
       helper !== undefined && process.env['MODEL_BENCH_STT'] !== 'off'
-        ? helperSpeech(helper)
+        ? helperSpeech(helper, device)
         : undefined;
+    const places =
+      helper !== undefined && process.env['MODEL_BENCH_PLACES'] === 'mapkit'
+        ? placeLookup(helper)
+        : undefined;
+    // What the recordings were heard with and looked up in is part of a result, where there are any.
+    const recorded = cases.some((benchCase) =>
+      benchCase.turns.some(
+        (turn) => 'audio' in turn.input && existsSync(join(BENCH_DIR, 'audio', turn.input.audio)),
+      ),
+    );
+    const around = [
+      recorded && speech !== undefined ? `heard with: ${deviceText(device)}` : undefined,
+      places === undefined ? undefined : 'places asked of MapKit',
+    ].filter((part) => part !== undefined);
+    if (around.length > 0) {
+      log(`   ${around.join('; ')}\n`);
+    }
     const compareWith = process.env['MODEL_BENCH_COMPARE'];
     const earlier =
       compareWith === undefined
@@ -375,8 +517,10 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
           reports.push(
             await runCase(benchCase, {
               book,
+              device,
               model,
               pipeline: provider.pipeline,
+              places,
               speech,
               today,
             }),
@@ -386,7 +530,9 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
           cases: reports,
           provider: provider.name,
           score: scoreOf(reports),
-          settings: provider.settings,
+          settings:
+            [provider.settings, ...around].filter((part) => part !== undefined).join('; ') ||
+            undefined,
           sha,
           timeZone: TIME_ZONE,
           today,

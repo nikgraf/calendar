@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-03.m4a",
+        "transcript": "Treffen mit Tom Baker am Naschmarkt am Samstag um zehn"
+      },
+      "expect": {
+        "title": "treffen mit tom baker",
+        "weekday": 6,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "naschmarkt",
+        "place": ["Naschmarkt", "The Vienna Naschmarkt"]
+      }
+    }
+  ]
+}

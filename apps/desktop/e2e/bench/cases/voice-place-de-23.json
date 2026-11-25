@@ -1,0 +1,25 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-23.m4a",
+        "transcript": "Wanderung auf den Kahlenberg mit Katharina Gruber am Samstagvormittag"
+      },
+      "expect": {
+        "title": [
+          "wanderung mit katharina gruber",
+          "wanderung auf den kahlenberg mit katharina gruber"
+        ],
+        "weekday": 6,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "assumedTime": true,
+        "location": "kahlenberg",
+        "place": ["Kahlenberg"]
+      }
+    }
+  ]
+}

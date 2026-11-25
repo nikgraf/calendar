@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-38.m4a",
+        "transcript": "Haircut at Neubaugasse 12 on Thursday at four"
+      },
+      "expect": {
+        "title": "haircut",
+        "weekday": 4,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "location": "neubaugasse 12",
+        "place": ["Neubaugasse 12"]
+      }
+    }
+  ]
+}

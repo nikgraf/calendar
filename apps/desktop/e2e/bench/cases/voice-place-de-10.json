@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-10.m4a",
+        "transcript": "Abendessen mit Katharina Gruber im Gasthaus Pöschl am Mittwoch um halb acht"
+      },
+      "expect": {
+        "title": "abendessen mit katharina gruber",
+        "weekday": 3,
+        "startTime": "19:30",
+        "endTime": "20:30",
+        "location": "pöschl",
+        "place": ["Gasthaus Pöschl"]
+      }
+    }
+  ]
+}

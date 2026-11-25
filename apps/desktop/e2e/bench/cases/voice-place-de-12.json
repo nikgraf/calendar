@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-12.m4a",
+        "transcript": "Drinks mit James Wright im Kleinod am Freitag um neun"
+      },
+      "expect": {
+        "title": "drinks mit james wright",
+        "weekday": 5,
+        "startTime": "21:00",
+        "endTime": "22:00",
+        "location": "kleinod",
+        "place": ["Kleinod"]
+      }
+    }
+  ]
+}

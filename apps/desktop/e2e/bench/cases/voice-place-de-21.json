@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-21.m4a",
+        "transcript": "Ausstellung mit Stefan im MuseumsQuartier am Samstag um elf"
+      },
+      "expect": {
+        "title": "ausstellung mit stefan",
+        "weekday": 6,
+        "startTime": "11:00",
+        "endTime": "12:00",
+        "location": "museumsquartier",
+        "place": ["MuseumsQuartier"]
+      }
+    }
+  ]
+}

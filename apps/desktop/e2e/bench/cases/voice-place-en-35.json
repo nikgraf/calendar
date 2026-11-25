@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-35.m4a",
+        "transcript": "Meeting in St. Pölten on Tuesday at ten"
+      },
+      "expect": {
+        "title": "meeting",
+        "weekday": 2,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "pölten",
+        "place": ["St. Pölten", "Sankt Pölten"]
+      }
+    }
+  ]
+}

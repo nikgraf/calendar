@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-30.m4a",
+        "transcript": "Christmas market at Rathausplatz on Friday at five"
+      },
+      "expect": {
+        "title": "christmas market",
+        "weekday": 5,
+        "startTime": "17:00",
+        "endTime": "18:00",
+        "location": "rathausplatz",
+        "place": ["Rathausplatz"]
+      }
+    }
+  ]
+}

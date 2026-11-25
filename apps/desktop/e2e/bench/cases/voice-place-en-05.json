@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-05.m4a",
+        "transcript": "Meet Stefan Müller at Stephansplatz today at six"
+      },
+      "expect": {
+        "title": ["meet stefan müller", "meeting with stefan müller"],
+        "dayOffset": 0,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": "stephansplatz",
+        "place": ["Stephansplatz"]
+      }
+    }
+  ]
+}

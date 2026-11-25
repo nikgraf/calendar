@@ -1,13 +1,130 @@
 {
   "team": [
-    { "displayName": "Tom Baker", "email": "tom.baker@example.com" },
-    { "displayName": "Anna Lee", "email": "anna.lee@example.com" },
-    { "displayName": "Anna Berger", "email": "anna.berger@example.com" },
-    { "displayName": "Sarah Novak", "email": "sarah.novak@example.com" },
-    { "displayName": "Teo Marin", "email": "teo.marin@example.com" },
-    { "displayName": "Jörg Müller", "email": "joerg.mueller@example.com" },
-    { "displayName": "Max Huber", "email": "max.huber@example.com" },
-    { "displayName": "Max Huber", "email": "max@example.com" },
-    { "displayName": "Jo Winter", "email": "jo@example.com" }
+    {
+      "displayName": "Tom Baker",
+      "email": "tom.baker@example.com"
+    },
+    {
+      "displayName": "Anna Lee",
+      "email": "anna.lee@example.com"
+    },
+    {
+      "displayName": "Anna Berger",
+      "email": "anna.berger@example.com"
+    },
+    {
+      "displayName": "Sarah Novak",
+      "email": "sarah.novak@example.com"
+    },
+    {
+      "displayName": "Teo Marin",
+      "email": "teo.marin@example.com"
+    },
+    {
+      "displayName": "Jörg Müller",
+      "email": "joerg.mueller@example.com"
+    },
+    {
+      "displayName": "Max Huber",
+      "email": "max.huber@example.com"
+    },
+    {
+      "displayName": "Max Huber",
+      "email": "max@example.com"
+    },
+    {
+      "displayName": "Jo Winter",
+      "email": "jo@example.com"
+    }
+  ],
+  "voices": [
+    {
+      "displayName": "Tom Baker",
+      "email": "tom.baker@example.com"
+    },
+    {
+      "displayName": "Emily Carter",
+      "email": "emily.carter@example.com"
+    },
+    {
+      "displayName": "James Wright",
+      "email": "james.wright@example.com"
+    },
+    {
+      "displayName": "Sarah Novak",
+      "email": "sarah.novak@example.com"
+    },
+    {
+      "displayName": "Anna Lee",
+      "email": "anna.lee@example.com"
+    },
+    {
+      "displayName": "Max Huber",
+      "email": "max.huber@example.com"
+    },
+    {
+      "displayName": "David Klein",
+      "email": "david.klein@example.com"
+    },
+    {
+      "displayName": "Stefan Müller",
+      "email": "stefan.mueller@example.com"
+    },
+    {
+      "displayName": "Thomas Karpfeneder",
+      "email": "thomas.karpfeneder@example.com"
+    },
+    {
+      "displayName": "Katharina Gruber",
+      "email": "katharina.gruber@example.com"
+    },
+    {
+      "displayName": "Jörg Hofstätter",
+      "email": "joerg.hofstaetter@example.com"
+    },
+    {
+      "displayName": "Lukas Bauer",
+      "email": "lukas.bauer@example.com"
+    },
+    {
+      "displayName": "Julia Wagner",
+      "email": "julia.wagner@example.com"
+    },
+    {
+      "displayName": "Michael Steiner",
+      "email": "michael.steiner@example.com"
+    },
+    {
+      "displayName": "Lisa Hofer",
+      "email": "lisa.hofer@example.com"
+    },
+    {
+      "displayName": "Daniel Pichler",
+      "email": "daniel.pichler@example.com"
+    },
+    {
+      "displayName": "Laura Moser",
+      "email": "laura.moser@example.com"
+    },
+    {
+      "displayName": "Peter Schmid",
+      "email": "peter.schmid@example.com"
+    },
+    {
+      "displayName": "Nina Berger",
+      "email": "nina.berger@example.com"
+    },
+    {
+      "displayName": "Oliver Brown",
+      "email": "oliver.brown@example.com"
+    },
+    {
+      "displayName": "Hannah Wilson",
+      "email": "hannah.wilson@example.com"
+    },
+    {
+      "displayName": "Markus Eder",
+      "email": "markus.eder@example.com"
+    }
   ]
 }

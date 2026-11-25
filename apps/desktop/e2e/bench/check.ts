@@ -22,6 +22,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import type { Expectation } from './cases.ts';
+import type { PlaceOutcome } from './places.ts';
 
 /**
  * What the bench holds between turns and checks after each: the thread's
@@ -35,6 +36,11 @@ export interface BenchDraft {
   readonly guests: ReadonlyArray<AttendeeInput>;
   readonly item: QuickAddItem;
   readonly notes?: string | undefined;
+  /**
+   * What the app's lookup made of the turn's location, against the place
+   * its expectation means: only where the run asked MapKit for it.
+   */
+  readonly place?: PlaceOutcome | undefined;
   /** Minutes before the start. */
   readonly reminders?: ReadonlyArray<number> | undefined;
 }
@@ -284,7 +290,7 @@ const ABOUT: ReadonlyArray<{
   { field: 'date', keys: ['weekday', 'dayOffset', 'dayOfMonth', 'month'], view: 'date' },
   { field: 'time', keys: ['startTime', 'endTime', 'assumedTime', 'spanDays'], view: 'time' },
   { field: 'allDay', keys: ['isAllDay'], view: 'time' },
-  { field: 'location', keys: ['location', 'locationIs'], view: 'location' },
+  { field: 'location', keys: ['location', 'locationIs', 'place'], view: 'location' },
   { field: 'repeat', keys: ['repeat'], view: 'repeat' },
   { field: 'guests', keys: ['guests'], view: 'guests' },
   { field: 'notes', keys: ['notes'], view: 'notes' },
@@ -437,23 +443,39 @@ const checkTime = (expectation: Expectation, item: QuickAddItem, fail: Fail): vo
   }
 };
 
-/** Whether the draft has no location when none is expected, or one holding (or being) the expected text. */
-const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
+/** Whether the lookup a run made for a turn's location took or offered the place meant. */
+export const placeFound = (place: PlaceOutcome | undefined): boolean =>
+  place !== undefined && (place.taken || place.offered !== undefined);
+
+/**
+ * Whether the draft has no location when none is expected, or the one
+ * expected: the place meant, taken or offered by the app's lookup where
+ * the run asked MapKit (the draft is right there whatever the text
+ * reads: a taken place replaces it, an offered one is a tap away), else
+ * a text holding (or being) the expected one.
+ */
+const checkLocation = (expectation: Expectation, draft: BenchDraft, fail: Fail): void => {
+  const { item } = draft;
   const location = item.kind === 'event' ? item.prefill.location : undefined;
   if (expectation.location === null && location !== undefined) {
     fail('location', `location=${location}`);
   }
+  if (expectation.place !== undefined && placeFound(draft.place)) {
+    return;
+  }
+  const looked =
+    expectation.place === undefined || draft.place === undefined ? '' : ', the place not offered';
   if (
     typeof expectation.location === 'string' &&
     !fold(location ?? '').includes(fold(expectation.location))
   ) {
-    fail('location', `location=${location ?? '-'}`);
+    fail('location', `location=${location ?? '-'}${looked}`);
   }
   if (
     expectation.locationIs !== undefined &&
     fold(location ?? '') !== fold(expectation.locationIs)
   ) {
-    fail('location', `location=${location ?? '-'}`);
+    fail('location', `location=${location ?? '-'}${looked}`);
   }
 };
 
@@ -609,7 +631,7 @@ export const check = (
   checkTitle(expectation, item, fail);
   checkDate(expectation, item, { previous, today }, fail);
   checkTime(expectation, item, fail);
-  checkLocation(expectation, item, fail);
+  checkLocation(expectation, draft, fail);
   checkRepeat(expectation, item, fail);
   checkGuests(expectation, draft, fail);
   checkNotes(expectation, draft, fail);

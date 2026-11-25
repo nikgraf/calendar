@@ -1,0 +1,29 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-turn", "flow", "location", "correction"],
+  "turns": [
+    {
+      "input": {
+        "text": "Breakfast on Sunday at 9 at Café Hawelka"
+      },
+      "expect": {
+        "title": "breakfast",
+        "weekday": 7,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "location": "hawelka"
+      }
+    },
+    {
+      "input": {
+        "audio": "turns/turn-05.m4a",
+        "transcript": "at Café Sperl instead"
+      },
+      "expect": {
+        "locationIs": "café sperl",
+        "place": ["Café Sperl"]
+      }
+    }
+  ]
+}

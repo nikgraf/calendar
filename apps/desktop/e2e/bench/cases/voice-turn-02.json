@@ -1,0 +1,29 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-turn", "flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": {
+        "text": "Lunch tomorrow at 1 at Kaffemik"
+      },
+      "expect": {
+        "title": "lunch",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": "kaffemik"
+      }
+    },
+    {
+      "input": {
+        "audio": "turns/turn-02.m4a",
+        "transcript": "it's in Vienna"
+      },
+      "expect": {
+        "locationIs": "kaffemik, vienna",
+        "place": ["Kaffemik"]
+      }
+    }
+  ]
+}

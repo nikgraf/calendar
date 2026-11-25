@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-37.m4a",
+        "transcript": "Doctor at Wollzeile 5 tomorrow at nine"
+      },
+      "expect": {
+        "title": "doctor",
+        "dayOffset": 1,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "location": "wollzeile 5",
+        "place": ["Wollzeile 5"]
+      }
+    }
+  ]
+}

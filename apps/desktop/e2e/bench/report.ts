@@ -1,7 +1,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Field, FIELDS } from './check.ts';
+import { type Field, FIELDS, placeFound } from './check.ts';
 import { type Flip, flipLines, namedCases } from './flips.ts';
+import type { ParakeetReading } from './listening.ts';
+import type { PlaceOutcome } from './places.ts';
 import type { ModelCall } from './providers.ts';
 
 /**
@@ -27,6 +29,19 @@ export interface TurnReport {
   readonly notes: ReadonlyArray<string>;
   /** The draft after the turn, or the rejection. */
   readonly outcome: unknown;
+  /**
+   * A heard turn's other readings, beside `heard` (the words that were
+   * sent): Apple's recogniser's when Parakeet's were sent, the second
+   * language's, and Parakeet's own account (its words before the names
+   * it listens for, and what they replaced).
+   */
+  readonly readings?:
+    | {
+        readonly apple?: string | undefined;
+        readonly other?: string | undefined;
+        readonly parakeet?: ParakeetReading | undefined;
+      }
+    | undefined;
   /**
    * The transcript's own parse, run when the recogniser erred and the turn
    * failed: whose fault it was. Its outcome is kept, so the verdict can be
@@ -65,11 +80,25 @@ export interface Score {
   readonly fields: Readonly<Partial<Record<Field, Counter>>>;
   /** Of a turn's model calls together. */
   readonly medianMs: number;
+  /**
+   * Over the turns whose place the run asked MapKit for: taken unasked,
+   * offered to pick, right by its text alone, or missed. Absent where
+   * none was asked.
+   */
+  readonly places?: PlaceTally | undefined;
   /** Over the recorded turns: what became of each file, and the mean word error rate of the transcribed ones. */
   readonly recordings?:
     | {
         /** The recogniser could not read the file; the transcript ran. */
         readonly failed: number;
+        /**
+         * Of the transcribed turns, where each failing one was lost: to the
+         * hearing (the words as said pass), or after it (they fail too, or
+         * were heard word for word). Absent in reports from before it was counted.
+         */
+        readonly heard?:
+          | { readonly lostAfter: number; readonly lostHearing: number; readonly ok: number }
+          | undefined;
         readonly missing: number;
         readonly skipped: number;
         readonly transcribed: number;
@@ -78,6 +107,23 @@ export interface Score {
     | undefined;
   readonly turns: Counter;
 }
+
+export interface PlaceTally {
+  readonly asked: number;
+  /** A MapKit call of the lookup failed or gave no answer in time: a miss may be that. */
+  readonly errors: number;
+  readonly missed: number;
+  /** Among the places to pick from, not taken. */
+  readonly offered: number;
+  readonly taken: number;
+  /** Not found by the lookup, the text names it all the same. */
+  readonly text: number;
+}
+
+/** What the run's place lookup made of a turn's location, as its stored outcome holds it. */
+const placeOf = (turn: TurnReport): PlaceOutcome | undefined =>
+  (turn.outcome as { readonly draft?: { readonly place?: PlaceOutcome } } | null | undefined)?.draft
+    ?.place;
 
 export interface BenchReport {
   readonly cases: ReadonlyArray<CaseReport>;
@@ -125,6 +171,8 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
   const durations: Array<number> = [];
   const rates: Array<number> = [];
   const audio = { failed: 0, missing: 0, skipped: 0, transcribed: 0 };
+  const heard = { lostAfter: 0, lostHearing: 0, ok: 0 };
+  const places = { asked: 0, errors: 0, missed: 0, offered: 0, taken: 0, text: 0 };
   for (const benchCase of cases) {
     for (const turn of benchCase.turns) {
       turnsTotal += 1;
@@ -138,6 +186,25 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
       if (turn.wordErrorRate !== undefined) {
         rates.push(turn.wordErrorRate);
       }
+      if (turn.audio === 'transcribed') {
+        // The transcript ran only for a failing turn the recogniser erred on: without it, the words were right.
+        const where =
+          turn.failed.length === 0 ? 'ok' : turn.said?.ok === true ? 'lostHearing' : 'lostAfter';
+        heard[where] += 1;
+      }
+      const place = placeOf(turn);
+      if (place !== undefined) {
+        places.asked += 1;
+        places.errors += place.errors.length > 0 ? 1 : 0;
+        const how = place.taken
+          ? 'taken'
+          : placeFound(place)
+            ? 'offered'
+            : turn.failed.includes('location')
+              ? 'missed'
+              : 'text';
+        places[how] += 1;
+      }
       for (const field of turn.checked) {
         const counter = fields[field] ?? { ok: 0, total: 0 };
         counter.total += 1;
@@ -150,11 +217,13 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
     cases: { ok: cases.filter((benchCase) => benchCase.ok).length, total: cases.length },
     fields,
     medianMs: median(durations),
+    places: places.asked === 0 ? undefined : places,
     recordings:
       audio.failed + audio.missing + audio.skipped + audio.transcribed === 0
         ? undefined
         : {
             ...audio,
+            heard: audio.transcribed === 0 ? undefined : heard,
             wordErrorRate:
               rates.length === 0 ? 0 : rates.reduce((sum, rate) => sum + rate, 0) / rates.length,
           },
@@ -297,6 +366,22 @@ export const formatReport = (
       ]
         .filter(Boolean)
         .join(', ')}`,
+    );
+    if (score.recordings.heard !== undefined) {
+      const { lostAfter, lostHearing, ok } = score.recordings.heard;
+      lines.push(
+        `   heard turns: ${String(ok)}/${String(transcribed)} pass · ${String(lostHearing)} lost to the hearing (the words as said pass) · ${String(lostAfter)} lost after it (the words as said fail too)`,
+      );
+    }
+  }
+  if (score.places !== undefined) {
+    const { asked, errors, missed, offered, taken, text } = score.places;
+    lines.push(
+      `   places asked of MapKit: ${String(asked)} · taken ${String(taken)} · offered ${String(offered)} · right as text only ${String(text)} · missed ${String(missed)}${
+        errors === 0
+          ? ''
+          : ` (${String(errors)} with a MapKit call that failed or gave no answer in time: a miss may be that)`
+      }`,
     );
   }
   return lines.join('\n');

@@ -1,0 +1,19 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-31.m4a",
+        "transcript": "Zug nach München am Montag um sieben"
+      },
+      "expect": {
+        "title": ["zug", "zug nach münchen"],
+        "weekday": 1,
+        "location": "münchen",
+        "place": ["Munich", "München"]
+      }
+    }
+  ]
+}

@@ -87,6 +87,24 @@ describe('loadCases', () => {
     expect(loadCases(repeating(['-1FR', '1TU', 'MO']))).toHaveLength(1);
   });
 
+  it('holds a place meant to the text that names it', () => {
+    const placed = (expectation: Record<string, unknown>) =>
+      caseDir({
+        'p.json': { lang: 'en', turns: [{ expect: expectation, input: { text: 'x' } }] },
+      });
+    expect(() => loadCases(placed({ place: ['Figlmüller'] }))).toThrow(
+      /^p\.json: place needs location or locationIs beside it/,
+    );
+    expect(() => loadCases(placed({ location: null, place: ['Figlmüller'] }))).toThrow(
+      /^p\.json: /,
+    );
+    expect(() => loadCases(placed({ location: 'figl', place: [] }))).toThrow(
+      /^p\.json: place lists/,
+    );
+    expect(loadCases(placed({ location: 'figl', place: ['Figlmüller'] }))).toHaveLength(1);
+    expect(loadCases(placed({ locationIs: 'figlmüller', place: ['Figlmüller'] }))).toHaveLength(1);
+  });
+
   it('loads the repository cases', () => {
     const cases = loadCases(join(BENCH_DIR, 'cases'));
     expect(cases.length).toBeGreaterThan(0);

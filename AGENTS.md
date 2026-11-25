@@ -185,7 +185,11 @@ commits by staging deliberately.
   through the tuned path on any served model (the app's file on
   `llama-server`, a teacher on the plain arm), scored by where a person
   would put the event; a table and a report under `output/bench/`, never a
-  gate. `finderBench.e2e.ts` beside it scores find a time's sentences
+  gate. A recording is heard as the app hears a phrase (the helper's
+  listening; Parakeet too when the run names its files) and its place can
+  be asked of MapKit, so the `voice` cases (Nik's recordings) measure the
+  way from the voice to the draft and say which step lost a phrase.
+  `finderBench.e2e.ts` beside it scores find a time's sentences
   (`finder.json`) on the same models, with the word rules and without.
   A case marked `"blind": true` is counted and never named: do not read
   the blind cases or a report's answers to them while writing briefs,

@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-16.m4a",
+        "transcript": "Picnic with Anna in the Türkenschanzpark on Saturday at noon"
+      },
+      "expect": {
+        "title": "picnic with anna",
+        "weekday": 6,
+        "startTime": "12:00",
+        "endTime": "13:00",
+        "location": "türkenschanzpark",
+        "place": ["Türkenschanzpark"]
+      }
+    }
+  ]
+}

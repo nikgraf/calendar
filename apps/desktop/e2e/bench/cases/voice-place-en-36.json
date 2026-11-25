@@ -1,0 +1,20 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-36.m4a",
+        "transcript": "Skiing in Kitzbühel next Saturday"
+      },
+      "expect": {
+        "title": "skiing",
+        "weekday": 6,
+        "isAllDay": true,
+        "location": "kitzbühel",
+        "place": ["Kitzbühel"]
+      }
+    }
+  ]
+}

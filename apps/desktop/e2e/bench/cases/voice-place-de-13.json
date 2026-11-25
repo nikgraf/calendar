@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-13.m4a",
+        "transcript": "Frühstück mit Tom im Café Sperl am Sonntag um neun"
+      },
+      "expect": {
+        "title": "frühstück mit tom",
+        "weekday": 7,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "location": "sperl",
+        "place": ["Café Sperl"]
+      }
+    }
+  ]
+}
