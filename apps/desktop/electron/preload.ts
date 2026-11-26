@@ -124,6 +124,24 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     );
     return () => ipcRenderer.off('parakeet:changed', wrapped);
   },
+  /** Keep Assistant Sessions (assistantSessions.ts): the state now, then every change. */
+  onSessions: (listener: (state: unknown) => void) => {
+    let changed = false;
+    const wrapped = (_event: unknown, state: unknown) => {
+      changed = true;
+      listener(state);
+    };
+    ipcRenderer.on('sessions:changed', wrapped);
+    void ipcRenderer.invoke('sessions:state').then(
+      (state: unknown) => {
+        if (!changed) {
+          listener(state);
+        }
+      },
+      () => undefined,
+    );
+    return () => ipcRenderer.off('sessions:changed', wrapped);
+  },
   /**
    * Event reminders clicked in Notification Center: the one waiting at
    * subscription (it may have opened this window), then one per click.
@@ -200,6 +218,10 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   privacySet: (choice: string) => ipcRenderer.invoke('privacy:set', choice),
   remindersStatus: () => ipcRenderer.invoke('reminders:status'),
   rpcSend: (data: string | Uint8Array) => ipcRenderer.send('rpc', data),
+  sessionsDelete: () => ipcRenderer.invoke('sessions:delete'),
+  sessionsExport: () => ipcRenderer.invoke('sessions:export'),
+  sessionsKeep: (session: unknown) => ipcRenderer.invoke('sessions:keep', session),
+  sessionsSetOn: (on: boolean) => ipcRenderer.invoke('sessions:set-on', on),
   settingsFileCreate: () => ipcRenderer.invoke('settingsFile:create'),
   settingsFileOpen: () => ipcRenderer.invoke('settingsFile:open'),
   settingsFileSave: (text: string) => ipcRenderer.invoke('settingsFile:save', text),

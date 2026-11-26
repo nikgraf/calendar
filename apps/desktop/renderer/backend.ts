@@ -6,7 +6,12 @@ import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
 import { RpcClient, RpcSerialization } from 'effect/rpc';
 import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import type { SettingsPaneId } from './settingsPanes.ts';
-import type { AssistantModelState, ParakeetState, WordsSource } from '@calendar/ai';
+import type {
+  AssistantModelState,
+  AssistantSession,
+  ParakeetState,
+  WordsSource,
+} from '@calendar/ai';
 
 export interface PrivacyState {
   readonly mode: 'hidden' | 'visible';
@@ -40,6 +45,12 @@ export interface EndpointProbe {
   readonly reachable: boolean;
   /** The server refused the API key (or wants one). */
   readonly unauthorized?: boolean;
+}
+
+/** Keep Assistant Sessions as main reports it (electron/assistantSessionsFile.ts). */
+export interface SessionsState {
+  readonly count: number;
+  readonly on: boolean;
 }
 
 /** The watched settings file, as the main process reports it. */
@@ -142,6 +153,7 @@ declare global {
       onPrivacyCapture: (listener: (capturing: boolean) => void) => () => void;
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
+      onSessions: (listener: (state: SessionsState) => void) => () => void;
       onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;
       onSpeechLost: (listener: (lost: { session: number }) => void) => () => void;
       onSpeechWords: (
@@ -163,6 +175,10 @@ declare global {
       privacySet: (choice: 'hidden' | 'pause10m' | 'visible') => Promise<PrivacyState>;
       remindersStatus: () => Promise<string>;
       rpcSend: (data: string | Uint8Array) => void;
+      sessionsDelete: () => Promise<SessionsState>;
+      sessionsExport: () => Promise<{ canceled: true } | { path: string }>;
+      sessionsKeep: (session: AssistantSession) => Promise<SessionsState>;
+      sessionsSetOn: (on: boolean) => Promise<SessionsState>;
       settingsFileCreate: () => Promise<SettingsFileStatus>;
       settingsFileOpen: () => Promise<{ canceled: true } | { path: string; text: string }>;
       settingsFileSave: (text: string) => Promise<{ canceled: true } | { path: string }>;

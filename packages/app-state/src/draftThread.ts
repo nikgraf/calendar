@@ -10,6 +10,7 @@ import {
   readExtras,
   readingsFor,
   type ReminderChange,
+  type SessionSink,
   type TurnDraft,
 } from '@calendar/ai';
 import {
@@ -59,6 +60,23 @@ import type { EventEditorPrefill } from './editorModel.ts';
 import { type OtherReading, otherReadings, type ReadingOutcome } from './otherReadings.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import { recurrenceKey, seedRepeatFields } from './repeatState.ts';
+import {
+  beginTurn,
+  EMPTY_TRACE,
+  endTurn,
+  finishedSession,
+  openRead,
+  savedItem,
+  sessionInvitees,
+  sessionPlace,
+  type SessionTrace,
+  tracedPick,
+  turnNotes,
+  type TurnNotes,
+  withPick,
+  withSaved,
+  withTracedReadings,
+} from './sessionTrace.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
 
 /**
@@ -1041,6 +1059,7 @@ export const landPlacement = (
   state: DraftThreadState,
   {
     fresh,
+    id,
     notes,
     reminders,
     slots,
@@ -1049,6 +1068,8 @@ export const landPlacement = (
     utterance,
   }: {
     readonly fresh?: FormSnapshot | undefined;
+    /** The turn's id, for one that must find its step again (the session log's trace). */
+    readonly id?: (() => string) | undefined;
     /** A note the finder phrase added beside the slot. */
     readonly notes?: NotesChange | undefined;
     /** Notifications the finder phrase asked for beside the slot. */
@@ -1066,16 +1087,21 @@ export const landPlacement = (
   }
   const based = fresh === undefined ? state : foldShown(state, fresh);
   const draft = based.drafts[index]!;
-  return refineThread(based, utterance, [
-    {
-      ...(draft.extras?.undated ? { extras: { ...draft.extras, undated: false } } : {}),
-      id: draft.id,
-      item: itemAtSlot(draft.item, best, title),
-      ...(notes ? { notes } : {}),
-      ...(reminders ? { reminders } : {}),
-      slots,
-    },
-  ]);
+  return refineThread(
+    based,
+    utterance,
+    [
+      {
+        ...(draft.extras?.undated ? { extras: { ...draft.extras, undated: false } } : {}),
+        id: draft.id,
+        item: itemAtSlot(draft.item, best, title),
+        ...(notes ? { notes } : {}),
+        ...(reminders ? { reminders } : {}),
+        slots,
+      },
+    ],
+    id,
+  );
 };
 
 /**
@@ -1584,6 +1610,7 @@ export const useDraftThread = ({
   defaultRemindersOf,
   finder,
   reader,
+  sessions,
   timeZone,
 }: {
   /** The events a finder phrase searches between. */
@@ -1594,11 +1621,27 @@ export const useDraftThread = ({
   finder: FinderReader;
   /** How a phrase and a change are read: the Assistant's own model, through `tunedReader`. */
   reader: PhraseReader;
+  /**
+   * Where the thread's record goes while Keep Assistant Sessions is on
+   * (`sessionLog.ts`); none: nothing is kept (the Create lesson's demo).
+   */
+  sessions?: SessionSink | undefined;
   timeZone: string;
 }) => {
   const [state, setState] = useState<DraftThreadState>(EMPTY_THREAD);
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
+  // The session log: what the thread keeps of its turns while the switch
+  // is on, written once when the editor goes (`finishedSession`). Read
+  // through refs: a turn ends, and the editor closes, renders later.
+  const trace = useRef<SessionTrace>(EMPTY_TRACE);
+  const sink = useRef(sessions);
+  const ended = useRef({ state, timeZone });
+  useEffect(() => {
+    sink.current = sessions;
+    ended.current = { state, timeZone };
+  }, [sessions, state, timeZone]);
+  const keeping = (): boolean => sink.current?.on() === true;
   // The request that is searching for free slots, and the one such search
   // a change of scope let go of (`dropSlots`).
   const searching = useRef<number | undefined>(undefined);
@@ -1612,10 +1655,25 @@ export const useDraftThread = ({
     request.current += 1;
     setBusy(false);
   };
-  // The editor gone: other readings still to be tried are not (`offerReadings`).
+  // The editor gone: other readings still to be tried are not
+  // (`offerReadings`), and the thread's record is kept, if a phrase was
+  // said to it and sessions are still kept.
   useEffect(
     () => () => {
       request.current += 1;
+      const store = sink.current;
+      if (store?.on() !== true) {
+        return;
+      }
+      const session = finishedSession(trace.current, {
+        about: store.about(),
+        endedAt: Date.now(),
+        ...ended.current,
+      });
+      trace.current = EMPTY_TRACE;
+      if (session !== undefined) {
+        store.keep(session);
+      }
     },
     [],
   );
@@ -1662,9 +1720,15 @@ export const useDraftThread = ({
     return { candidates, text: location };
   };
 
-  const start = (items: ReadonlyArray<QuickAddItem>, utterance: string, options?: StartOptions) => {
+  const start = (
+    items: ReadonlyArray<QuickAddItem>,
+    utterance: string,
+    options?: StartOptions,
+  ): DraftThreadState => {
     request.current += 1;
-    setState(startThread(items, utterance, options));
+    const started = startThread(items, utterance, options);
+    setState(started);
+    return started;
   };
 
   /**
@@ -1735,6 +1799,7 @@ export const useDraftThread = ({
     });
     if (mine === request.current) {
       setState((latest) => withReadings(latest, turnId, readings, draft));
+      trace.current = withTracedReadings(trace.current, turnId, readings);
     }
   };
 
@@ -1751,7 +1816,11 @@ export const useDraftThread = ({
     read?: ReadForm,
     refuse?: Refuse,
     heard?: Heard,
+    notes?: TurnNotes,
   ): Promise<string | undefined> => {
+    if (notes) {
+      notes.route = 'change';
+    }
     // A draft focused meanwhile is not where the answer lands (`landRefinement`).
     const mine = ++request.current;
     const submitted = read?.();
@@ -1770,15 +1839,19 @@ export const useDraftThread = ({
         targets.map(async (draft) => {
           // A to-do is refined as the event it would be, and read back as a to-do.
           const asEvent = convertQuickAddItem(draft.item, 'event');
+          const reading = openRead(notes);
           const result =
             asEvent.kind === 'event'
-              ? await reader.change({
-                  draft: turnDraftOf(draft, asEvent.prefill, defaultRemindersOf?.(draft)),
-                  referenceDate,
-                  said: turnsOf(current, draft.id),
-                  timeZone,
-                  utterance,
-                })
+              ? reading.done(
+                  await reader.change({
+                    draft: turnDraftOf(draft, asEvent.prefill, defaultRemindersOf?.(draft)),
+                    onExchange: reading.onExchange,
+                    referenceDate,
+                    said: turnsOf(current, draft.id),
+                    timeZone,
+                    utterance,
+                  }),
+                )
               : undefined;
           return { draft, result };
         }),
@@ -1818,6 +1891,12 @@ export const useDraftThread = ({
                     isEvent ? guestsOf(result.invite, result.uninvite) : undefined,
                     moved ? placesOnce(after).then((found) => found ?? NO_PLACE) : undefined,
                   ]);
+                  // The log keeps the first draft's: words said to several find the same.
+                  if (notes && notes.place === undefined && notes.invited === undefined) {
+                    notes.invited = sessionInvitees(guests);
+                    notes.place = sessionPlace(placeFound);
+                    notes.uninvited = guests?.remove;
+                  }
                   return {
                     ...(guests ? { guests } : {}),
                     id: draft.id,
@@ -1872,13 +1951,18 @@ export const useDraftThread = ({
         utterance,
       };
       setState((latest) => landRefinement(latest, landing));
+      // The turn as it lands on the thread it was read from: what it did.
+      const landed = landRefinement(current, landing);
+      if (notes) {
+        notes.landed = { after: landed, before: current };
+      }
       // One draft addressed: its readings are one turn each.
       const [only] = targets;
       if (
         heard !== undefined &&
         only !== undefined &&
         targets.length === 1 &&
-        landRefinement(current, landing).noChange.some((turn) => turn.id === turnId)
+        landed.noChange.some((turn) => turn.id === turnId)
       ) {
         void offerReadings({ base: current, draft: only, heard, mine, refuse, turnId, utterance });
       }
@@ -1905,7 +1989,11 @@ export const useDraftThread = ({
     read: ReadForm | undefined,
     { notes, reminders, rest }: ReturnType<typeof readExtras>,
     { canStart, exclude, refuse }: Pick<PhraseOptions, 'canStart' | 'exclude' | 'refuse'>,
+    kept?: TurnNotes,
   ): Promise<string | undefined> => {
+    if (kept) {
+      kept.route = 'finder';
+    }
     const mine = ++request.current;
     const said = {
       ...(notes ? { notes } : {}),
@@ -1942,18 +2030,23 @@ export const useDraftThread = ({
       if (best === undefined) {
         return NO_SLOT_FITS;
       }
+      if (kept) {
+        kept.freeSlots = result.slots.length;
+      }
       if (target === undefined) {
         if (canStart === false) {
           return NOT_OPEN_YET;
         }
         const extras = firstDraftExtras(read?.().extras);
-        setState(
-          startThread([slotItem(best, result.title)], utterance, {
-            extras,
-            ...said,
-            slots: result.slots,
-          }),
-        );
+        const started = startThread([slotItem(best, result.title)], utterance, {
+          extras,
+          ...said,
+          slots: result.slots,
+        });
+        setState(started);
+        if (kept) {
+          kept.landed = { after: started, before: current };
+        }
         return undefined;
       }
       // The notifications said with it land on the draft too: a to-do's
@@ -1968,16 +2061,20 @@ export const useDraftThread = ({
         return refused;
       }
       const fresh = read?.();
-      setState((latest) =>
-        landPlacement(latest, {
-          fresh,
-          ...said,
-          slots: result.slots,
-          targetId: target.id,
-          title: result.title,
-          utterance,
-        }),
-      );
+      const turnId = nextDraftId();
+      const landing = {
+        fresh,
+        id: () => turnId,
+        ...said,
+        slots: result.slots,
+        targetId: target.id,
+        title: result.title,
+        utterance,
+      };
+      setState((latest) => landPlacement(latest, landing));
+      if (kept) {
+        kept.landed = { after: landPlacement(current, landing), before: current };
+      }
       return undefined;
     } catch {
       return 'On-device model unavailable.';
@@ -1999,18 +2096,19 @@ export const useDraftThread = ({
    * every later one refines. Resolves the message for the field, or
    * nothing when the phrase was taken. A model that cannot answer throws.
    */
-  const phrase = async (
+  const route = async (
     text: string,
     { canStart, exclude, fallbackDate, heard, read, refuse }: PhraseOptions,
+    notes: TurnNotes | undefined,
   ): Promise<string | undefined> => {
     // The finder's cue is read in the words about the event, not in a
     // note or a notification said with them.
     const extras = readExtras(text);
     if (isFinderPhrase(extras.rest)) {
-      return place(text, read, extras, { canStart, exclude, refuse });
+      return place(text, read, extras, { canStart, exclude, refuse }, notes);
     }
     if (state.drafts.length > 0) {
-      return refine(text, read, refuse, heard);
+      return refine(text, read, refuse, heard, notes);
     }
     // A saved item's thread has its draft from the start (`openThread`):
     // words that arrive before it has are not a new item's.
@@ -2018,12 +2116,16 @@ export const useDraftThread = ({
       return NOT_OPEN_YET;
     }
     const mine = request.current;
-    const result = await reader.first({
-      fallbackDate,
-      phrase: text,
-      referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
-      timeZone,
-    });
+    const reading = openRead(notes);
+    const result = reading.done(
+      await reader.first({
+        fallbackDate,
+        onExchange: reading.onExchange,
+        phrase: text,
+        referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
+        timeZone,
+      }),
+    );
     // Cleared or undone meanwhile: a draft from before must not come back.
     if (mine !== request.current) {
       return undefined;
@@ -2041,7 +2143,7 @@ export const useDraftThread = ({
     if (mine !== request.current) {
       return undefined;
     }
-    start(
+    const started = start(
       [
         result.kind === 'task'
           ? { kind: 'task', prefill: result.prefill }
@@ -2056,7 +2158,41 @@ export const useDraftThread = ({
         ...(result.reminders ? { reminders: result.reminders } : {}),
       },
     );
+    if (notes) {
+      notes.invited = sessionInvitees(guests);
+      notes.landed = { after: started, before: state };
+      notes.place = sessionPlace(placeFound);
+    }
     return undefined;
+  };
+
+  /**
+   * A phrase, and what the session log keeps of it while sessions are
+   * kept: the turn holds its place from the moment it is sent, and is
+   * filled in once it is over — taken, answered with a message, let go of,
+   * or failed (the model could not answer, which the caller hears as the
+   * same throw).
+   */
+  const phrase = async (text: string, options: PhraseOptions): Promise<string | undefined> => {
+    if (!keeping()) {
+      return route(text, options, undefined);
+    }
+    const notes = turnNotes();
+    const begun = beginTurn(trace.current, {
+      at: Date.now(),
+      day: Temporal.Now.plainDateISO(timeZone).toString(),
+      heard: options.heard,
+      text,
+    });
+    trace.current = begun.trace;
+    try {
+      const message = await route(text, options, notes);
+      trace.current = endTurn(trace.current, begun.index, notes, { message });
+      return message;
+    } catch (error) {
+      trace.current = endTurn(trace.current, begun.index, notes, { failed: true });
+      throw error;
+    }
   };
 
   return {
@@ -2089,12 +2225,14 @@ export const useDraftThread = ({
     },
     focus: (index: number) => setState((latest) => focusDraft(latest, index)),
     /** A saved item's thread starts as that item (`openThread`); a thread under way stays. */
-    open: (base: FormSnapshot) =>
+    open: (base: FormSnapshot) => {
+      trace.current = { ...trace.current, origin: 'saved' };
       setState((latest) =>
         latest.drafts.length === 0 && latest.steps.length === 0 && latest.ahead.length === 0
           ? openThread(base)
           : latest,
-      ),
+      );
+    },
     phrase,
     refine,
     remove: (index: number) => setState((latest) => removeDraft(latest, index)),
@@ -2102,7 +2240,11 @@ export const useDraftThread = ({
     removeMany: (ids: ReadonlyArray<string>) => setState((latest) => removeDrafts(latest, ids)),
     reseedRule: (recurrence: EventEditorPrefill['recurrence']) =>
       setState((latest) => reseedRule(latest, recurrence)),
-    start,
+    /** Drafts the editor opened with (a capture's): the thread starts as them. */
+    start: (items: ReadonlyArray<QuickAddItem>, utterance: string, options?: StartOptions) => {
+      trace.current = { ...trace.current, origin: 'capture' };
+      start(items, utterance, options);
+    },
     state,
     undo: () => {
       abandon();
@@ -2127,10 +2269,28 @@ export const useDraftThread = ({
      * The form read into the draft it shows after an edit by hand: a field
      * it changed is a step (`foldForm`).
      */
-    record: (form: FormSnapshot, how?: HandStep) =>
-      setState((latest) => foldForm(latest, form, how)),
+    record: (form: FormSnapshot, how?: HandStep) => {
+      if (keeping()) {
+        trace.current = withPick(
+          trace.current,
+          tracedPick(trace.current, state.drafts[state.focused], form, how),
+        );
+      }
+      setState((latest) => foldForm(latest, form, how));
+    },
     /** What the form holds of a draft, kept without a step (`updateDraft`). */
     update: (index: number, item: QuickAddItem, extras?: DraftExtras) =>
       setState((latest) => updateDraft(latest, index, item, extras)),
+    /**
+     * An item was written, as `form` holds it (the draft it names, else
+     * the focused one): the session log keeps it, with what was changed
+     * by hand since the last phrase. Called before the draft leaves the
+     * thread (`removeDrafts` takes its history along).
+     */
+    wrote: (form: FormSnapshot) => {
+      if (keeping()) {
+        trace.current = withSaved(trace.current, savedItem(ended.current.state, form));
+      }
+    },
   };
 };

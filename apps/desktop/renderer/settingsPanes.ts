@@ -42,7 +42,17 @@ export const SETTINGS_PANES = [
   },
   {
     id: 'model',
-    keywords: ['ai', 'apple intelligence', 'assistant', 'ollama', 'openai', 'endpoint', 'llm'],
+    keywords: [
+      'ai',
+      'apple intelligence',
+      'assistant',
+      'ollama',
+      'openai',
+      'endpoint',
+      'llm',
+      'sessions',
+      'export',
+    ],
     label: 'AI Model',
   },
   {

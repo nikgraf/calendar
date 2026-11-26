@@ -1,7 +1,7 @@
 import { validateEventDraft } from '@calendar/core';
 import { type LanguageModel, ModelUnavailableError } from './model.ts';
 import type { QuickAddResult, RefineResult } from './normalizeQuickAdd.ts';
-import { tunedTurn } from './tuned.ts';
+import { type TunedExchange, tunedTurn } from './tuned.ts';
 import type { TurnDraft } from './tunedResult.ts';
 
 /**
@@ -15,6 +15,8 @@ import type { TurnDraft } from './tunedResult.ts';
 export interface FirstPhrase {
   /** The day the item lands on when the words give none: the one on show. */
   readonly fallbackDate?: string | undefined;
+  /** Told what the model was asked and what it wrote, for the session log. */
+  readonly onExchange?: ((exchange: TunedExchange) => void) | undefined;
   readonly phrase: string;
   readonly referenceDate: string;
   readonly timeZone: string;
@@ -22,6 +24,8 @@ export interface FirstPhrase {
 
 export interface ChangePhrase {
   readonly draft: TurnDraft;
+  /** Told what the model was asked and what it wrote, for the session log. */
+  readonly onExchange?: ((exchange: TunedExchange) => void) | undefined;
   readonly referenceDate: string;
   /** The words of the earlier turns that made or changed this draft, oldest first. */
   readonly said: ReadonlyArray<string>;
@@ -85,7 +89,7 @@ const writesDay = (answer: unknown): boolean =>
  * check of the result; and notes shown only when short.
  */
 export const tunedReader = (model: LanguageModel): PhraseReader => ({
-  change: async ({ draft, referenceDate, said, timeZone, utterance }) => {
+  change: async ({ draft, onExchange, referenceDate, said, timeZone, utterance }) => {
     await unavailable(model);
     const shown: TurnDraft = { ...draft, notes: shownNotes(draft.notes) };
     let saidDay = false;
@@ -97,6 +101,7 @@ export const tunedReader = (model: LanguageModel): PhraseReader => ({
           saidDay = writesDay(answer);
           return answer;
         },
+        onExchange,
       },
     );
     if (result.kind !== 'parsed') {
@@ -110,7 +115,7 @@ export const tunedReader = (model: LanguageModel): PhraseReader => ({
     }
     return saidDay ? { ...result, saidDay: true } : result;
   },
-  first: async ({ fallbackDate, phrase, referenceDate, timeZone }) => {
+  first: async ({ fallbackDate, onExchange, phrase, referenceDate, timeZone }) => {
     await unavailable(model);
     // No day written: the day on show, not today. Set before the result
     // is made, so a repeat starts and a night ends from that day.
@@ -124,7 +129,7 @@ export const tunedReader = (model: LanguageModel): PhraseReader => ({
     const result = await tunedTurn(
       model,
       { draft: undefined, earlier: [], referenceDate, text: phrase },
-      { adjust: onShow },
+      { adjust: onShow, onExchange },
     );
     if (result.kind === 'rejected') {
       return result;

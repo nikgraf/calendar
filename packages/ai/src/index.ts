@@ -28,3 +28,4 @@ export * from './parakeetStore.ts';
 export * from './lessonDemo.ts';
 export * from './readings.ts';
 export * from './dictationLanguages.ts';
+export * from './sessionLog.ts';

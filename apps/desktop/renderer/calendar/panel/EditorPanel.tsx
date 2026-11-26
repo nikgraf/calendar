@@ -37,6 +37,7 @@ import {
   useFinder,
 } from '../../ai/assistantModel.ts';
 import { useParakeetState } from '../../ai/parakeetModel.ts';
+import { sessionSink } from '../../ai/assistantSessions.ts';
 import { backend } from '../../backend.ts';
 import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { Button } from '../../ui/Button.tsx';
@@ -62,6 +63,15 @@ const assistantReader = tunedReader(desktopAssistantModel);
  * (`lessonDemo.ts`), until the model is ready.
  */
 const demoReader = tunedReader(lessonDemoModel);
+/** Where a thread's record goes while Keep Assistant Sessions is on: on the fixture model, or the release. */
+const SESSIONS = { fixture: sessionSink(true), own: sessionSink(false) };
+/** The sink for the editor's thread: none for the lesson's demo, which answers from a script. */
+const sessionsFor = (demo: boolean, state: AssistantModelState | undefined) =>
+  demo
+    ? undefined
+    : state?.kind === 'unsupported' && state.reason === 'fixture'
+      ? SESSIONS.fixture
+      : SESSIONS.own;
 
 /**
  * The banner's action: download the Assistant's model (the person agrees),
@@ -329,6 +339,7 @@ export function EditorPanel({
     },
     reader: demo ? demoReader : assistantReader,
     seed,
+    sessions: sessionsFor(demo, modelState),
     sourceKind,
     task,
     taskLists,
