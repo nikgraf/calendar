@@ -241,6 +241,27 @@ describe('finishedSession', () => {
     expect(trace.turns[0]?.step).toBeUndefined();
   });
 
+  it('marks words that changed nothing as taken back when Undo let their step go', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner at 7', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const quiet = refineThread(refined, 'at 8', [{ id: 'd1', item: later }], id);
+    let trace = turn(EMPTY_TRACE, EMPTY_THREAD, started, 'dinner at 7');
+    trace = turn(trace, started, refined, 'at 8');
+    trace = turn(trace, refined, quiet, 'at 8');
+    const session = finishedSession(trace, {
+      about: ABOUT,
+      endedAt: AT,
+      state: undoTurn(quiet),
+      timeZone: 'UTC',
+    });
+    expect(session?.turns.map((each) => [each.outcome.kind, each.undone])).toEqual([
+      ['changed', undefined],
+      ['changed', true],
+      ['no-change', true],
+    ]);
+  });
+
   it('marks a turn Undo took back, and one answered with a message', () => {
     const id = ids();
     const started = startThread([dinner], 'dinner friday', { id });

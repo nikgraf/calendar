@@ -459,9 +459,11 @@ export const finishedSession = (
   if (first === undefined) {
     return undefined;
   }
-  const alive = new Set(
-    [...state.steps, ...state.ahead.map((gone) => gone.step)].map((step) => step.id),
-  );
+  // The steps and the answers to words that changed nothing still in the thread.
+  const alive = new Set([
+    ...[...state.steps, ...state.ahead.map((gone) => gone.step)].map((step) => step.id),
+    ...state.noChange.map((turn) => turn.id),
+  ]);
   const written = new Set(trace.saved.map((saved) => saved.draft));
   return {
     ...about,
@@ -474,7 +476,9 @@ export const finishedSession = (
     startedAt: first.turn.at,
     timeZone,
     turns: trace.turns.map(({ step, turn }) =>
-      turn.outcome.kind === 'changed' && step !== undefined && !alive.has(step)
+      (turn.outcome.kind === 'changed' || turn.outcome.kind === 'no-change') &&
+      step !== undefined &&
+      !alive.has(step)
         ? { ...turn, undone: true }
         : turn,
     ),

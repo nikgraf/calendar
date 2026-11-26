@@ -111,7 +111,10 @@ export interface SessionTurn {
   readonly route: 'change' | 'finder' | 'first';
   /** The words as sent. */
   readonly text: string;
-  /** Taken back afterwards (Undo, or an older step kept): its step is not in the thread as it ended. */
+  /**
+   * Taken back afterwards (Undo, or an older step kept): its step, or its
+   * answer for words that changed nothing, is not in the thread as it ended.
+   */
   readonly undone?: boolean | undefined;
   /** The names it took off the guest list, as said. */
   readonly uninvited?: ReadonlyArray<string> | undefined;

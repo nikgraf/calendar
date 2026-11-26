@@ -1974,16 +1974,17 @@ export const useDraftThread = ({
         targetId: focusedId,
         utterance,
       };
-      // What the turn did is read off the thread it lands on: a draft
-      // removed meanwhile takes nothing (`landedOn`).
+      // The thread it was read from first (whether its readings are worth
+      // trying), then the thread it lands on, which wins: a draft removed
+      // meanwhile takes nothing (`landedOn`). React may run the updater at
+      // once, so the guess goes before it.
+      const landed = landRefinement(current, landing);
+      landedOn(notes, current, landed);
       setState((latest) => {
         const next = landRefinement(latest, landing);
         landedOn(notes, latest, next);
         return next;
       });
-      // The thread it was read from: whether its readings are worth trying.
-      const landed = landRefinement(current, landing);
-      landedOn(notes, current, landed);
       // One draft addressed: its readings are one turn each.
       const [only] = targets;
       if (
@@ -2105,12 +2106,13 @@ export const useDraftThread = ({
         title: result.title,
         utterance,
       };
+      // The guess first, the real landing after it (see `refine`).
+      landedOn(kept, current, landPlacement(current, landing));
       setState((latest) => {
         const next = landPlacement(latest, landing);
         landedOn(kept, latest, next);
         return next;
       });
-      landedOn(kept, current, landPlacement(current, landing));
       return undefined;
     } catch {
       if (kept) {
