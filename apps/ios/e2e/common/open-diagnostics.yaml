@@ -1,0 +1,16 @@
+appId: com.solunivo.app.dev
+name: Open Settings › Advanced › Diagnostics from the calendar (shared)
+---
+- runFlow: open-settings.yaml
+- runFlow:
+    file: open-settings-page.yaml
+    env:
+      PAGE: advanced
+- tapOn:
+    id: 'settings-row-diagnostics'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-page-diagnostics'
+    timeout: 5000
+- waitForAnimationToEnd:
+    timeout: 5000

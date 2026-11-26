@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-11-24_
+_Last updated: 2026-11-26_
 
 Solunivo is a calendar and task app for macOS and iOS. It has no server
 of its own: the app talks directly from your device to Google and Apple,
@@ -66,6 +66,15 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   calendar and contacts, which it reads there and never sends anywhere.
   Your voice and images never leave the device for this, and the text is
   sent only to a model server you choose on the Mac (next point).
+- **Assistant sessions stay on your device, if you keep them.** Off
+  unless you switch on Keep Assistant Sessions (iOS: Settings ›
+  Advanced › Diagnostics; Mac: Settings › AI Model). Then the app keeps
+  your last 200 conversations with the Assistant in a file on the
+  device: what you typed or dictated as the speech recognisers read it,
+  what the model answered, the places and contacts it found, and what
+  you saved, changed by hand or left, with the app's and the model's
+  version. No audio. The file goes nowhere unless you export it, and it
+  holds the names and places you said; Delete All removes it.
 - **The Assistant's model is downloaded once.** The app asks before it
   downloads it (about 800 MB; on the iPhone over Wi-Fi unless you allow
   mobile data) from GitHub, which sees the request for the file, not your
