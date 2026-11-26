@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadCases } from './cases.ts';
-import { draftCase, formatSummary, summarize, threadEnd } from './sessions.ts';
+import { caseRefusal, draftCase, formatSummary, summarize, threadEnd } from './sessions.ts';
 
 const turn = (text: string, extra: Partial<SessionTurn> = {}): SessionTurn => ({
   at: '2026-11-26T08:00:00.000Z',
@@ -148,6 +148,17 @@ describe('draftCase', () => {
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }
+  });
+
+  it('refuses a thread that began from a saved item: a case starts from nothing', () => {
+    const opened = session('s', {
+      origin: 'saved',
+      saved: [lunch],
+      turns: [turn('make it 8', { route: 'change' })],
+    });
+    expect(caseRefusal(opened)).toContain('saved item');
+    expect(draftCase(opened)).toBeUndefined();
+    expect(caseRefusal(untouched)).toBeUndefined();
   });
 
   it('is nothing for a thread with no turn taken', () => {

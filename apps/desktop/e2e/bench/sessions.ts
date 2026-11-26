@@ -139,6 +139,21 @@ const replayed = (session: AssistantSession): ReadonlyArray<SessionTurn> =>
   );
 
 /**
+ * Why a thread cannot be a bench case, or undefined: a bench case starts
+ * from nothing, so a thread that began as a saved item or a capture's
+ * drafts (its first turn changed one) has no case to replay yet.
+ */
+export const caseRefusal = (session: AssistantSession): string | undefined => {
+  const first = replayed(session)[0];
+  if (first === undefined) {
+    return 'it has no turn that was taken to replay';
+  }
+  return session.origin !== 'new' || first.route !== 'first'
+    ? 'it began from a saved item or a capture, and a bench case starts from nothing'
+    : undefined;
+};
+
+/**
  * A thread as a draft bench case (`cases.ts`): its turns as they were
  * heard, the last held to where the first item saved stands (the day
  * from the turn's own), the earlier ones to nothing yet. A person
@@ -153,7 +168,7 @@ export const draftCase = (
 ): Record<string, unknown> | undefined => {
   const turns = replayed(session);
   const last = turns.at(-1);
-  if (last === undefined) {
+  if (last === undefined || caseRefusal(session) !== undefined) {
     return undefined;
   }
   const [saved] = session.saved;

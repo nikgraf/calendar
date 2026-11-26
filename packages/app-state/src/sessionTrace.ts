@@ -59,6 +59,8 @@ export const EMPTY_TRACE: SessionTrace = { origin: 'new', picks: [], saved: [], 
 export interface TurnNotes {
   /** Let go of with a message (the scope moved under a search): no refusal of the model's. */
   dropped?: boolean | undefined;
+  /** The turn ended taken, at this place among the turns: a later landing re-ends it. */
+  ended?: number | undefined;
   /** The model could not answer: the turn's message says so, and it is no refusal. */
   failed?: boolean | undefined;
   freeSlots?: number | undefined;

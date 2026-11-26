@@ -1642,6 +1642,24 @@ export const useDraftThread = ({
     ended.current = { state, timeZone };
   }, [sessions, state, timeZone]);
   const keeping = (): boolean => sink.current?.on() === true;
+  /**
+   * Where a turn landed, as far as it is known: first the thread it was
+   * read from, then (from the state updater, which may run after the turn
+   * ended) the thread it actually landed on, which then ends it again.
+   */
+  const landedOn = (
+    notes: TurnNotes | undefined,
+    before: DraftThreadState,
+    after: DraftThreadState,
+  ): void => {
+    if (notes === undefined) {
+      return;
+    }
+    notes.landed = { after, before };
+    if (notes.ended !== undefined) {
+      trace.current = endTurn(trace.current, notes.ended, notes, {});
+    }
+  };
   // The request that is searching for free slots, and the one such search
   // a change of scope let go of (`dropSlots`).
   const searching = useRef<number | undefined>(undefined);
@@ -1956,12 +1974,16 @@ export const useDraftThread = ({
         targetId: focusedId,
         utterance,
       };
-      setState((latest) => landRefinement(latest, landing));
-      // The turn as it lands on the thread it was read from: what it did.
+      // What the turn did is read off the thread it lands on: a draft
+      // removed meanwhile takes nothing (`landedOn`).
+      setState((latest) => {
+        const next = landRefinement(latest, landing);
+        landedOn(notes, latest, next);
+        return next;
+      });
+      // The thread it was read from: whether its readings are worth trying.
       const landed = landRefinement(current, landing);
-      if (notes) {
-        notes.landed = { after: landed, before: current };
-      }
+      landedOn(notes, current, landed);
       // One draft addressed: its readings are one turn each.
       const [only] = targets;
       if (
@@ -2083,10 +2105,12 @@ export const useDraftThread = ({
         title: result.title,
         utterance,
       };
-      setState((latest) => landPlacement(latest, landing));
-      if (kept) {
-        kept.landed = { after: landPlacement(current, landing), before: current };
-      }
+      setState((latest) => {
+        const next = landPlacement(latest, landing);
+        landedOn(kept, latest, next);
+        return next;
+      });
+      landedOn(kept, current, landPlacement(current, landing));
       return undefined;
     } catch {
       if (kept) {
@@ -2203,6 +2227,10 @@ export const useDraftThread = ({
     try {
       const message = await route(text, options, notes);
       trace.current = endTurn(trace.current, begun.index, notes, { message });
+      // Taken: a state update still to run says where it landed (`landedOn`).
+      if (message === undefined) {
+        notes.ended = begun.index;
+      }
       return message;
     } catch (error) {
       trace.current = endTurn(trace.current, begun.index, notes, { failed: true });

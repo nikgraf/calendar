@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseSessions } from '@calendar/ai/sessionLog';
-import { draftCase, formatSummary, listSessions, summarize } from './sessions.ts';
+import { caseRefusal, draftCase, formatSummary, listSessions, summarize } from './sessions.ts';
 
 /**
  * Reads an export of Keep Assistant Sessions and prints where the threads
@@ -54,7 +54,7 @@ if (path === undefined || path.startsWith('--')) {
       complain(
         session === undefined
           ? `No session ${id} in ${path}.`
-          : `Session ${id} has no turn to replay.`,
+          : `Session ${id} cannot be a case: ${caseRefusal(session) ?? 'nothing to replay'}.`,
       );
       process.exitCode = 1;
     } else {

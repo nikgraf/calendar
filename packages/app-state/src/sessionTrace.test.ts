@@ -6,6 +6,7 @@ import {
   EMPTY_THREAD,
   foldForm,
   refineThread,
+  removeDraft,
   startThread,
   undoTurn,
 } from './draftThread.ts';
@@ -209,6 +210,35 @@ describe('finishedSession', () => {
     expect(
       endTurn(begun.trace, begun.index, notes, { message: 'send it again' }).turns[0]?.turn.outcome,
     ).toEqual({ kind: 'dropped' });
+  });
+
+  it('takes back a landing its draft was removed under, once the real landing is known', () => {
+    const id = ids();
+    const planning: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, title: 'Planning' },
+    };
+    const started = startThread([dinner, planning], 'dinner and planning', { id });
+    const read = refineThread(started, 'make it 8', [{ id: 'd1', item: later }], id);
+    const begun = beginTurn(EMPTY_TRACE, {
+      at: AT,
+      day: '2026-08-27',
+      heard: undefined,
+      text: 'make it 8',
+    });
+    const notes = turnNotes();
+    notes.landed = { after: read, before: started };
+    let trace = endTurn(begun.trace, begun.index, notes, {});
+    expect(trace.turns[0]?.turn.outcome.kind).toBe('changed');
+    // The draft was removed while the model read: the change lands on nothing.
+    const removed = removeDraft(started, 0);
+    notes.landed = {
+      after: refineThread(removed, 'make it 8', [{ id: 'd1', item: later }], id),
+      before: removed,
+    };
+    trace = endTurn(trace, begun.index, notes, {});
+    expect(trace.turns[0]?.turn.outcome).toEqual({ kind: 'dropped' });
+    expect(trace.turns[0]?.step).toBeUndefined();
   });
 
   it('marks a turn Undo took back, and one answered with a message', () => {

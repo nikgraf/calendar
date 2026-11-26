@@ -78,7 +78,11 @@ export function DiagnosticsPage() {
         sessionExportName(Temporal.Now.plainDateISO().toString()),
       );
       if (file) {
-        await Share.share({ url: file.uri });
+        try {
+          await Share.share({ url: file.uri });
+        } finally {
+          assistantSessions.doneExporting();
+        }
       }
     });
 

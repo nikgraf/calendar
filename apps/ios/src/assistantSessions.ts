@@ -6,7 +6,7 @@ import {
   type SessionSink,
 } from '@calendar/ai';
 import Constants from 'expo-constants';
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import { modelFixture } from './model.ts';
 
 /**
@@ -21,6 +21,20 @@ import { modelFixture } from './model.ts';
 
 const choiceFile = () => new File(Paths.document, 'assistant-sessions.json');
 const logFile = () => new File(Paths.document, 'assistant-sessions.jsonl');
+/** Where an export is copied under its day's name for the share sheet, and removed again. */
+const exportFolder = () => new Directory(Paths.cache, 'assistant-sessions-export');
+
+/** The export's copies, gone: after a share, and with Delete All. */
+const clearExports = (): void => {
+  try {
+    const folder = exportFolder();
+    if (folder.exists) {
+      folder.delete();
+    }
+  } catch {
+    // The cache is the system's to clear too.
+  }
+};
 
 export interface SessionsState {
   readonly count: number;
@@ -64,6 +78,7 @@ const changed = (next: SessionsState) => {
 
 export const assistantSessions = {
   delete: (): void => {
+    clearExports();
     try {
       const target = logFile();
       if (target.exists) {
@@ -74,13 +89,18 @@ export const assistantSessions = {
     }
     changed({ count: sessionCount(readLog()), on: assistantSessions.get().on });
   },
+  /** Removes the copy `exportFile` made, once the share sheet is done with it. */
+  doneExporting: clearExports,
   /** A copy of the log named `name` in the cache, for the share sheet; none when nothing is kept. */
   exportFile: (name: string): File | undefined => {
     const text = readLog();
     if (text === '') {
       return undefined;
     }
-    const target = new File(Paths.cache, name);
+    clearExports();
+    const folder = exportFolder();
+    folder.create();
+    const target = new File(folder, name);
     write(target, text);
     return target;
   },
