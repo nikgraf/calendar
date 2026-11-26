@@ -521,9 +521,12 @@ English phone with German as its second language, read by Assistant v2
   runs that day) sends those six as Parakeet heard them and keeps the
   eleven: four of the six pass now; "Anna in the Türkenschanz Park"
   still misses its place and "from Friday to Sunday" is a weekend.
-  Titles went from 81 to 87 of 108. Its rules were set on these
-  readings and on forty made-up address books (every first name said
-  alone given each of forty surnames), run through FluidAudio's
+  Titles went from 81 to 87 of 108. FluidAudio asked 0.65 alike
+  (`ParakeetBridge.swift`, at `d0cfc724`) made only the eleven right
+  replacements, with the same 54 and every count alike. The check's
+  rules were set on these readings and on forty made-up address
+  books (every first name said alone given each of forty surnames),
+  run through FluidAudio's
   rescoring directly; a list alone fixes nothing (first names as terms
   of their own: 16 wrong replacements, surnames alone 13).
 - The model reads a recogniser's writing other than the same words

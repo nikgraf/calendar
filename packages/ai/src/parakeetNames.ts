@@ -126,7 +126,7 @@ const nameWithin = (
   to: string,
 ): { readonly after: string; readonly before: string; readonly span: string } => {
   const spanWords = from.split(' ');
-  const count = words(to).length;
+  const count = to.split(' ').filter(Boolean).length;
   const alike = (part: ReadonlyArray<string>) => similarity(letters(part.join(' ')), letters(to));
   let first = 0;
   let last = spanWords.length;

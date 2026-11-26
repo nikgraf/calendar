@@ -100,11 +100,13 @@ actor ParakeetEngine {
   }
 
   /// How alike a span must be spelt to a listed name before the name may
-  /// replace it: FluidAudio's own floor (0.55–0.60 by list size) let a
-  /// first name said alone take the next word into a full name ("Anna in"
-  /// → Anna Lee); at 0.65 Nik's 104 recordings kept every right name and
-  /// had none of those (#385). The JS check (`parakeetNames.ts`) stands
-  /// behind it for a build without this.
+  /// replace it, in FluidAudio's main pass: its own floor (0.50, 0.55 or
+  /// 0.60 by list size) let a first name said alone take the next word
+  /// into a full name ("Anna in" → Anna Lee); at 0.65 Nik's 104
+  /// recordings kept every right name and had none of those (#385). A list
+  /// of ten or fewer also gets FluidAudio's pass from what its spotter
+  /// heard, which keeps floors of its own (0.30, 0.50 for several words).
+  /// The JS check (`parakeetNames.ts`) stands behind both.
   private static let thresholds = VocabularyBoostingSession.Thresholds(minSimilarity: 0.65)
 
   /// How long a phrase's answer waits for Parakeet before it goes without it.

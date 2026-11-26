@@ -173,12 +173,12 @@ was written; re-verify before starting one.
       addresses; Parakeet's wrong replacements from a real list
       (measured with the clips' places: "nach acht" → "Naschmarkt"; a
       first name said alone no longer takes the next word into a full
-      name since the name check, `parakeetNames.ts`, but with forty
-      made-up address books a listed full name said in full can still
-      become another with the same first name, "Tom Baker" → "Tom
-      Bauer", and a span with no word of the name is FluidAudio's alone:
-      its `minSimilarity` 0.65 made none of either on the voice cases
-      and moves the native fingerprint, #385).
+      name since #385, FluidAudio at 0.65 and the check in
+      `parakeetNames.ts`, but with forty made-up address books a listed
+      full name said in full can still become another with the same
+      first name, "Tom Baker" → "Tom Bauer"; and for a list of ten or
+      fewer FluidAudio's pass from what its spotter heard keeps its own
+      floors, 0.30 and 0.50, which no measurement here has looked at).
       MapKit's structured city/region/country fields in a native build.
       The voice cases say what a change does to the whole way
       (`apps/desktop/e2e/bench/README.md` → Recordings): on an English

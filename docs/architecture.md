@@ -195,8 +195,10 @@ the switch and the download, iOS `parakeetRuntime.ts`, Mac
 then rescored against the names the user is likely to say (core
 `dictationVocabulary`: a year of guests and places by count, then the
 contacts, at most 100 of each, handed over as each phrase starts). The
-answer waits for it at most 4 s. When it came, its text, less the
-replacements that took a word beside a name rather than putting the name
+answer waits for it at most 4 s. A name replaces a span only when it is
+spelt 0.65 alike (FluidAudio's `minSimilarity`; its pass from what the
+spotter heard, for ten names or fewer, keeps floors of its own). When it
+came, its text, less the replacements that took a word beside a name rather than putting the name
 right (`parakeetText` in ai `parakeetNames.ts`: a span that already says
 a word of the name must sound like the rest of it, so "Anna in" stays
 and "Thomas Kapfmeder" becomes Thomas Karpfeneder), is the phrase

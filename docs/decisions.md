@@ -1584,13 +1584,13 @@ was cut (pruned 2026-11-17).
 - **Parakeet's names are kept only where they put a name right**
   (2026-11-26, #385) — its list turned a first name said alone and the
   next word into a full name ("Sarah morgen" → Sarah Novak), six of the
-  104 recordings lost. A replacement whose span already says a word of
-  the name must sound like the rest of it (`parakeetNames.ts`, both apps):
-  the six dropped, the eleven right names kept, 50 → 54 of 104. Rejected:
-  a different list (first names or surnames as terms: 13–16 new wrong
-  ones), FluidAudio's `minSimilarity` 0.65 (as good on the clips, moves
-  the native fingerprint). Open: a full name heard as another with the
-  same first name, a span sharing no word with the name.
+  104 recordings lost. FluidAudio now asks 0.65 alike (`ParakeetBridge`),
+  and a JS check behind it (`parakeetNames.ts`, both apps) drops a span
+  that says a word of the name and not the rest: either alone dropped
+  the six and kept the eleven right names, 50 → 54 of 104. Rejected: a
+  different list (first names or surnames as terms: 13–16 new wrong
+  ones). Open: a full name heard as another with the same first name,
+  FluidAudio's spotter pass for lists of ten or fewer (floors of its own).
 - **Dictation reads each phrase with Parakeet** (2026-11-24, #378) — once
   downloaded (the Create lesson's Download Models, Settings › Dictation) and
   on (from the start), moondream's Parakeet Ultra reads the finished phrase
