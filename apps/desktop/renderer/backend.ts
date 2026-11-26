@@ -6,7 +6,12 @@ import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
 import { RpcClient, RpcSerialization } from 'effect/rpc';
 import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import type { SettingsPaneId } from './settingsPanes.ts';
-import type { AssistantModelState, ParakeetState, WordsSource } from '@calendar/ai';
+import type {
+  AssistantModelState,
+  ParakeetReading,
+  ParakeetState,
+  WordsSource,
+} from '@calendar/ai';
 
 export interface PrivacyState {
   readonly mode: 'hidden' | 'visible';
@@ -109,7 +114,7 @@ declare global {
       modelSpeechFinish: (session: number) => Promise<{
         other?: string;
         /** The phrase as Parakeet read it, when dictation reads with it (ParakeetBridge.swift). */
-        parakeet?: { text: string };
+        parakeet?: ParakeetReading;
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
       modelSpeechLanguages: (
@@ -118,7 +123,7 @@ declare global {
       modelSpeechRead: (session: number) => Promise<{
         mark?: number;
         other?: string;
-        parakeet?: { text: string };
+        parakeet?: ParakeetReading;
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
       modelSpeechStart: (

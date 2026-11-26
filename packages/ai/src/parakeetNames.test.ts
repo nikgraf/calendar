@@ -1,0 +1,87 @@
+import { describe, expect, it } from 'vite-plus/test';
+import { parakeetText, putsNameRight } from './parakeetNames.ts';
+
+// Parakeet's readings of Nik's recordings (#384), with the address book as its names.
+describe('putsNameRight', () => {
+  it('keeps a name it heard almost right', () => {
+    expect(putsNameRight('Thomas Kapfmeder', 'Thomas Karpfeneder')).toBe(true);
+    expect(putsNameRight('Thomas Kaufmeter', 'Thomas Karpfeneder')).toBe(true);
+    expect(putsNameRight('Thomas Kapfmeder im', 'Thomas Karpfeneder')).toBe(true);
+    expect(putsNameRight('Jörg Hofstädter.', 'Jörg Hofstätter')).toBe(true);
+    expect(putsNameRight('Katarina Gruber', 'Katharina Gruber')).toBe(true);
+    expect(putsNameRight('Emily Carters,', 'Emily Carter')).toBe(true);
+  });
+
+  it('leaves a span that shares no word with the name to Parakeet', () => {
+    expect(putsNameRight('Weltthomas Kapfmeder.', 'Thomas Karpfeneder')).toBe(true);
+  });
+
+  it('drops a first name said alone that took the next word into a full name', () => {
+    expect(putsNameRight('Sarah morgen', 'Sarah Novak')).toBe(false);
+    expect(putsNameRight('Anna in', 'Anna Lee')).toBe(false);
+    expect(putsNameRight('Anna from', 'Anna Lee')).toBe(false);
+    expect(putsNameRight('tom at', 'Tom Baker')).toBe(false);
+    expect(putsNameRight('at Klein', 'David Klein')).toBe(false);
+  });
+
+  it('drops a name that adds a word to one said in full', () => {
+    expect(putsNameRight('Anna', 'Anna Lee')).toBe(false);
+  });
+});
+
+describe('parakeetText', () => {
+  it('is Parakeet’s own text when every replacement stays', () => {
+    const reading = {
+      raw: 'Pick up Thomas Kaufmeter at Haupternhof on Thursday at six.',
+      replacements: [{ from: 'Thomas Kaufmeter', to: 'Thomas Karpfeneder' }],
+      text: 'Pick up Thomas Karpfeneder at Haupternhof on Thursday at six.',
+    };
+    expect(parakeetText(reading)).toBe(reading.text);
+  });
+
+  it('puts the words back that a dropped replacement took', () => {
+    expect(
+      parakeetText({
+        raw: 'Mittagessen mit Sarah morgen um eins im Fiegelmüller.',
+        replacements: [{ from: 'Sarah morgen', to: 'Sarah Novak' }],
+        text: 'Mittagessen mit Sarah Novak um eins im Fiegelmüller.',
+      }),
+    ).toBe('Mittagessen mit Sarah morgen um eins im Fiegelmüller.');
+  });
+
+  it('keeps the right ones beside a dropped one, with the punctuation around their spans', () => {
+    expect(
+      parakeetText({
+        raw: 'Coffee with Thomas Kapfmeder, then Anna in the park.',
+        replacements: [
+          { from: 'Thomas Kapfmeder,', to: 'Thomas Karpfeneder' },
+          { from: 'Anna in', to: 'Anna Lee' },
+        ],
+        text: 'Coffee with Thomas Karpfeneder, then Anna Lee the park.',
+      }),
+    ).toBe('Coffee with Thomas Karpfeneder, then Anna in the park.');
+  });
+
+  it('reads a phrase joined from two readings in order', () => {
+    expect(
+      parakeetText({
+        raw: 'Walk with Anna in Schönbrunn. Anna in the evening.',
+        replacements: [
+          { from: 'Anna in', to: 'Anna Lee' },
+          { from: 'Anna in', to: 'Anna Lee' },
+        ],
+        text: 'Walk with Anna Lee Schönbrunn. Anna Lee the evening.',
+      }),
+    ).toBe('Walk with Anna in Schönbrunn. Anna in the evening.');
+  });
+
+  it('is the words before the names when a span is not among them', () => {
+    expect(
+      parakeetText({
+        raw: 'Walk with Anna in Schönbrunn.',
+        replacements: [{ from: 'Anna im', to: 'Anna Lee' }],
+        text: 'Walk with Anna Lee Schönbrunn.',
+      }),
+    ).toBe('Walk with Anna in Schönbrunn.');
+  });
+});

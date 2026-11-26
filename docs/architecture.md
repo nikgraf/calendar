@@ -195,7 +195,11 @@ the switch and the download, iOS `parakeetRuntime.ts`, Mac
 then rescored against the names the user is likely to say (core
 `dictationVocabulary`: a year of guests and places by count, then the
 contacts, at most 100 of each, handed over as each phrase starts). The
-answer waits for it at most 4 s. When it came, its text is the phrase
+answer waits for it at most 4 s. When it came, its text, less the
+replacements that took a word beside a name rather than putting the name
+right (`parakeetText` in ai `parakeetNames.ts`: a span that already says
+a word of the name must sound like the rest of it, so "Anna in" stays
+and "Thomas Kapfmeder" becomes Thomas Karpfeneder), is the phrase
 the thread reads (`Heard.text`) and Apple's goes along as `Heard.apple`
 (`heardFromSegments`); Apple's recogniser still decides that nothing was
 said. The audio stays in memory and goes with the phrase. The phrase ends on its words, not its loudness:

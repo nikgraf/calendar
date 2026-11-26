@@ -1,5 +1,6 @@
 import {
   heardFromSegments,
+  parakeetText,
   listenedLocale,
   MicrophoneDeniedError,
   type PhraseRead,
@@ -153,7 +154,11 @@ const openSession = async (
 };
 
 const heardIn = (result: SpeechRead) =>
-  heardFromSegments(result.segments, result.other, result.parakeet?.text);
+  heardFromSegments(
+    result.segments,
+    result.other,
+    result.parakeet && parakeetText(result.parakeet),
+  );
 
 const joinedOr = (before: string | undefined, text: string | undefined) => {
   const joined = joinWords(before ?? '', text ?? '');
