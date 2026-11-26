@@ -99,6 +99,14 @@ actor ParakeetEngine {
     locale.language.languageCode.map { languages.contains($0.identifier) } ?? false
   }
 
+  /// How alike a span must be spelt to a listed name before the name may
+  /// replace it: FluidAudio's own floor (0.55–0.60 by list size) let a
+  /// first name said alone take the next word into a full name ("Anna in"
+  /// → Anna Lee); at 0.65 Nik's 104 recordings kept every right name and
+  /// had none of those (#385). The JS check (`parakeetNames.ts`) stands
+  /// behind it for a build without this.
+  private static let thresholds = VocabularyBoostingSession.Thresholds(minSimilarity: 0.65)
+
   /// How long a phrase's answer waits for Parakeet before it goes without it.
   static let readLimit: Duration = .seconds(4)
 
@@ -328,7 +336,7 @@ actor ParakeetEngine {
     guard let ctc else { return }
     let built = try await VocabularyBoostingSession(
       vocabulary: CustomVocabularyContext(terms: wanted.map { CustomVocabularyTerm(text: $0) }),
-      ctcModels: ctc)
+      ctcModels: ctc, thresholds: Self.thresholds)
     // Other names came meanwhile: the next phrase builds theirs.
     guard generation == started, terms == wanted else { return }
     session = built
