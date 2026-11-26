@@ -130,6 +130,20 @@ describe('parakeetText', () => {
     ).toBe('Jon Bakr met Anna in town, then Jon Baker left.');
   });
 
+  it('adds only the punctuation a name does not end with, as Parakeet does', () => {
+    expect(
+      parakeetText({
+        raw: 'Jon Bakr met Anna in town with Robert Smit Jr., then Jon Bakr left.',
+        replacements: [
+          { from: 'Anna in', to: 'Anna Lee' },
+          { from: 'Robert Smit Jr.,', to: 'Robert Smith Jr.' },
+          { from: 'Jon Bakr', to: 'Jon Baker' },
+        ],
+        text: 'Jon Bakr met Anna Lee town with Robert Smith Jr., then Jon Baker left.',
+      }),
+    ).toBe('Jon Bakr met Anna in town with Robert Smith Jr., then Jon Baker left.');
+  });
+
   it('puts back a word a kept name took beside it', () => {
     expect(
       parakeetText({

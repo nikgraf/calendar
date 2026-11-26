@@ -165,12 +165,30 @@ const wholeAt = (text: string, span: string): ReadonlyArray<number> => {
   return found;
 };
 
-/** The replacement as FluidAudio writes it: the name, with the punctuation around the span kept. */
+/**
+ * The replacement as FluidAudio writes it (`preservingBoundaryPunctuation`):
+ * the name with the punctuation around the span kept, less what the name
+ * already ends or starts with ("Jr." before ".," adds only ",").
+ */
 const written = (span: string, to: string): string => {
-  const spanWords = span.split(' ');
-  const opening = OPENING.exec(spanWords[0] ?? '')?.[0] ?? '';
-  const closing = CLOSING.exec(spanWords.at(-1) ?? '')?.[0] ?? '';
-  return `${opening}${to}${closing}`;
+  const spanWords = span.split(' ').filter(Boolean);
+  const first = spanWords[0] ?? '';
+  const last = spanWords.at(-1) ?? '';
+  const closing = CLOSING.exec(last)?.[0] ?? '';
+  const opening = OPENING.exec(first)?.[0] ?? '';
+  // A span of punctuation alone has no word boundary to keep.
+  if (to === '' || closing.length >= last.length || opening.length >= first.length) {
+    return to;
+  }
+  let closed = closing.length;
+  while (closed > 0 && !to.endsWith(closing.slice(0, closed))) {
+    closed -= 1;
+  }
+  let opened = opening.length;
+  while (opened > 0 && !to.startsWith(opening.slice(opening.length - opened))) {
+    opened -= 1;
+  }
+  return `${opening.slice(0, opening.length - opened)}${to}${closing.slice(closed)}`;
 };
 
 interface Placed {
