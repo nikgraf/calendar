@@ -23,6 +23,7 @@ const words = (text: string): ReadonlyArray<string> =>
     .normalize('NFD')
     .replaceAll(/\p{M}/gu, '')
     .replaceAll('ß', 'ss')
+    .replaceAll(/['’]/gu, '')
     .replaceAll(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/u)
     .filter(Boolean);
@@ -104,6 +105,10 @@ export const putsNameRight = (from: string, to: string): boolean => {
   }
   const restSaid = said.filter((_, index) => !shared.said.has(index)).join(' ');
   const restName = name.filter((_, index) => !shared.name.has(index)).join(' ');
+  if (restName === '') {
+    // Every word of the name is said: what is left is a piece of it (`nameWithin` gave back the rest).
+    return true;
+  }
   const alike = similarity(restSaid, restName);
   return (
     alike >= REST_SIMILARITY ||
@@ -116,10 +121,17 @@ export const putsNameRight = (from: string, to: string): boolean => {
 /** A name's letters, for how alike a span is to it as a whole. */
 const letters = (text: string): string => words(text).join('');
 
+/** A word's last letter, past a possessive "s" ("Carters" ends like Carter). */
+const lastLetter = (text: string, like: string): string =>
+  text.endsWith('s') && !like.endsWith('s') ? text.slice(-2, -1) : text.slice(-1);
+
 /**
  * The part of a kept span the name stands for: a word at either end that
- * makes the span less like the name is one Parakeet took beside it
- * ("Thomas Kapfmeder um" → Thomas Karpfeneder, "um" kept), so it stays.
+ * makes the span less like the name, where what is left starts (or ends)
+ * as the name does, is one Parakeet took beside it ("Thomas Kapfmeder
+ * um" → Thomas Karpfeneder, "um" kept). One whose loss leaves the span
+ * starting otherwise is a piece of the name ("Mike Donald's" →
+ * McDonald's).
  */
 const nameWithin = (
   from: string,
@@ -128,13 +140,22 @@ const nameWithin = (
   const spanWords = from.split(' ');
   const count = to.split(' ').filter(Boolean).length;
   const alike = (part: ReadonlyArray<string>) => similarity(letters(part.join(' ')), letters(to));
+  const name = letters(to);
+  const endsAsName = (part: ReadonlyArray<string>) => {
+    const left = letters(part.join(' '));
+    return lastLetter(left, name) === lastLetter(name, left);
+  };
+  const startsAsName = (part: ReadonlyArray<string>) =>
+    letters(part.join(' ')).slice(0, 1) === name.slice(0, 1);
   let first = 0;
   let last = spanWords.length;
   while (last - first > count) {
     const whole = alike(spanWords.slice(first, last));
-    if (alike(spanWords.slice(first, last - 1)) > whole) {
+    const shorter = spanWords.slice(first, last - 1);
+    const later = spanWords.slice(first + 1, last);
+    if (alike(shorter) > whole && endsAsName(shorter)) {
       last -= 1;
-    } else if (alike(spanWords.slice(first + 1, last)) > whole) {
+    } else if (alike(later) > whole && startsAsName(later)) {
       first += 1;
     } else {
       break;

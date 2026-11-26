@@ -164,8 +164,8 @@ describe('parakeetText', () => {
   it('puts back a word a kept hyphenated or apostrophe name took beside it', () => {
     expect(
       parakeetText({
-        raw: 'Mittagessen mit Karl-Heinz Huba um eins.',
-        replacements: [{ from: 'Karl-Heinz Huba um', to: 'Karl-Heinz Huber' }],
+        raw: 'Mittagessen mit Karl-Heinz Hubr um eins.',
+        replacements: [{ from: 'Karl-Heinz Hubr um', to: 'Karl-Heinz Huber' }],
         text: 'Mittagessen mit Karl-Heinz Huber eins.',
       }),
     ).toBe('Mittagessen mit Karl-Heinz Huber um eins.');
@@ -176,6 +176,19 @@ describe('parakeetText', () => {
         text: 'Lunch with Sean O’Brien one.',
       }),
     ).toBe('Lunch with Sean O’Brien at one.');
+  });
+
+  it('keeps a piece of the name inside it, not given back as a word', () => {
+    expect(
+      parakeetText({
+        raw: 'Lunch at Mike Donald’s tomorrow, Anna in town.',
+        replacements: [
+          { from: 'Anna in', to: 'Anna Lee' },
+          { from: 'Mike Donald’s', to: 'McDonald’s' },
+        ],
+        text: 'Lunch at McDonald’s tomorrow, Anna Lee town.',
+      }),
+    ).toBe('Lunch at McDonald’s tomorrow, Anna in town.');
   });
 
   it('is the words before the names when a span is not among them', () => {
