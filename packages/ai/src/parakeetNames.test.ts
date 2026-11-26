@@ -24,6 +24,16 @@ describe('putsNameRight', () => {
     expect(putsNameRight('at Klein', 'David Klein')).toBe(false);
   });
 
+  it('takes a first name spelt another way for the name’s own', () => {
+    expect(putsNameRight('Katarina morgen', 'Katharina Gruber')).toBe(false);
+    expect(putsNameRight('Sara morgen', 'Sarah Novak')).toBe(false);
+  });
+
+  it('keeps a short surname heard with the same consonants', () => {
+    expect(putsNameRight('Anna Li', 'Anna Lee')).toBe(true);
+    expect(putsNameRight('Tom Woo', 'Tom Wu')).toBe(true);
+  });
+
   it('drops a name that adds a word to one said in full', () => {
     expect(putsNameRight('Anna', 'Anna Lee')).toBe(false);
   });
@@ -73,6 +83,19 @@ describe('parakeetText', () => {
         text: 'Walk with Anna Lee Schönbrunn. Anna Lee the evening.',
       }),
     ).toBe('Walk with Anna in Schönbrunn. Anna in the evening.');
+  });
+
+  it('puts each kept name where its span stands as whole words, in whatever order they are listed', () => {
+    expect(
+      parakeetText({
+        raw: 'Dinner at the Thomas Kapfmederhof with Thomas Kapfmeder and Anna in Grinzing.',
+        replacements: [
+          { from: 'Anna in', to: 'Anna Lee' },
+          { from: 'Thomas Kapfmeder', to: 'Thomas Karpfeneder' },
+        ],
+        text: 'Dinner at the Thomas Kapfmederhof with Thomas Karpfeneder and Anna Lee Grinzing.',
+      }),
+    ).toBe('Dinner at the Thomas Kapfmederhof with Thomas Karpfeneder and Anna in Grinzing.');
   });
 
   it('is the words before the names when a span is not among them', () => {

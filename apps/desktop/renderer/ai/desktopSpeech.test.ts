@@ -91,6 +91,9 @@ const bridge = () => {
   let segments: ReadonlyArray<{ text: string }> = [{ text: 'Lunch with Anna' }];
   /** The phrase as the helper's other-language recogniser wrote it, when it has one. */
   let other: string | undefined;
+  let parakeet:
+    | { raw: string; replacements: Array<{ from: string; to: string }>; text: string }
+    | undefined;
   /** Set: the next prepares wait until the test lets them answer (a download). */
   let preparing: Promise<void> | undefined;
   /** What prepare and start were asked to listen in: "<locale> <second language>". */
@@ -116,7 +119,11 @@ const bridge = () => {
       },
       modelSpeechFinish: async (session: number) => {
         finished.push(session);
-        return other === undefined ? { segments } : { other, segments };
+        return {
+          ...(other === undefined ? {} : { other }),
+          ...(parakeet === undefined ? {} : { parakeet }),
+          segments,
+        };
       },
       modelSpeechRead: async (session: number) => {
         read.push(session);
@@ -155,6 +162,9 @@ const bridge = () => {
     },
     hearOther: (text: string) => {
       other = text;
+    },
+    hearParakeet: (reading: NonNullable<typeof parakeet>) => {
+      parakeet = reading;
     },
     holdPrepare: (until: Promise<void>) => {
       preparing = until;
@@ -416,6 +426,23 @@ describe('desktopSpeech streaming', () => {
       other: 'Lunch mit Anna',
       segments: [{ text: 'Lunch with Anna' }],
       text: 'Lunch with Anna',
+    });
+  });
+
+  it('sends Parakeet’s reading without a first name that took the next word', async () => {
+    const main = bridge();
+    main.hearParakeet({
+      raw: 'Walk with Anna in Schönbrunn.',
+      replacements: [{ from: 'Anna in', to: 'Anna Lee' }],
+      text: 'Walk with Anna Lee Schönbrunn.',
+    });
+    const speech = await loadSpeech();
+    const start = speech.start({ onWords: noWords });
+    grants[0]?.(fakeStream());
+    await start;
+    expect(await speech.finish()).toMatchObject({
+      apple: 'Lunch with Anna',
+      text: 'Walk with Anna in Schönbrunn.',
     });
   });
 
