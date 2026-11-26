@@ -1798,8 +1798,14 @@ export const useDraftThread = ({
       },
     });
     if (mine === request.current) {
-      setState((latest) => withReadings(latest, turnId, readings, draft));
-      trace.current = withTracedReadings(trace.current, turnId, readings);
+      setState((latest) => {
+        const next = withReadings(latest, turnId, readings, draft);
+        // The log keeps them only where they were put under the answer.
+        if (next !== latest) {
+          trace.current = withTracedReadings(trace.current, turnId, readings);
+        }
+        return next;
+      });
     }
   };
 
@@ -1968,6 +1974,9 @@ export const useDraftThread = ({
       }
       return undefined;
     } catch {
+      if (notes) {
+        notes.failed = true;
+      }
       return 'On-device model unavailable.';
     } finally {
       if (mine === request.current) {
@@ -2077,6 +2086,9 @@ export const useDraftThread = ({
       }
       return undefined;
     } catch {
+      if (kept) {
+        kept.failed = true;
+      }
       return 'On-device model unavailable.';
     } finally {
       if (searching.current === mine) {

@@ -57,6 +57,8 @@ export const EMPTY_TRACE: SessionTrace = { origin: 'new', picks: [], saved: [], 
  * and after it landed), read once the turn is over (`endTurn`).
  */
 export interface TurnNotes {
+  /** The model could not answer: the turn's message says so, and it is no refusal. */
+  failed?: boolean | undefined;
   freeSlots?: number | undefined;
   invited?: ReadonlyArray<SessionInvitee> | undefined;
   /** The thread before the turn landed and as it left it; absent: it never landed. */
@@ -227,12 +229,13 @@ export const endTurn = (
   }
   const landed =
     notes.landed === undefined ? undefined : turnOutcome(notes.landed.before, notes.landed.after);
-  const outcome: SessionOutcome = failed
-    ? { kind: 'failed' }
-    : message === undefined
-      ? (landed?.outcome ?? { kind: 'dropped' })
-      : { kind: 'refused', message };
-  const taken = !failed && message === undefined;
+  const outcome: SessionOutcome =
+    failed || notes.failed === true
+      ? { kind: 'failed' }
+      : message === undefined
+        ? (landed?.outcome ?? { kind: 'dropped' })
+        : { kind: 'refused', message };
+  const taken = !failed && notes.failed !== true && message === undefined;
   const turn: SessionTurn = {
     ...begun.turn,
     ...(notes.freeSlots === undefined ? {} : { freeSlots: notes.freeSlots }),
@@ -328,6 +331,9 @@ const afterLastPhrase = (state: DraftThreadState, id: string | undefined): Draft
   return moment.drafts.find((draft) => draft.id === id);
 };
 
+/** What a pick settles, as a changed part: a contact is a guest, a place the location, a slot the time. */
+const PICKED = { guest: 'guests', place: 'location', slot: 'time' } as const;
+
 const repeatOf = (draft: Draft): Readonly<Record<string, unknown>> | undefined => {
   if (draft.item.kind === 'event') {
     return draft.item.prefill.recurrence;
@@ -354,9 +360,22 @@ export const savedItem = (state: DraftThreadState, form: FormSnapshot): TracedSa
     id: held?.id ?? 'form',
     item: form.item,
   };
-  const edited = draftChanges(afterLastPhrase(state, held?.id), written).map(
+  // By hand at any point (an edit step's fields, a pick's), and whatever
+  // the form holds otherwise than the last phrase left it: a name fixed
+  // before a later phrase is a correction too.
+  const byHand = state.steps.flatMap((step) =>
+    held !== undefined && step.drafts.includes(held.id)
+      ? step.kind === 'edit'
+        ? step.fields
+        : step.kind === 'pick'
+          ? [PICKED[step.pick]]
+          : []
+      : [],
+  );
+  const since = draftChanges(afterLastPhrase(state, held?.id), written).map(
     (change) => change.field,
   );
+  const edited = [...new Set([...byHand, ...since])];
   const repeat = repeatOf(written);
   const base = { edited, ...(repeat === undefined ? {} : { repeat }) };
   const { item } = written;

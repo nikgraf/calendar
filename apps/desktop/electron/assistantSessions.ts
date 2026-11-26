@@ -1,6 +1,8 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type AssistantSession, sessionExportName } from '@calendar/ai';
+import { basename } from 'node:path';
+import { assistantModelManifest, type AssistantSession, sessionExportName } from '@calendar/ai';
+import { Temporal } from '@calendar/core';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { sessionsFile, type SessionsState } from './assistantSessionsFile.ts';
 import { isOwnPage } from './windows.ts';
@@ -14,6 +16,20 @@ import { isOwnPage } from './windows.ts';
  * on it. CALENDAR_SESSIONS_EXPORT names the file Export writes without a
  * dialog: the e2e harness's, under its temp profile.
  */
+
+/**
+ * The Assistant's model as a record names it: the one main serves (the
+ * fixture, a file a run from source names, or the manifest's release).
+ */
+const modelName = (): string => {
+  if (process.env['CALENDAR_MODEL'] === 'fixture') {
+    return 'fixture';
+  }
+  const file = process.env['CALENDAR_ASSISTANT_MODEL_FILE']?.trim();
+  return file
+    ? `file:${basename(file)}`
+    : `solunivo-assistant-${assistantModelManifest(process.env['CALENDAR_ASSISTANT_MANIFEST']).version}`;
+};
 
 /** A record this big is no thread of the Assistant's. */
 const MAX_SESSION_CHARS = 2_000_000;
@@ -52,6 +68,7 @@ export const registerAssistantSessions = (userDataDir: string): void => {
     const stamped = {
       ...(session as AssistantSession),
       app: { platform: 'Mac' as const, version: app.getVersion() },
+      model: modelName(),
     };
     return tell(file.keep(stamped));
   });
@@ -69,7 +86,7 @@ export const registerAssistantSessions = (userDataDir: string): void => {
     const options = {
       defaultPath: join(
         app.getPath('downloads'),
-        sessionExportName(new Date().toISOString().slice(0, 10)),
+        sessionExportName(Temporal.Now.plainDateISO().toString()),
       ),
       filters: [{ extensions: ['jsonl'], name: 'Assistant sessions' }],
     };

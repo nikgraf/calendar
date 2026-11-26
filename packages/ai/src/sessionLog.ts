@@ -140,8 +140,9 @@ export interface SessionSaved {
   /** The day it is on; none for a to-do without a due day. */
   readonly date?: string | undefined;
   /**
-   * The parts that read otherwise than the last phrase left them: what
-   * was changed by hand, a pick among them.
+   * The parts changed by hand while the thread ran (an edit, a pick among
+   * what it offered), and those that read otherwise than the last phrase
+   * left them.
    */
   readonly edited: ReadonlyArray<string>;
   readonly endDate?: string | undefined;
@@ -262,4 +263,4 @@ export const sessionCountLabel = (count: number): string =>
  * the same.
  */
 export const sessionLogCopy = (device: 'iPhone' | 'Mac'): string =>
-  `Keeps your last ${String(SESSION_LOG_CAP)} conversations with the Assistant on this ${device}, to find where it goes wrong: what you typed or dictated as the recognisers read it, what the model answered, the places and contacts it found, and what you saved, changed by hand or left. No audio. The log stays on this ${device} until you export it, and it holds the names and places you said.`;
+  `Keeps your last ${String(SESSION_LOG_CAP)} conversations with the Assistant on this ${device}, to find where it goes wrong: what you typed or dictated as the recognisers read it, what the model was shown (with an item's guests and short notes) and answered, the places and contacts it found, and what you saved, changed by hand or left. No audio. The log stays on this ${device} until you export it, and it holds the names, addresses and places in them.`;

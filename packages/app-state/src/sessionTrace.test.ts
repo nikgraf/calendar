@@ -148,6 +148,37 @@ describe('finishedSession', () => {
     expect(savedItem(edited, { item: retitled }).item.edited).toEqual(['title', 'time']);
   });
 
+  it('names an edit made by hand before a later phrase', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner with teo friday', { id });
+    const fixed: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, title: 'Dinner with Theo' },
+    };
+    const edited = foldForm(started, { item: fixed }, { kind: 'edit' }, id);
+    const moved: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...later.prefill, title: 'Dinner with Theo' },
+    };
+    const refined = refineThread(edited, 'make it 8', [{ id: 'd1', item: moved }], id);
+    expect(savedItem(refined, { item: moved }).item.edited).toEqual(['title']);
+  });
+
+  it('fails a change turn whose model could not answer, though it answered with a message', () => {
+    const begun = beginTurn(EMPTY_TRACE, {
+      at: AT,
+      day: '2026-08-27',
+      heard: undefined,
+      text: 'x',
+    });
+    const notes = turnNotes();
+    notes.failed = true;
+    const ended = endTurn(begun.trace, begun.index, notes, {
+      message: 'On-device model unavailable.',
+    });
+    expect(ended.turns[0]?.turn.outcome).toEqual({ kind: 'failed' });
+  });
+
   it('marks a turn Undo took back, and one answered with a message', () => {
     const id = ids();
     const started = startThread([dinner], 'dinner friday', { id });

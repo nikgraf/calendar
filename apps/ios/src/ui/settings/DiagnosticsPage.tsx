@@ -6,6 +6,7 @@ import {
   useModelAvailability,
 } from '@calendar/app-state';
 import { noticeCopy, sessionCountLabel, sessionExportName, sessionLogCopy } from '@calendar/ai';
+import { Temporal } from '@calendar/core';
 import { Effect } from 'effect';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { AccessibilityInfo, Alert, Platform, Share } from 'react-native';
@@ -75,7 +76,7 @@ export function DiagnosticsPage() {
       const file = assistantSessions.file();
       if (file) {
         await Share.share({
-          title: sessionExportName(new Date().toISOString().slice(0, 10)),
+          title: sessionExportName(Temporal.Now.plainDateISO().toString()),
           url: file.uri,
         });
       }
