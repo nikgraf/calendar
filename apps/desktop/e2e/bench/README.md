@@ -498,11 +498,12 @@ English phone with German as its second language, read by Assistant v2
 (the published file on the bundled `llama-server`) as of Wednesday
 2026-11-25, the places asked of MapKit that day, at `ac5539c8`:
 
-| Heard with         | Pass   | Lost to the hearing | Lost after it | Words wrong | Places taken · offered · text alone · missed |
-| ------------------ | ------ | ------------------- | ------------- | ----------- | -------------------------------------------- |
-| The transcripts    | 97/104 |                     | 7             |             | not asked                                    |
-| Parakeet and Apple | 50/104 | 48                  | 6             | 22%         | 33 · 18 · 2 · 26 of 79                       |
-| Apple alone        | 13/104 | 84                  | 7             | 62%         | 4 · 13 · 0 · 39 of 56                        |
+| Heard with            | Pass   | Lost to the hearing | Lost after it | Words wrong | Places taken · offered · text alone · missed |
+| --------------------- | ------ | ------------------- | ------------- | ----------- | -------------------------------------------- |
+| The transcripts       | 97/104 |                     | 7             |             | not asked                                    |
+| Parakeet and Apple    | 50/104 | 48                  | 6             | 22%         | 33 · 18 · 2 · 26 of 79                       |
+| … with the name check | 54/104 | 44                  | 6             | 21%         | 34 · 19 · 3 · 27 of 83                       |
+| Apple alone           | 13/104 | 84                  | 7             | 62%         | 4 · 13 · 0 · 39 of 56                        |
 
 - The hearing loses nearly every phrase that is lost: v2 reads 97 of
   the 104 as they are written.
@@ -515,7 +516,16 @@ English phone with German as its second language, read by Assistant v2
   names put right ("Thomas Kapfmeder" → Thomas Karpfeneder). In six a
   first name said alone took the next word with it into the contact's
   full name ("Sarah morgen" → "Sarah Novak", "Anna in" → "Anna Lee",
-  "at Klein(od)" → "David Klein"), and each of those phrases is lost.
+  "at Klein(od)" → "David Klein"), and each of those phrases was lost.
+  The name check (`parakeetNames.ts`, 2026-11-26 at `7e55a00e`, both
+  runs that day) sends those six as Parakeet heard them and keeps the
+  eleven: four of the six pass now; "Anna in the Türkenschanz Park"
+  still misses its place and "from Friday to Sunday" is a weekend.
+  Titles went from 81 to 87 of 108. Its rules were set on these
+  readings and on forty made-up address books (every first name said
+  alone given each of forty surnames), run through FluidAudio's
+  rescoring directly; a list alone fixes nothing (first names as terms
+  of their own: 16 wrong replacements, surnames alone 13).
 - The model reads a recogniser's writing other than the same words
   typed: "Konzert am Karlsplatz, nächsten Donnerstag um acht." is 08:00,
   the transcript without the comma and the period 20:00; "Flight to

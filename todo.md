@@ -171,12 +171,14 @@ was written; re-verify before starting one.
       and surnames neither language has as a word that the calendar has
       never named (Kaffemik before the first event there) and street
       addresses; Parakeet's wrong replacements from a real list
-      (measured with the clips' places: "nach acht" → "Naschmarkt"; and
-      on the voice cases, with an address book as the list: a contact's
-      first name said alone takes the next word with it into the full
-      name, "Sarah morgen" → "Sarah Novak", "Anna in" → "Anna Lee",
-      "at Klein(od)" → "David Klein", six of the 104 recordings and
-      each one lost, beside eleven full names it put right).
+      (measured with the clips' places: "nach acht" → "Naschmarkt"; a
+      first name said alone no longer takes the next word into a full
+      name since the name check, `parakeetNames.ts`, but with forty
+      made-up address books a listed full name said in full can still
+      become another with the same first name, "Tom Baker" → "Tom
+      Bauer", and a span with no word of the name is FluidAudio's alone:
+      its `minSimilarity` 0.65 made none of either on the voice cases
+      and moves the native fingerprint, #<n>).
       MapKit's structured city/region/country fields in a native build.
       The voice cases say what a change does to the whole way
       (`apps/desktop/e2e/bench/README.md` → Recordings): on an English
