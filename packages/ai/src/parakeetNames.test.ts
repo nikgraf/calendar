@@ -29,6 +29,10 @@ describe('putsNameRight', () => {
     expect(putsNameRight('Sara morgen', 'Sarah Novak')).toBe(false);
   });
 
+  it('keeps a name heard with other word breaks', () => {
+    expect(putsNameRight('Anna Mc Donald', 'Anna McDonald')).toBe(true);
+  });
+
   it('takes a word that begins with a name word for that word', () => {
     expect(putsNameRight('at Kleinod', 'David Klein')).toBe(false);
   });
@@ -101,6 +105,29 @@ describe('parakeetText', () => {
         text: 'Dinner at the Thomas Kapfmederhof with Thomas Karpfeneder and Anna Lee Grinzing.',
       }),
     ).toBe('Dinner at the Thomas Kapfmederhof with Thomas Karpfeneder and Anna in Grinzing.');
+  });
+
+  it('keeps a name on the place Parakeet put it when its span stands twice', () => {
+    expect(
+      parakeetText({
+        raw: 'Meet Jon and then Jon Bakr with Anna in the park.',
+        replacements: [
+          { from: 'Anna in', to: 'Anna Lee' },
+          { from: 'Jon Bakr', to: 'Jon Baker' },
+        ],
+        text: 'Meet Jon and then Jon Baker with Anna Lee the park.',
+      }),
+    ).toBe('Meet Jon and then Jon Baker with Anna in the park.');
+    expect(
+      parakeetText({
+        raw: 'Jon Bakr met Anna in town, then Jon Bakr left.',
+        replacements: [
+          { from: 'Anna in', to: 'Anna Lee' },
+          { from: 'Jon Bakr', to: 'Jon Baker' },
+        ],
+        text: 'Jon Bakr met Anna Lee town, then Jon Baker left.',
+      }),
+    ).toBe('Jon Bakr met Anna in town, then Jon Baker left.');
   });
 
   it('puts back a word a kept name took beside it', () => {

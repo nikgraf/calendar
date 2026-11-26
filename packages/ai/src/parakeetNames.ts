@@ -11,6 +11,8 @@ export interface ParakeetReading {
 
 /** Below this, the rest of a span is not the rest of the name (#384's recordings: wrong 0–0.20, right 0.50 and up). */
 const REST_SIMILARITY = 0.5;
+/** A span whose letters are this alike to the name's says the name, split or joined another way ("Mc Donald"). */
+const SAME_LETTERS = 0.9;
 /** A word of the span this alike is the name's own, spelt another way ("Katarina" for Katharina). */
 const SAME_WORD = 0.75;
 
@@ -86,12 +88,16 @@ const sharedWords = (
  * ("Anna in" → "Anna Lee", "Sara morgen" → "Sarah Novak", "at Klein" →
  * "David Klein"), the rest of the span has to sound like the rest of the
  * name: "Kapfmeder" for Karpfeneder, or the same consonants for a short
- * one ("Li" for Lee). A span that shares no word with the name is
- * Parakeet's to judge alone.
+ * one ("Li" for Lee). A span that spells the name's letters with other
+ * word breaks ("Anna Mc Donald") puts it right, and one that shares no word
+ * with the name is Parakeet's to judge alone.
  */
 export const putsNameRight = (from: string, to: string): boolean => {
   const said = words(from);
   const name = words(to);
+  if (similarity(said.join(''), name.join('')) >= SAME_LETTERS) {
+    return true;
+  }
   const shared = sharedWords(said, name);
   if (shared.name.size === 0) {
     return true;
@@ -144,22 +150,106 @@ const nameWithin = (
 const CLOSING = /[.,!?;:…)\]}"”»]*$/u;
 const OPENING = /^[([{"“«¿¡]*/u;
 
-/** Where `span` stands in `text` as whole words, outside the ranges taken already. */
-const spanAt = (
-  text: string,
-  span: string,
-  taken: ReadonlyArray<{ readonly end: number; readonly start: number }>,
-): number | undefined => {
-  for (let at = text.indexOf(span); at >= 0; at = text.indexOf(span, at + 1)) {
+/** Where `span` stands in `text` as whole words. */
+const wholeAt = (text: string, span: string): ReadonlyArray<number> => {
+  const found: Array<number> = [];
+  for (let at = text.indexOf(span); at >= 0 && span !== ''; at = text.indexOf(span, at + 1)) {
     const end = at + span.length;
-    const whole =
+    if (
       (at === 0 || /\s/u.test(text[at - 1] ?? '')) &&
-      (end === text.length || /\s/u.test(text[end] ?? ''));
-    if (whole && taken.every((range) => end <= range.start || at >= range.end)) {
-      return at;
+      (end === text.length || /\s/u.test(text[end] ?? ''))
+    ) {
+      found.push(at);
     }
   }
-  return undefined;
+  return found;
+};
+
+/** The replacement as FluidAudio writes it: the name, with the punctuation around the span kept. */
+const written = (span: string, to: string): string => {
+  const spanWords = span.split(' ');
+  const opening = OPENING.exec(spanWords[0] ?? '')?.[0] ?? '';
+  const closing = CLOSING.exec(spanWords.at(-1) ?? '')?.[0] ?? '';
+  return `${opening}${to}${closing}`;
+};
+
+interface Placed {
+  readonly end: number;
+  readonly start: number;
+  readonly text: string;
+}
+
+/** `raw` with each placed span's text put in where it stands. */
+const rebuilt = (raw: string, placed: ReadonlyArray<Placed>): string => {
+  let text = '';
+  let at = 0;
+  for (const span of [...placed].sort((a, b) => a.start - b.start)) {
+    text += raw.slice(at, span.start) + span.text;
+    at = span.end;
+  }
+  return text + raw.slice(at);
+};
+
+const singleSpaced = (text: string): string => text.replaceAll(/\s+/gu, ' ').trim();
+
+/** Placements of a span tried at most, so a phrase with many repeats stays quick. */
+const MAX_TRIES = 500;
+
+/**
+ * Where each replacement's span stands in `raw` (FluidAudio lists them by
+ * how alike they are, not in order, and a span can stand twice): the
+ * placing whose replacements give Parakeet's own text, else each at its
+ * first free place. Undefined when a span is not among the words.
+ */
+const placements = (reading: ParakeetReading): ReadonlyArray<number> | undefined => {
+  const options = reading.replacements.map(({ from }) => wholeAt(reading.raw, from));
+  if (options.some((each) => each.length === 0)) {
+    return undefined;
+  }
+  const target = singleSpaced(reading.text);
+  let tries = 0;
+  const chosen: Array<number> = [];
+  const free = (index: number, start: number): boolean =>
+    chosen.every((other, at) => {
+      const end = start + (reading.replacements[index]?.from.length ?? 0);
+      return end <= other || start >= other + (reading.replacements[at]?.from.length ?? 0);
+    });
+  const search = (index: number): boolean => {
+    if (index === reading.replacements.length) {
+      const placed = reading.replacements.map(({ from, to }, at) => ({
+        end: (chosen[at] ?? 0) + from.length,
+        start: chosen[at] ?? 0,
+        text: written(from, to),
+      }));
+      return singleSpaced(rebuilt(reading.raw, placed)) === target;
+    }
+    for (const start of options[index] ?? []) {
+      tries += 1;
+      if (tries > MAX_TRIES) {
+        return false;
+      }
+      if (free(index, start)) {
+        chosen.push(start);
+        if (search(index + 1)) {
+          return true;
+        }
+        chosen.pop();
+      }
+    }
+    return false;
+  };
+  if (search(0)) {
+    return chosen;
+  }
+  chosen.length = 0;
+  for (const [index, starts] of options.entries()) {
+    const start = starts.find((each) => free(index, each));
+    if (start === undefined) {
+      return undefined;
+    }
+    chosen.push(start);
+  }
+  return chosen;
 };
 
 /**
@@ -170,21 +260,16 @@ const spanAt = (
  */
 const replaced = (from: string, to: string): string => {
   const { after, before, span } = nameWithin(from, to);
-  if (!putsNameRight(span, to)) {
-    return from;
-  }
-  const spanWords = span.split(' ');
-  const opening = OPENING.exec(spanWords[0] ?? '')?.[0] ?? '';
-  const closing = CLOSING.exec(spanWords.at(-1) ?? '')?.[0] ?? '';
-  return [before, `${opening}${to}${closing}`, after].filter(Boolean).join(' ');
+  return putsNameRight(span, to)
+    ? [before, written(span, to), after].filter(Boolean).join(' ')
+    : from;
 };
 
 /**
  * The phrase as Parakeet read it, with each replacement only where it puts
  * a name right (`replaced`): Parakeet's own text when that changes
  * nothing, else its words before the names with the replacements put in
- * where their spans stand (whole words; FluidAudio lists them by how alike
- * they are, not in order).
+ * where their spans stand (`placements`).
  */
 export const parakeetText = (reading: ParakeetReading): string => {
   if (
@@ -194,20 +279,17 @@ export const parakeetText = (reading: ParakeetReading): string => {
   ) {
     return reading.text;
   }
-  const spans: Array<{ end: number; start: number; text: string }> = [];
-  for (const { from, to } of reading.replacements) {
-    const start = spanAt(reading.raw, from, spans);
-    if (start === undefined) {
-      // Not among its words: the replacements cannot be told apart from the text.
-      return reading.raw;
-    }
-    spans.push({ end: start + from.length, start, text: replaced(from, to) });
+  const starts = placements(reading);
+  if (starts === undefined) {
+    // Not among its words: the replacements cannot be told apart from the text.
+    return reading.raw;
   }
-  let text = '';
-  let at = 0;
-  for (const span of [...spans].sort((a, b) => a.start - b.start)) {
-    text += reading.raw.slice(at, span.start) + span.text;
-    at = span.end;
-  }
-  return text + reading.raw.slice(at);
+  return rebuilt(
+    reading.raw,
+    reading.replacements.map(({ from, to }, index) => ({
+      end: (starts[index] ?? 0) + from.length,
+      start: starts[index] ?? 0,
+      text: replaced(from, to),
+    })),
+  );
 };
