@@ -127,7 +127,14 @@ const bridge = () => {
       },
       modelSpeechRead: async (session: number) => {
         read.push(session);
-        return readAnswersMark ? { mark: 16_000 * read.length, segments } : { segments: [] };
+        if (!readAnswersMark) {
+          return { segments: [] };
+        }
+        return {
+          mark: 16_000 * read.length,
+          ...(parakeet === undefined ? {} : { parakeet }),
+          segments,
+        };
       },
       modelSpeechStart: async (locale: string, second: string) => {
         startedWith.push(`${locale} ${second}`);
@@ -524,6 +531,20 @@ describe('desktopSpeech availability', () => {
 });
 
 describe('desktopSpeech reading while listening', () => {
+  it('reads the phrase with Parakeet’s reading less a first name that took the next word', async () => {
+    const main = bridge();
+    main.hearParakeet({
+      raw: 'Picnic with Anna in the park.',
+      replacements: [{ from: 'Anna in', to: 'Anna Lee' }],
+      text: 'Picnic with Anna Lee the park.',
+    });
+    const speech = await loadSpeech();
+    const start = speech.start({ onWords: noWords });
+    grants[0]?.(fakeStream());
+    await start;
+    expect((await speech.read())?.heard?.text).toBe('Picnic with Anna in the park.');
+  });
+
   it('reads the phrase with every block recorded so far, the microphone left open', async () => {
     const main = bridge();
     const speech = await loadSpeech();

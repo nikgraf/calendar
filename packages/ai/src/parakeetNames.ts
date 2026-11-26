@@ -50,7 +50,14 @@ const similarity = (a: string, b: string): number => {
 const consonants = (text: string): string =>
   text.replaceAll(/[aeiouy\s]/gu, '').replaceAll(/(.)\1+/gu, '$1');
 
-/** The span's words that are the name's own: for each word of the name, the likest span word at least `SAME_WORD` alike. */
+/** Short names spelt another way share their consonants: still this alike ("li" for "lee", not "all"). */
+const SHORT_SIMILARITY = 0.3;
+
+/** A span word that is a name word: alike (`SAME_WORD`), or the name word and more ("Kleinod" for Klein). */
+const nameWordAlike = (said: string, word: string): number =>
+  word.length >= 4 && said.startsWith(word) ? 1 : similarity(said, word);
+
+/** The span's words that are the name's own: for each word of the name, the likest span word that is it. */
 const sharedWords = (
   said: ReadonlyArray<string>,
   name: ReadonlyArray<string>,
@@ -60,7 +67,7 @@ const sharedWords = (
   for (const [at, word] of name.entries()) {
     let best: { alike: number; at: number } | undefined;
     for (const [index, other] of said.entries()) {
-      const alike = similarity(other, word);
+      const alike = nameWordAlike(other, word);
       if (!fromSaid.has(index) && alike >= SAME_WORD && alike > (best?.alike ?? 0)) {
         best = { alike, at: index };
       }
@@ -75,12 +82,12 @@ const sharedWords = (
 
 /**
  * Whether a replacement puts a name right rather than taking a word that
- * stood beside part of it. Where the span already says a word of the name,
- * spelt alike or nearly ("Anna in" → "Anna Lee", "Sara morgen" → "Sarah
- * Novak", "at Klein" → "David Klein"), the rest of the span has to sound
- * like the rest of the name: "Kapfmeder" for Karpfeneder, or the same
- * consonants for a short one ("Li" for Lee). A span that shares no word
- * with the name is Parakeet's to judge alone.
+ * stood beside part of it. Where the span already says a word of the name
+ * ("Anna in" → "Anna Lee", "Sara morgen" → "Sarah Novak", "at Klein" →
+ * "David Klein"), the rest of the span has to sound like the rest of the
+ * name: "Kapfmeder" for Karpfeneder, or the same consonants for a short
+ * one ("Li" for Lee). A span that shares no word with the name is
+ * Parakeet's to judge alone.
  */
 export const putsNameRight = (from: string, to: string): boolean => {
   const said = words(from);
@@ -91,10 +98,47 @@ export const putsNameRight = (from: string, to: string): boolean => {
   }
   const restSaid = said.filter((_, index) => !shared.said.has(index)).join(' ');
   const restName = name.filter((_, index) => !shared.name.has(index)).join(' ');
+  const alike = similarity(restSaid, restName);
   return (
-    similarity(restSaid, restName) >= REST_SIMILARITY ||
-    (consonants(restSaid) !== '' && consonants(restSaid) === consonants(restName))
+    alike >= REST_SIMILARITY ||
+    (alike >= SHORT_SIMILARITY &&
+      consonants(restSaid) !== '' &&
+      consonants(restSaid) === consonants(restName))
   );
+};
+
+/** A name's letters, for how alike a span is to it as a whole. */
+const letters = (text: string): string => words(text).join('');
+
+/**
+ * The part of a kept span the name stands for: a word at either end that
+ * makes the span less like the name is one Parakeet took beside it
+ * ("Thomas Kapfmeder um" → Thomas Karpfeneder, "um" kept), so it stays.
+ */
+const nameWithin = (
+  from: string,
+  to: string,
+): { readonly after: string; readonly before: string; readonly span: string } => {
+  const spanWords = from.split(' ');
+  const count = words(to).length;
+  const alike = (part: ReadonlyArray<string>) => similarity(letters(part.join(' ')), letters(to));
+  let first = 0;
+  let last = spanWords.length;
+  while (last - first > count) {
+    const whole = alike(spanWords.slice(first, last));
+    if (alike(spanWords.slice(first, last - 1)) > whole) {
+      last -= 1;
+    } else if (alike(spanWords.slice(first + 1, last)) > whole) {
+      first += 1;
+    } else {
+      break;
+    }
+  }
+  return {
+    after: spanWords.slice(last).join(' '),
+    before: spanWords.slice(0, first).join(' '),
+    span: spanWords.slice(first, last).join(' '),
+  };
 };
 
 const CLOSING = /[.,!?;:…)\]}"”»]*$/u;
@@ -119,35 +163,50 @@ const spanAt = (
 };
 
 /**
- * The phrase as Parakeet read it, with only the replacements that put a
- * name right (`putsNameRight`): its own text when it keeps them all, else
- * its words before the names with the kept ones put in where their spans
- * stand (whole words; FluidAudio lists them by how alike they are, not in
- * order), each keeping the punctuation around its span as Parakeet does.
+ * A replacement as it goes into the phrase: the name for its part of the
+ * span (`nameWithin`) when that part puts the name right
+ * (`putsNameRight`), the punctuation around it kept; else the span as
+ * Parakeet heard it.
+ */
+const replaced = (from: string, to: string): string => {
+  const { after, before, span } = nameWithin(from, to);
+  if (!putsNameRight(span, to)) {
+    return from;
+  }
+  const spanWords = span.split(' ');
+  const opening = OPENING.exec(spanWords[0] ?? '')?.[0] ?? '';
+  const closing = CLOSING.exec(spanWords.at(-1) ?? '')?.[0] ?? '';
+  return [before, `${opening}${to}${closing}`, after].filter(Boolean).join(' ');
+};
+
+/**
+ * The phrase as Parakeet read it, with each replacement only where it puts
+ * a name right (`replaced`): Parakeet's own text when that changes
+ * nothing, else its words before the names with the replacements put in
+ * where their spans stand (whole words; FluidAudio lists them by how alike
+ * they are, not in order).
  */
 export const parakeetText = (reading: ParakeetReading): string => {
-  if (reading.replacements.every(({ from, to }) => putsNameRight(from, to))) {
+  if (
+    reading.replacements.every(
+      ({ from, to }) => nameWithin(from, to).span === from && putsNameRight(from, to),
+    )
+  ) {
     return reading.text;
   }
-  const spans: Array<{ end: number; start: number; to: string | undefined }> = [];
+  const spans: Array<{ end: number; start: number; text: string }> = [];
   for (const { from, to } of reading.replacements) {
     const start = spanAt(reading.raw, from, spans);
     if (start === undefined) {
       // Not among its words: the replacements cannot be told apart from the text.
       return reading.raw;
     }
-    spans.push({ end: start + from.length, start, to: putsNameRight(from, to) ? to : undefined });
+    spans.push({ end: start + from.length, start, text: replaced(from, to) });
   }
   let text = '';
   let at = 0;
   for (const span of [...spans].sort((a, b) => a.start - b.start)) {
-    const from = reading.raw.slice(span.start, span.end);
-    const spanWords = from.split(' ');
-    const replaced =
-      span.to === undefined
-        ? from
-        : `${OPENING.exec(spanWords[0] ?? '')?.[0] ?? ''}${span.to}${CLOSING.exec(spanWords.at(-1) ?? '')?.[0] ?? ''}`;
-    text += reading.raw.slice(at, span.start) + replaced;
+    text += reading.raw.slice(at, span.start) + span.text;
     at = span.end;
   }
   return text + reading.raw.slice(at);

@@ -29,9 +29,14 @@ describe('putsNameRight', () => {
     expect(putsNameRight('Sara morgen', 'Sarah Novak')).toBe(false);
   });
 
-  it('keeps a short surname heard with the same consonants', () => {
+  it('takes a word that begins with a name word for that word', () => {
+    expect(putsNameRight('at Kleinod', 'David Klein')).toBe(false);
+  });
+
+  it('keeps a short surname heard with the same consonants, and not a word that only shares them', () => {
     expect(putsNameRight('Anna Li', 'Anna Lee')).toBe(true);
     expect(putsNameRight('Tom Woo', 'Tom Wu')).toBe(true);
+    expect(putsNameRight('Anna all', 'Anna Lee')).toBe(false);
   });
 
   it('drops a name that adds a word to one said in full', () => {
@@ -96,6 +101,23 @@ describe('parakeetText', () => {
         text: 'Dinner at the Thomas Kapfmederhof with Thomas Karpfeneder and Anna Lee Grinzing.',
       }),
     ).toBe('Dinner at the Thomas Kapfmederhof with Thomas Karpfeneder and Anna in Grinzing.');
+  });
+
+  it('puts back a word a kept name took beside it', () => {
+    expect(
+      parakeetText({
+        raw: 'Mittagessen mit Thomas Kapfmeder um eins.',
+        replacements: [{ from: 'Thomas Kapfmeder um', to: 'Thomas Karpfeneder' }],
+        text: 'Mittagessen mit Thomas Karpfeneder eins.',
+      }),
+    ).toBe('Mittagessen mit Thomas Karpfeneder um eins.');
+    expect(
+      parakeetText({
+        raw: 'Dinner at Emily Carters, Werner Straße.',
+        replacements: [{ from: 'Emily Carters, Werner', to: 'Emily Carter' }],
+        text: 'Dinner at Emily Carter Straße.',
+      }),
+    ).toBe('Dinner at Emily Carter, Werner Straße.');
   });
 
   it('is the words before the names when a span is not among them', () => {
