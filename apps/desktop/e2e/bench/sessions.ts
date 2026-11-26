@@ -161,8 +161,14 @@ export const draftCase = (
   return {
     lang,
     tags: ['phone', ...[...input].toSorted(), ...(turns.length > 1 ? ['flow'] : [])],
-    turns: turns.map((turn) => ({
-      expect: turn === last && saved !== undefined ? expectationOf(saved, turn.day) : {},
+    turns: turns.map((turn, at) => ({
+      expect:
+        turn === last && saved !== undefined
+          ? expectationOf(saved, turn.day)
+          : // A to-do is one from its first turn: the bench makes an event of a first turn that says no kind.
+            at === 0 && saved?.kind === 'task'
+            ? { kind: 'task' }
+            : {},
       input: { text: turn.text },
     })),
   };

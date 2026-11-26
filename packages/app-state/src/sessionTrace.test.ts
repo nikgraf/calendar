@@ -179,6 +179,38 @@ describe('finishedSession', () => {
     expect(ended.turns[0]?.turn.outcome).toEqual({ kind: 'failed' });
   });
 
+  it('fails a turn whose model threw mid-answer, though the reader refused it', () => {
+    const begun = beginTurn(EMPTY_TRACE, {
+      at: AT,
+      day: '2026-08-27',
+      heard: undefined,
+      text: 'x',
+    });
+    const notes = turnNotes();
+    const read = openRead(notes);
+    read.onExchange?.({ failed: true, prompt: 'Phrase: x' });
+    read.done({ kind: 'rejected', reason: "That couldn't be read — try rephrasing." });
+    const ended = endTurn(begun.trace, begun.index, notes, { message: 'x' });
+    expect(ended.turns[0]?.turn).toMatchObject({
+      outcome: { kind: 'failed' },
+      reads: [{ prompt: 'Phrase: x' }],
+    });
+  });
+
+  it('keeps a turn let go of with a message as dropped', () => {
+    const begun = beginTurn(EMPTY_TRACE, {
+      at: AT,
+      day: '2026-08-27',
+      heard: undefined,
+      text: 'x',
+    });
+    const notes = turnNotes();
+    notes.dropped = true;
+    expect(
+      endTurn(begun.trace, begun.index, notes, { message: 'send it again' }).turns[0]?.turn.outcome,
+    ).toEqual({ kind: 'dropped' });
+  });
+
   it('marks a turn Undo took back, and one answered with a message', () => {
     const id = ids();
     const started = startThread([dinner], 'dinner friday', { id });

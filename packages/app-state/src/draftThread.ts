@@ -2030,6 +2030,9 @@ export const useDraftThread = ({
         // Let go of because what it applies to changed: said, and the
         // words stay in the field to send again. Anything else that
         // overtook it (a step shown, an Undo) was the user's next move.
+        if (kept && unscoped.current === mine) {
+          kept.dropped = true;
+        }
         return unscoped.current === mine ? SCOPE_MOVED : undefined;
       }
       if (result.kind === 'rejected') {

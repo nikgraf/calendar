@@ -75,8 +75,8 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   and short notes included) and what it answered, the places and
   contacts it found, and what you saved, changed by hand or left, with
   the app's and the model's version. No audio. The file goes nowhere
-  unless you export it, and it holds the names, addresses and places in
-  it; Delete All removes it.
+  but the device's own backups unless you export it, and it holds the
+  names, addresses and places in it; Delete All removes it.
 - **The Assistant's model is downloaded once.** The app asks before it
   downloads it (about 800 MB; on the iPhone over Wi-Fi unless you allow
   mobile data) from GitHub, which sees the request for the file, not your

@@ -57,6 +57,8 @@ export const EMPTY_TRACE: SessionTrace = { origin: 'new', picks: [], saved: [], 
  * and after it landed), read once the turn is over (`endTurn`).
  */
 export interface TurnNotes {
+  /** Let go of with a message (the scope moved under a search): no refusal of the model's. */
+  dropped?: boolean | undefined;
   /** The model could not answer: the turn's message says so, and it is no refusal. */
   failed?: boolean | undefined;
   freeSlots?: number | undefined;
@@ -93,8 +95,12 @@ export const openRead = (
       notes.reads[at] = { ...notes.reads[at], result };
       return result;
     },
-    onExchange: (exchange) => {
-      notes.reads[at] = { ...notes.reads[at], ...exchange };
+    onExchange: ({ answer, failed, prompt }) => {
+      // A model that threw gave no answer: the turn failed, whatever it says.
+      if (failed === true) {
+        notes.failed = true;
+      }
+      notes.reads[at] = { ...notes.reads[at], ...(failed === true ? {} : { answer }), prompt };
     },
   };
 };
@@ -232,9 +238,11 @@ export const endTurn = (
   const outcome: SessionOutcome =
     failed || notes.failed === true
       ? { kind: 'failed' }
-      : message === undefined
-        ? (landed?.outcome ?? { kind: 'dropped' })
-        : { kind: 'refused', message };
+      : notes.dropped === true
+        ? { kind: 'dropped' }
+        : message === undefined
+          ? (landed?.outcome ?? { kind: 'dropped' })
+          : { kind: 'refused', message };
   const taken = !failed && notes.failed !== true && message === undefined;
   const turn: SessionTurn = {
     ...begun.turn,

@@ -73,12 +73,12 @@ export function DiagnosticsPage() {
   const exporting = useAction();
   const exportSessions = () =>
     void exporting.run(async () => {
-      const file = assistantSessions.file();
+      // Shared under the day's name: Save to Files keeps the file's own.
+      const file = assistantSessions.exportFile(
+        sessionExportName(Temporal.Now.plainDateISO().toString()),
+      );
       if (file) {
-        await Share.share({
-          title: sessionExportName(Temporal.Now.plainDateISO().toString()),
-          url: file.uri,
-        });
+        await Share.share({ url: file.uri });
       }
     });
 

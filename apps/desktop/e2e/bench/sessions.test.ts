@@ -127,6 +127,29 @@ describe('draftCase', () => {
     }
   });
 
+  it('makes a to-do thread a to-do from its first turn, so the bench can pass it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'session-case-'));
+    try {
+      const todo = session('t', {
+        saved: [
+          {
+            date: '2026-11-27',
+            edited: [],
+            guests: 0,
+            kind: 'task',
+            startTime: '15:00',
+            title: 'Call mom',
+          },
+        ],
+        turns: [turn('call mom tomorrow'), turn('at 3pm', { route: 'change' })],
+      });
+      writeFileSync(join(dir, 'phone-t.json'), JSON.stringify(draftCase(todo)));
+      expect(loadCases(dir)[0]?.turns.map((each) => each.expect.kind)).toEqual(['task', 'task']);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
   it('is nothing for a thread with no turn taken', () => {
     expect(
       draftCase(session('e', { turns: [turn('x', { outcome: { kind: 'failed' } })] })),

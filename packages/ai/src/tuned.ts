@@ -161,6 +161,8 @@ const REFUSED = "That couldn't be read — try rephrasing.";
  */
 export interface TunedExchange {
   readonly answer?: unknown;
+  /** The model threw instead of answering (it stopped, or wrote no JSON). */
+  readonly failed?: true | undefined;
   readonly prompt: string;
 }
 
@@ -187,7 +189,7 @@ export const tunedTurn = async (
     // No schema: one held over the answer would have every field written, and the model learnt the short form.
     answer = await model.generateJson({ jsonSchema: undefined, prompt });
   } catch {
-    onExchange?.({ prompt });
+    onExchange?.({ failed: true, prompt });
     return { kind: 'rejected', reason: REFUSED };
   }
   onExchange?.({ answer, prompt });

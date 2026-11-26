@@ -263,4 +263,4 @@ export const sessionCountLabel = (count: number): string =>
  * the same.
  */
 export const sessionLogCopy = (device: 'iPhone' | 'Mac'): string =>
-  `Keeps your last ${String(SESSION_LOG_CAP)} conversations with the Assistant on this ${device}, to find where it goes wrong: what you typed or dictated as the recognisers read it, what the model was shown (with an item's guests and short notes) and answered, the places and contacts it found, and what you saved, changed by hand or left. No audio. The log stays on this ${device} until you export it, and it holds the names, addresses and places in them.`;
+  `Keeps your last ${String(SESSION_LOG_CAP)} conversations with the Assistant on this ${device}, to find where it goes wrong: what you typed or dictated as the recognisers read it, what the model was shown (with an item’s guests and short notes) and answered, the places and contacts it found, and what you saved, changed by hand or left. No audio. The log stays on this ${device} and in its backups until you export it, and it holds the names, addresses and places in them.`;

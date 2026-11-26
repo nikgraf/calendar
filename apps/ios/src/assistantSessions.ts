@@ -74,10 +74,15 @@ export const assistantSessions = {
     }
     changed({ count: sessionCount(readLog()), on: assistantSessions.get().on });
   },
-  /** The log's file, for the share sheet; none when nothing is kept. */
-  file: (): File | undefined => {
-    const target = logFile();
-    return target.exists ? target : undefined;
+  /** A copy of the log named `name` in the cache, for the share sheet; none when nothing is kept. */
+  exportFile: (name: string): File | undefined => {
+    const text = readLog();
+    if (text === '') {
+      return undefined;
+    }
+    const target = new File(Paths.cache, name);
+    write(target, text);
+    return target;
   },
   get: (): SessionsState => {
     cached ??= { count: sessionCount(readLog()), on: readOn() };
