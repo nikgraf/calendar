@@ -178,7 +178,7 @@ was written; re-verify before starting one.
       become another with the same first name, "Tom Baker" → "Tom
       Bauer", and a span with no word of the name is FluidAudio's alone:
       its `minSimilarity` 0.65 made none of either on the voice cases
-      and moves the native fingerprint, #<n>).
+      and moves the native fingerprint, #385).
       MapKit's structured city/region/country fields in a native build.
       The voice cases say what a change does to the whole way
       (`apps/desktop/e2e/bench/README.md` → Recordings): on an English

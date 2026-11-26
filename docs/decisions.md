@@ -1581,6 +1581,16 @@ was cut (pruned 2026-11-17).
   may hold 3.5 GB, so Gemma 4 E2B (4 GB) does not load. Rejected: the
   package's prebuilt binary, a memory entitlement, scoring on the phone.
   Open: Apple's six hung calls, the prompt read again on every call.
+- **Parakeet's names are kept only where they put a name right**
+  (2026-11-26, #385) — its list turned a first name said alone and the
+  next word into a full name ("Sarah morgen" → Sarah Novak), six of the
+  104 recordings lost. A replacement whose span already says a word of
+  the name must sound like the rest of it (`parakeetNames.ts`, both apps):
+  the six dropped, the eleven right names kept, 50 → 54 of 104. Rejected:
+  a different list (first names or surnames as terms: 13–16 new wrong
+  ones), FluidAudio's `minSimilarity` 0.65 (as good on the clips, moves
+  the native fingerprint). Open: a full name heard as another with the
+  same first name, a span sharing no word with the name.
 - **Dictation reads each phrase with Parakeet** (2026-11-24, #378) — once
   downloaded (the Create lesson's Download Models, Settings › Dictation) and
   on (from the start), moondream's Parakeet Ultra reads the finished phrase
