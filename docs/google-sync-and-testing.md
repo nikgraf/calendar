@@ -1070,7 +1070,9 @@ sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
 `CALENDAR_ONBOARDING=off`, `CALENDAR_ASSISTANT_MODEL=off` and `CALENDAR_PARAKEET=off`
 (a spec's `parakeet: 'fixture'` keeps it in memory, its download done at once
 and nothing loaded), points `CALENDAR_SETTINGS_FILE` and
-`CALENDAR_AGENT_SOCKET` under the temp profile, sets
+`CALENDAR_AGENT_SOCKET` under the temp profile (a spec that exports
+Assistant sessions names its file in `CALENDAR_SESSIONS_EXPORT`: no save
+dialog under CDP), sets
 `CALENDAR_E2E_INPUT=cdp`, and passes Chromium's `--use-mock-keychain`, so
 `safeStorage` (tokens, a served model's key) never touches the login
 keychain: a new Electron binary used to stop the run on macOS's keychain

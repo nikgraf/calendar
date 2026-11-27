@@ -33,6 +33,8 @@ export default {
         'electron/preload.ts',
         // Under E2E=1 only, which knip does not set.
         'e2e/**/*.e2e.ts',
+        // Run by hand with node: an export of Assistant sessions read on the Mac.
+        'e2e/bench/sessionsReport.ts',
         // Loaded by the Bombadil binary rather than an application import.
         'e2e/bombadil/editor.ts',
         'e2e/bombadil/recurringEditor.ts',

@@ -3,6 +3,7 @@ import {
   type Heard,
   ModelUnavailableError,
   type PhraseReader,
+  type SessionSink,
 } from '@calendar/ai';
 import {
   type BackendClient,
@@ -325,6 +326,7 @@ export const useThreadEditor = ({
   onSaved,
   reader,
   seed,
+  sessions,
   sourceKind,
   task,
   taskLists,
@@ -345,6 +347,8 @@ export const useThreadEditor = ({
   /** How the Assistant reads a phrase: its own model, through `tunedReader`. */
   readonly reader: PhraseReader;
   readonly seed: EditorSeed;
+  /** Where the thread's record goes while Keep Assistant Sessions is on; none: nothing is kept. */
+  readonly sessions?: SessionSink | undefined;
   readonly sourceKind: EditorSourceKind;
   /** Present when the editor was opened from a task (task edit mode). */
   readonly task?: TaskRecord | undefined;
@@ -362,6 +366,7 @@ export const useThreadEditor = ({
       defaultMinutesOf(calendars, draftCalendarKey(draft, calendars, formCalendar.current)),
     finder,
     reader,
+    sessions,
     timeZone,
   });
   const { drafts, focused, version } = thread.state;
@@ -387,6 +392,8 @@ export const useThreadEditor = ({
       revealCreated(created);
     }
     onSaved?.();
+    // The session log's: the item as the form wrote it, before its draft leaves.
+    thread.wrote(readForm());
     const current = threadRef.current;
     if (current.drafts.length > 1 && !closingAll.current) {
       keepOpen.current = true;
@@ -1119,6 +1126,11 @@ export const useThreadEditor = ({
           await (planned.kind === 'event'
             ? mutations.createEvent(planned.event)
             : mutations.createTask(planned.task));
+          // The session log's: the draft as it stood, before it leaves.
+          const written = current.drafts.find((draft) => draft.id === planned.id);
+          if (written) {
+            thread.wrote({ extras: written.extras, item: written.item, shown: written.id });
+          }
           // Written: out of the thread, so a failing form save cannot add it twice.
           thread.removeMany([planned.id]);
         }

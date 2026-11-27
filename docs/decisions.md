@@ -1376,6 +1376,15 @@ was cut (pruned 2026-11-17).
   written), 13 with Apple alone. Rejected: a bench of its own, MapKit
   in every run, each clip heard in its own language. Open: real rooms,
   unscripted speech, where a phrase ends; todo.md has what the runs found.
+- **Keep Assistant Sessions: real threads, kept on the device** (2026-11-26,
+  #386) — off unless switched on (iOS Settings › Advanced › Diagnostics, Mac
+  › AI Model): one record per thread, made by the shared thread hook as its
+  editor closes, the last 200 as JSON lines; Export, Delete All. Real phrases
+  can only come from use (Nik records no unscripted ones); an export becomes
+  a `phone` case through `sessionsReport.ts`, names replaced by hand.
+  Rejected: audio (a `SpeechBridge.swift` change, an EAS build, far more
+  storage), records per turn, one logger per app. Open: threads begun from a
+  saved item or a capture cannot become cases yet.
 - **Words that change nothing are answered, not a version** (2026-11-16,
   #336) — a phrase that leaves every draft as it was (no field shown, no
   question, no day for an undated to-do, no slots of its own, an assumed

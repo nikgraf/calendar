@@ -77,6 +77,28 @@ form marks the rows the step changed. A to-do's notifications are its Reminders 
 negative offsets): a turn is shown the to-do's own, never a calendar's
 default, and the alert picker names one the presets lack.
 
+Keep Assistant Sessions (off unless switched on; iOS Settings › Advanced ›
+Diagnostics, Mac Settings › AI Model) keeps each thread for measuring
+the Assistant on real use (`@calendar/ai` `sessionLog.ts`). The thread
+hook (`useDraftThread`) is handed a `SessionSink` and, while it is on,
+keeps a trace beside its state (`sessionTrace.ts`): each turn from the
+moment it is sent (its words, a dictated turn's whole `Heard`, the
+prompt and raw answer of every model read through the reader's
+`onExchange`, the result or refusal, the place candidates and the one
+taken, the names and whom they found), the picks made by hand, and each
+item written (`wrote`, called before its draft leaves the thread, with
+the fields that read otherwise than the last phrase left them). The
+editor's unmount turns the trace into one record (`finishedSession`:
+turns taken back marked `undone`, drafts left counted) and hands it to
+the sink. iOS appends it to `Documents/assistant-sessions.jsonl`
+(`apps/ios/src/assistantSessions.ts`); the Mac's renderer sends it over
+`sessions:*` IPC and main appends it to the profile's file
+(`electron/assistantSessions.ts`), stamping the app's version. At most
+200 lines, the oldest dropped. Export is the share sheet or a save
+dialog; `apps/desktop/e2e/bench/sessionsReport.ts` reads the file.
+No audio is kept: that would take `SpeechBridge.swift` writing the
+recording out (a native change) and far more storage.
+
 Find a time runs on the same model once it is on the device
 (`tunedFinder.ts`, picked by each app's `useFinder`): told the job by
 the prompt's first line ("Free time as JSON."), asked without a schema,

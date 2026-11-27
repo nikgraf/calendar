@@ -1,3 +1,4 @@
+import { sessionSink } from '../assistantSessions.ts';
 import {
   type EditorConfirmRequest,
   type EditorSeed,
@@ -834,6 +835,8 @@ export function EventEditSheet({
     },
     reader: demo ? demoReader : assistantReader(),
     seed,
+    // The lesson's demo answers from a script: nothing of it is the user's.
+    sessions: demo ? undefined : sessionSink,
     sourceKind,
     task,
     taskLists,
