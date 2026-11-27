@@ -1366,7 +1366,7 @@ was cut (pruned 2026-11-17).
 
 ## AI
 
-- **The way from a recording to a draft is measured** (2026-11-26, #384) —
+- **The way from a recording to a draft is measured** (2026-11-26, #385) —
   nothing said which step loses a dictated phrase: the model bench read
   written phrases, the place bench stored readings. Nik's 104 recordings
   are model-bench cases (`voice`), heard through the helper's listening
@@ -1581,16 +1581,15 @@ was cut (pruned 2026-11-17).
   may hold 3.5 GB, so Gemma 4 E2B (4 GB) does not load. Rejected: the
   package's prebuilt binary, a memory entitlement, scoring on the phone.
   Open: Apple's six hung calls, the prompt read again on every call.
-- **Parakeet's names are kept only where they put a name right**
-  (2026-11-26, #385) — its list turned a first name said alone and the
-  next word into a full name ("Sarah morgen" → Sarah Novak), six of the
-  104 recordings lost. FluidAudio now asks 0.65 alike (`ParakeetBridge`),
-  and a JS check behind it (`parakeetNames.ts`, both apps) drops a span
-  that says a word of the name and not the rest: either alone dropped
-  the six and kept the eleven right names, 50 → 54 of 104. Rejected: a
-  different list (first names or surnames as terms: 13–16 new wrong
-  ones). Open: a full name heard as another with the same first name,
-  FluidAudio's spotter pass for lists of ten or fewer (floors of its own).
+- **A name replaces what Parakeet heard only when spelt 0.65 alike**
+  (2026-11-27, #385) — its list turned a first name said alone and the
+  next word into a full name ("Sarah morgen" → Sarah Novak): six of the
+  104 recordings lost. With FluidAudio's `minSimilarity` at 0.65 only the
+  eleven right replacements are left. Rejected: another list (first names
+  or surnames as terms: 13–16 new wrong ones); a JS check of the
+  replacements (as good on the bench, rules grown on made-up cases; an
+  older iOS build keeps the bug until its next build). Open: a full name
+  heard as another with the same first name; the spotter pass's floors.
 - **Dictation reads each phrase with Parakeet** (2026-11-24, #378) — once
   downloaded (the Create lesson's Download Models, Settings › Dictation) and
   on (from the start), moondream's Parakeet Ultra reads the finished phrase

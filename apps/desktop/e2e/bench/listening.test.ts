@@ -155,19 +155,6 @@ describe('helperSpeech', () => {
     expect(methods().filter((method) => method === 'parakeet.prepare')).toHaveLength(3);
   });
 
-  it('sends Parakeet’s reading without a first name that took the next word, and keeps what it replaced', async () => {
-    const reading = {
-      raw: 'Mittagessen mit Sarah morgen um eins.',
-      replacements: [{ from: 'Sarah morgen', to: 'Sarah Novak' }],
-      text: 'Mittagessen mit Sarah Novak um eins.',
-    };
-    const { helper } = helperWith([{ ...APPLE, parakeet: reading }]);
-    const speech = helperSpeech(helper, deviceOf({ MODEL_BENCH_PARAKEET: '/models' }), quick);
-    const hearing = await speech.hear('clip.m4a', LANGUAGES, ['Sarah Novak']);
-    expect(hearing.heard?.text).toBe('Mittagessen mit Sarah morgen um eins.');
-    expect(hearing.parakeet).toEqual(reading);
-  });
-
   it('says a phrase again to a Parakeet still loading, and never passes Apple’s words off as its reading', async () => {
     const loading = helperWith([APPLE, APPLE, BOTH]);
     const device = deviceOf({ MODEL_BENCH_PARAKEET: '/models' });

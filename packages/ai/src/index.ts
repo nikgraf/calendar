@@ -24,7 +24,6 @@ export * from './phraseReader.ts';
 export * from './assistantModel.ts';
 export * from './assistantFlow.ts';
 export * from './parakeetModel.ts';
-export * from './parakeetNames.ts';
 export * from './parakeetStore.ts';
 export * from './lessonDemo.ts';
 export * from './readings.ts';

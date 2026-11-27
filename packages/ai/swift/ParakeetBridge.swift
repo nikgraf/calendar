@@ -106,7 +106,6 @@ actor ParakeetEngine {
   /// recordings kept every right name and had none of those (#385). A list
   /// of ten or fewer also gets FluidAudio's pass from what its spotter
   /// heard, which keeps floors of its own (0.30, 0.50 for several words).
-  /// The JS check (`parakeetNames.ts`) stands behind both.
   private static let thresholds = VocabularyBoostingSession.Thresholds(minSimilarity: 0.65)
 
   /// How long a phrase's answer waits for Parakeet before it goes without it.

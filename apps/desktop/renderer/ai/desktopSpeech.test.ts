@@ -91,9 +91,6 @@ const bridge = () => {
   let segments: ReadonlyArray<{ text: string }> = [{ text: 'Lunch with Anna' }];
   /** The phrase as the helper's other-language recogniser wrote it, when it has one. */
   let other: string | undefined;
-  let parakeet:
-    | { raw: string; replacements: Array<{ from: string; to: string }>; text: string }
-    | undefined;
   /** Set: the next prepares wait until the test lets them answer (a download). */
   let preparing: Promise<void> | undefined;
   /** What prepare and start were asked to listen in: "<locale> <second language>". */
@@ -119,22 +116,11 @@ const bridge = () => {
       },
       modelSpeechFinish: async (session: number) => {
         finished.push(session);
-        return {
-          ...(other === undefined ? {} : { other }),
-          ...(parakeet === undefined ? {} : { parakeet }),
-          segments,
-        };
+        return other === undefined ? { segments } : { other, segments };
       },
       modelSpeechRead: async (session: number) => {
         read.push(session);
-        if (!readAnswersMark) {
-          return { segments: [] };
-        }
-        return {
-          mark: 16_000 * read.length,
-          ...(parakeet === undefined ? {} : { parakeet }),
-          segments,
-        };
+        return readAnswersMark ? { mark: 16_000 * read.length, segments } : { segments: [] };
       },
       modelSpeechStart: async (locale: string, second: string) => {
         startedWith.push(`${locale} ${second}`);
@@ -169,9 +155,6 @@ const bridge = () => {
     },
     hearOther: (text: string) => {
       other = text;
-    },
-    hearParakeet: (reading: NonNullable<typeof parakeet>) => {
-      parakeet = reading;
     },
     holdPrepare: (until: Promise<void>) => {
       preparing = until;
@@ -436,23 +419,6 @@ describe('desktopSpeech streaming', () => {
     });
   });
 
-  it('sends Parakeet’s reading without a first name that took the next word', async () => {
-    const main = bridge();
-    main.hearParakeet({
-      raw: 'Walk with Anna in Schönbrunn.',
-      replacements: [{ from: 'Anna in', to: 'Anna Lee' }],
-      text: 'Walk with Anna Lee Schönbrunn.',
-    });
-    const speech = await loadSpeech();
-    const start = speech.start({ onWords: noWords });
-    grants[0]?.(fakeStream());
-    await start;
-    expect(await speech.finish()).toMatchObject({
-      apple: 'Lunch with Anna',
-      text: 'Walk with Anna in Schönbrunn.',
-    });
-  });
-
   it('passes on its own phrase’s words only', async () => {
     const main = bridge();
     const speech = await loadSpeech();
@@ -531,20 +497,6 @@ describe('desktopSpeech availability', () => {
 });
 
 describe('desktopSpeech reading while listening', () => {
-  it('reads the phrase with Parakeet’s reading less a first name that took the next word', async () => {
-    const main = bridge();
-    main.hearParakeet({
-      raw: 'Picnic with Anna in the park.',
-      replacements: [{ from: 'Anna in', to: 'Anna Lee' }],
-      text: 'Picnic with Anna Lee the park.',
-    });
-    const speech = await loadSpeech();
-    const start = speech.start({ onWords: noWords });
-    grants[0]?.(fakeStream());
-    await start;
-    expect((await speech.read())?.heard?.text).toBe('Picnic with Anna in the park.');
-  });
-
   it('reads the phrase with every block recorded so far, the microphone left open', async () => {
     const main = bridge();
     const speech = await loadSpeech();

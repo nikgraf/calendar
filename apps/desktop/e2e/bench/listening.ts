@@ -2,13 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  type Heard,
-  heardFromSegments,
-  type ParakeetReading,
-  parakeetText,
-  type TranscriptSegment,
-} from '@calendar/ai';
+import { type Heard, heardFromSegments, type TranscriptSegment } from '@calendar/ai';
 import type { HelperClient } from './providers.ts';
 
 /**
@@ -113,7 +107,12 @@ const pcmOf = (path: string): Buffer => {
   }
 };
 
-export type { ParakeetReading } from '@calendar/ai';
+/** What Parakeet made of a phrase: before the names, the words they replaced, and after. */
+export interface ParakeetReading {
+  readonly raw: string;
+  readonly replacements: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+  readonly text: string;
+}
 
 /** A recording as it was heard: what the app would send, and Parakeet's own account of its reading. */
 export interface Hearing {
@@ -239,11 +238,7 @@ export const helperSpeech = (
         result = await listen(samples, languages);
       }
       return {
-        heard: heardFromSegments(
-          result.segments,
-          result.other,
-          result.parakeet && parakeetText(result.parakeet),
-        ),
+        heard: heardFromSegments(result.segments, result.other, result.parakeet?.text),
         ...(result.parakeet === undefined ? {} : { parakeet: result.parakeet }),
       };
     },

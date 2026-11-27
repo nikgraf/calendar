@@ -173,17 +173,18 @@ was written; re-verify before starting one.
       addresses; Parakeet's wrong replacements from a real list
       (measured with the clips' places: "nach acht" → "Naschmarkt"; a
       first name said alone no longer takes the next word into a full
-      name since #385, FluidAudio at 0.65 and the check in
-      `parakeetNames.ts`, but with forty made-up address books a listed
-      full name said in full can still become another with the same
-      first name, "Tom Baker" → "Tom Bauer"; and for a list of ten or
-      fewer FluidAudio's pass from what its spotter heard keeps its own
-      floors, 0.30 and 0.50, which no measurement here has looked at).
+      name since FluidAudio asks 0.65 alike, #385, but with forty
+      made-up address books a listed full name said in full can still
+      become another with the same first name, "Tom Baker" → "Tom
+      Bauer"; and for a list of ten or fewer FluidAudio's pass from what
+      its spotter heard keeps its own floors, 0.30 and 0.50, which no
+      measurement here has looked at; recordings of names said alone,
+      short, hyphenated and split ones would test the threshold).
       MapKit's structured city/region/country fields in a native build.
       The voice cases say what a change does to the whole way
       (`apps/desktop/e2e/bench/README.md` → Recordings): on an English
       phone with Parakeet, 26 of the 79 places asked are missed and 18
-      are only offered (2026-11-25, #384).
+      are only offered (2026-11-25, #385).
 - [ ] Dictation follow-ups (`docs/decisions.md` → AI, "Dictation ends
       on its words, and shows them"; measured on synthetic phrases
       only) — the pauses (900 / 1,200 ms), Reduce Background Noise and
@@ -193,7 +194,7 @@ was written; re-verify before starting one.
       (`AVCaptureDevice.showSystemUserInterface`; Settings only shows the
       mode, since iOS offers the modes while recording, #325);
       real-room recordings in the bench (it hears a recording through
-      the session since #384; what ends a phrase is not replayed, and
+      the session since #385; what ends a phrase is not replayed, and
       the recordings so far are read aloud in a quiet room), replayed
       through the rule too (and whether a quick recogniser that goes
       deaf one word behind the accurate one ever cuts a phrase short:
@@ -254,7 +255,7 @@ was written; re-verify before starting one.
       file at launch, so someone who had it has no Assistant until they
       tap Update (keeping it until the new one is checked costs a second
       834 MB). Not checked on a device: the iPhone's transfer across a
-      quit and a network change. On the voice cases (#384) the model
+      quit and a network change. On the voice cases (#385) the model
       reads a recogniser's writing other than the same words typed: a
       comma and a period turn a concert's "um acht" from 20:00 into
       08:00, and "Zurich" for "Zürich" keeps a flight's destination in

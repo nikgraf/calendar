@@ -34,11 +34,7 @@ const native = vi.hoisted(() => {
     /** The phrases `finish` answers in turn; `finishes` once they ran out. */
     finishQueue: [] as Array<{
       other?: string;
-      parakeet?: {
-        raw: string;
-        replacements: ReadonlyArray<{ from: string; to: string }>;
-        text: string;
-      };
+      parakeet?: { raw: string; replacements: ReadonlyArray<never>; text: string };
       segments: ReadonlyArray<{ alternatives: ReadonlyArray<string>; text: string }>;
     }>,
     /** Sessions finished or cancelled: the module answers nothing for them again. */
@@ -561,31 +557,6 @@ describe('appleSpeech', () => {
       await expect(speech.finish()).resolves.toMatchObject({
         apple: 'Lunch with Sara',
         text: 'Lunch with Sarah',
-      });
-    });
-
-    it('joins two readings and sends them without a first name that took the next word', async () => {
-      const speech = await loadSpeech();
-      await speech.start({ onWords: noWords });
-      native.finishQueue.push({
-        ...phrase('Walk with Thomas'),
-        parakeet: {
-          raw: 'Walk with Thomas Kapfmeder',
-          replacements: [{ from: 'Thomas Kapfmeder', to: 'Thomas Karpfeneder' }],
-          text: 'Walk with Thomas Karpfeneder',
-        },
-      });
-      await speech.read();
-      native.finishQueue.push({
-        ...phrase('and Anna in Schönbrunn'),
-        parakeet: {
-          raw: 'and Anna in Schönbrunn',
-          replacements: [{ from: 'Anna in', to: 'Anna Lee' }],
-          text: 'and Anna Lee Schönbrunn',
-        },
-      });
-      await expect(speech.finish()).resolves.toMatchObject({
-        text: 'Walk with Thomas Karpfeneder and Anna in Schönbrunn',
       });
     });
 

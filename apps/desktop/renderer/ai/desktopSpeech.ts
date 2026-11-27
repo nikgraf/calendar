@@ -1,6 +1,5 @@
 import {
   heardFromSegments,
-  parakeetText,
   MicrophoneDeniedError,
   type SpeechStart,
   SpeechUnsupportedError,
@@ -108,11 +107,7 @@ export const desktopSpeech: SpeechToText = {
     active.flush();
     close(active);
     const result = await window.calendarBridge.modelSpeechFinish(active.session);
-    return heardFromSegments(
-      result.segments,
-      result.other,
-      result.parakeet && parakeetText(result.parakeet),
-    );
+    return heardFromSegments(result.segments, result.other, result.parakeet?.text);
   },
 
   isPrepared: () => preparedFor === `${dictationLocale()} ${secondLanguage.get()}`,
@@ -147,11 +142,7 @@ export const desktopSpeech: SpeechToText = {
     return result.mark === undefined
       ? undefined
       : {
-          heard: heardFromSegments(
-            result.segments,
-            result.other,
-            result.parakeet && parakeetText(result.parakeet),
-          ),
+          heard: heardFromSegments(result.segments, result.other, result.parakeet?.text),
           mark: result.mark,
         };
   },
