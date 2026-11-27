@@ -57,6 +57,11 @@ export interface SolunivoParakeetNative {
    */
   readonly parakeetDownload: (wifiOnly: boolean) => Promise<void>;
   /** As a phrase starts: the models load in the background when dictation reads with Parakeet. */
+  /**
+   * Which of the names `parakeetUse` and `parakeetSpikeLoad` get are
+   * people's (a closer match). Missing in a build from before #385.
+   */
+  readonly parakeetPeople?: (names: ReadonlyArray<string>) => Promise<void>;
   readonly parakeetPrepare: () => Promise<void>;
   /** The app left the screen: the models go, the switch stays. */
   readonly parakeetRelieve: () => Promise<void>;

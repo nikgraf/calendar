@@ -122,11 +122,15 @@ export interface Hearing {
 }
 
 export interface Speech {
-  /** Hears a recording in `locale`, `other` beside it, listening for `names` when Parakeet reads. */
+  /**
+   * Hears a recording in `locale`, `other` beside it, listening for `names`
+   * when Parakeet reads, of which `people` are people's (a closer match).
+   */
   readonly hear: (
     path: string,
     languages: { readonly locale: string; readonly other: string },
     names: ReadonlyArray<string>,
+    people?: ReadonlyArray<string>,
   ) => Promise<Hearing>;
   /** Before the first recording: a run that names Parakeet's folder has its files there, or stops. */
   readonly ready: () => Promise<void>;
@@ -204,14 +208,15 @@ export const helperSpeech = (
     return (await helper.request('speech.finish', { session })) as Finished;
   };
   return {
-    hear: async (path, languages, names) => {
+    hear: async (path, languages, names, people = []) => {
       await prepare(languages.locale, languages.other);
       if (device.parakeet !== undefined) {
-        const key = JSON.stringify(names);
+        const key = JSON.stringify([names, people]);
         if (key !== listeningFor) {
           await helper.request('parakeet.use', {
             folder: device.parakeet,
             on: true,
+            people,
             vocabulary: names,
           });
           listeningFor = key;

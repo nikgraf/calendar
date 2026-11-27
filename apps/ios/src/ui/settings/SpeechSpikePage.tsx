@@ -91,6 +91,9 @@ const deviceFiles = (): ClipFiles | undefined => {
   };
 };
 
+/** The device's people, as `deviceNames` last read them: they ask for a closer match, as in dictation. */
+let devicePeople: ReadonlyArray<string> = [];
+
 const parakeetPort = (): ParakeetPort | undefined => {
   const native = loadParakeet();
   if (native === undefined) {
@@ -103,6 +106,8 @@ const parakeetPort = (): ParakeetPort | undefined => {
         onProgress(fraction),
       );
       try {
+        const people = new Set([...SPIKE_PEOPLE, ...devicePeople]);
+        await native.parakeetPeople?.(vocabulary.filter((name) => people.has(name)));
         return await native.parakeetSpikeLoad(version, vocabulary);
       } finally {
         listening.remove();
@@ -135,6 +140,7 @@ const makeStore = (): SpeechSpikeStore => {
     clips: SPIKE_CLIPS,
     deviceNames: async () => {
       const names = await Effect.runPromise(backendClient.dictationVocabulary());
+      devicePeople = names.people;
       return [...names.people, ...names.places];
     },
     files: deviceFiles(),

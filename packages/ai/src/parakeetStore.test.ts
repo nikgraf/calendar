@@ -15,6 +15,7 @@ const fakePort = (
   let active = true;
   let choice = start.choice;
   const uses: Array<string> = [];
+  const people: Array<ReadonlyArray<string>> = [];
   const pathListeners = new Set<(path: NetworkReading) => void>();
   let finish: ((ok: boolean) => void) | undefined;
   let progress: ((fraction: number) => void) | undefined;
@@ -53,8 +54,9 @@ const fakePort = (
     remove: async () => {
       here = false;
     },
-    use: async (on, vocabulary) => {
+    use: async (on, vocabulary, names) => {
       uses.push(`${String(on)} [${vocabulary.join(', ')}]`);
+      people.push(names);
     },
     writeChoice: async (next) => {
       choice = next;
@@ -84,6 +86,7 @@ const fakePort = (
         listener(next);
       }
     },
+    people,
     port,
     prepared: () => prepared,
     progress: (fraction: number) => progress?.(fraction),
@@ -167,6 +170,21 @@ describe('createParakeetStore', () => {
     store.resume();
     await tick();
     expect(fake.downloads()).toBe(3);
+  });
+
+  it('tells which names are people’s, and none while it reads without Parakeet', async () => {
+    const fake = fakePort({ here: true });
+    const store = createParakeetStore({ port: fake.port, supported: true });
+    await store.boot();
+    await store.vocabulary(['Anna Lee', 'Kaffemik'], ['Anna Lee']);
+    expect(fake.people.at(-1)).toEqual(['Anna Lee']);
+    await store.setOn(false);
+    expect(fake.people.at(-1)).toEqual([]);
+    await store.setOn(true);
+    expect(fake.people.at(-1)).toEqual(['Anna Lee']);
+    // A phrase that names no people (an older caller) hands none on.
+    await store.vocabulary(['Kaffemik']);
+    expect(fake.people.at(-1)).toEqual([]);
   });
 
   it('switched off, reads without Parakeet and stops a download; deleting keeps the switch', async () => {

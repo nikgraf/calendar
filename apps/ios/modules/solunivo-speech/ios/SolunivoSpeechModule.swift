@@ -195,6 +195,13 @@ public class SolunivoSpeechModule: Module {
       try await Self.engine().remove()
     }
 
+    // Which of the names `parakeetUse` and `parakeetSpikeLoad` get are
+    // people's: those ask for a closer match (ParakeetBridge.swift). JS
+    // calls it only where the build has it.
+    AsyncFunction("parakeetPeople") { (names: [String]) async in
+      await Self.engine().setPeople(names)
+    }
+
     // Dictation reads with Parakeet, with these names as its vocabulary
     // (the models load in the background), or no longer does.
     AsyncFunction("parakeetUse") { (on: Bool, vocabulary: [String]) async in

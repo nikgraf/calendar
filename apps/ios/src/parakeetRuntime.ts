@@ -128,7 +128,11 @@ const devicePort = (): ParakeetPort | undefined => {
         }),
     readChoice: choice.read,
     remove: () => native.parakeetRemove(),
-    use: (on, vocabulary) => native.parakeetUse(on, [...vocabulary]),
+    use: async (on, vocabulary, people) => {
+      // A build from before #385 has no `parakeetPeople`: its names keep FluidAudio's floor.
+      await native.parakeetPeople?.([...people]);
+      await native.parakeetUse(on, [...vocabulary]);
+    },
     writeChoice: choice.write,
   };
 };
@@ -168,7 +172,7 @@ export const beforeListening = async (): Promise<void> => {
   }
   const names = await Effect.runPromise(backendClient.dictationVocabulary()).catch(() => undefined);
   if (names !== undefined) {
-    await store.vocabulary([...names.people, ...names.places]);
+    await store.vocabulary([...names.people, ...names.places], names.people);
   }
 };
 

@@ -41,6 +41,12 @@ enum ParakeetDispatch {
       if case .array(let values)? = params["vocabulary"] {
         vocabulary = values.compactMap(\.stringValue)
       }
+      // Which of them are people's names (a stricter match): none when not sent.
+      var people: [String] = []
+      if case .array(let values)? = params["people"] {
+        people = values.compactMap(\.stringValue)
+      }
+      await ParakeetEngine.shared.setPeople(people)
       await ParakeetEngine.shared.use(on: on, vocabulary: vocabulary)
       return [:]
     default:

@@ -8,7 +8,12 @@ import {
   readingsFor,
   type RefineResult,
 } from '@calendar/ai';
-import { type Contact, dictationVocabulary } from '@calendar/core';
+import {
+  type Contact,
+  type DictationVocabulary,
+  dictationVocabulary,
+  VOCABULARY_LIMIT,
+} from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   type BenchCase,
@@ -95,7 +100,9 @@ import { tunedTurn } from './tuned.ts';
  * (each case's own without it), MODEL_BENCH_SECOND_LANGUAGE the second
  * one (a locale, `auto` or `off`; the bench's other language without
  * it), MODEL_BENCH_PARAKEET the folder of Parakeet's files when it reads
- * the phrase too, with the address book's names to listen for.
+ * the phrase too, with the address book's names to listen for;
+ * MODEL_BENCH_PLACE_NAMES=cases adds the places the cases mean to them,
+ * as the calendar of someone who has been to each would.
  * MODEL_BENCH_PLACES=mapkit asks the app's place lookup for each place a
  * case says is meant (`expect.place`), with the hearing's other readings
  * of it, as a dictated turn does; without it the location's text decides.
@@ -135,12 +142,12 @@ const listen = (
   speech: Speech,
   path: string,
   languages: Languages,
-  names: ReadonlyArray<string>,
+  names: DictationVocabulary,
 ): Promise<Hearing> => {
   const key = JSON.stringify([path, languages.locale, languages.other, names]);
   let waiting = hearings.get(key);
   if (waiting === undefined) {
-    waiting = speech.hear(path, languages, names);
+    waiting = speech.hear(path, languages, [...names.people, ...names.places], names.people);
     waiting.catch(() => hearings.delete(key));
     hearings.set(key, waiting);
   }
@@ -163,7 +170,7 @@ const hear = async (
     speech,
   }: {
     readonly languages: Languages;
-    readonly names: ReadonlyArray<string>;
+    readonly names: DictationVocabulary;
     readonly speech: Speech | undefined;
   },
 ): Promise<Words> => {
@@ -280,6 +287,7 @@ const runCase = async (
     device,
     model,
     pipeline,
+    placeNames,
     places,
     speech,
     today,
@@ -288,15 +296,19 @@ const runCase = async (
     readonly device: Device;
     readonly model: ReturnType<typeof recording>;
     readonly pipeline: Pipeline;
+    readonly placeNames: ReadonlyArray<string>;
     readonly places: PlaceLookup | undefined;
     readonly speech: Speech | undefined;
     readonly today: string;
   },
 ): Promise<CaseReport> => {
   const languages = languagesFor(device, localeOf(benchCase));
-  // The names Parakeet listens for: the address book's, as the app hands them on (no events here).
-  const vocabulary = dictationVocabulary([], book);
-  const names = [...vocabulary.people, ...vocabulary.places];
+  // The names Parakeet listens for: the address book's people, as the app hands them on (no
+  // events here), and the places the run lists (MODEL_BENCH_PLACE_NAMES).
+  const names: DictationVocabulary = {
+    people: dictationVocabulary([], book).people,
+    places: placeNames.slice(0, VOCABULARY_LIMIT),
+  };
   const turns: Array<TurnReport> = [];
   // The thread's words so far, as heard: what a later turn leans on.
   const earlier: Array<string> = [];
@@ -461,8 +473,22 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         (turn) => 'audio' in turn.input && existsSync(join(BENCH_DIR, 'audio', turn.input.audio)),
       ),
     );
+    // The places the cases mean, listed as Parakeet's names: a calendar that has been to each.
+    const placeNames =
+      process.env['MODEL_BENCH_PLACE_NAMES'] === 'cases'
+        ? [
+            ...new Set(
+              cases.flatMap((benchCase) =>
+                benchCase.turns.flatMap((turn) => turn.expect.place?.slice(0, 1) ?? []),
+              ),
+            ),
+          ]
+        : [];
     const around = [
       recorded && speech !== undefined ? `heard with: ${deviceText(device)}` : undefined,
+      recorded && speech !== undefined && placeNames.length > 0
+        ? `${String(Math.min(placeNames.length, VOCABULARY_LIMIT))} places listed`
+        : undefined,
       places === undefined ? undefined : 'places asked of MapKit',
     ].filter((part) => part !== undefined);
     if (around.length > 0) {
@@ -525,6 +551,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
               device,
               model,
               pipeline: provider.pipeline,
+              placeNames,
               places,
               speech,
               today,

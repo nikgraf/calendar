@@ -147,12 +147,30 @@ describe('helperSpeech', () => {
       'parakeet.prepare',
       'speech.start',
     ]);
-    expect(asked[1]?.params).toEqual({ folder: '/models', on: true, vocabulary: ['Tom Baker'] });
+    expect(asked[1]?.params).toEqual({
+      folder: '/models',
+      on: true,
+      people: [],
+      vocabulary: ['Tom Baker'],
+    });
     // The same names are not told again; the load is asked for at every phrase.
     await speech.hear('next.m4a', LANGUAGES, ['Tom Baker']);
     await speech.hear('other.m4a', LANGUAGES, ['Anna Lee']);
     expect(methods().filter((method) => method === 'parakeet.use')).toHaveLength(2);
     expect(methods().filter((method) => method === 'parakeet.prepare')).toHaveLength(3);
+  });
+
+  it('tells Parakeet which names are people’s, and again when only they change', async () => {
+    const { asked, helper } = helperWith([BOTH]);
+    const speech = helperSpeech(helper, deviceOf({ MODEL_BENCH_PARAKEET: '/models' }), quick);
+    await speech.hear('clip.m4a', LANGUAGES, ['Anna Lee', 'Kaffemik'], ['Anna Lee']);
+    await speech.hear('next.m4a', LANGUAGES, ['Anna Lee', 'Kaffemik'], []);
+    expect(
+      asked.filter((each) => each.method === 'parakeet.use').map((each) => each.params),
+    ).toEqual([
+      { folder: '/models', on: true, people: ['Anna Lee'], vocabulary: ['Anna Lee', 'Kaffemik'] },
+      { folder: '/models', on: true, people: [], vocabulary: ['Anna Lee', 'Kaffemik'] },
+    ]);
   });
 
   it('says a phrase again to a Parakeet still loading, and never passes Apple’s words off as its reading', async () => {

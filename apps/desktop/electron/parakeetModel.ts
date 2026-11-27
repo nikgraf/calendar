@@ -8,6 +8,7 @@ import {
   readParakeetChoice,
   readsWithParakeet,
 } from '@calendar/ai';
+import type { DictationVocabulary } from '@calendar/core';
 import { BrowserWindow, ipcMain } from 'electron';
 import { callHelper, helperAvailable, onHelperEvent } from './helperProcess.ts';
 
@@ -91,8 +92,8 @@ const helperPort = (userDataDir: string): ParakeetPort => {
     remove: async () => {
       await call('parakeet.remove');
     },
-    use: async (on, vocabulary) => {
-      await call('parakeet.use', { on, vocabulary });
+    use: async (on, vocabulary, people) => {
+      await call('parakeet.use', { on, people, vocabulary });
     },
     writeChoice: async (choice) => {
       mkdirSync(userDataDir, { recursive: true });
@@ -118,7 +119,7 @@ const isNetwork = (value: unknown): value is 'any' | 'wifi' => value === 'any' |
 export const registerParakeetModel = (
   userDataDir: string,
   /** The names dictation listens for, from the backend (`dictationVocabulary`). */
-  readNames: () => Promise<ReadonlyArray<string>>,
+  readNames: () => Promise<DictationVocabulary>,
 ): void => {
   const store = storeOf(userDataDir);
   store.subscribe(() => {
@@ -152,7 +153,7 @@ export const registerParakeetModel = (
     }
     const names = await readNames().catch(() => undefined);
     if (names !== undefined) {
-      await store.vocabulary(names);
+      await store.vocabulary([...names.people, ...names.places], names.people);
     }
   });
 };
