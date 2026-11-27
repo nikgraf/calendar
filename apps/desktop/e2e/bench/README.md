@@ -24,6 +24,7 @@ and tooling, on zsh).
 | `MODEL_BENCH_LANGUAGE`        | The language the device listens in (`en-US`): every recording is heard in it, a German sentence too, as a phone does. Without it each case is heard in its own language.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `MODEL_BENCH_SECOND_LANGUAGE` | The second language a phrase is read in beside it (Settings › Dictation): a locale, `auto` (what this Mac comes to) or `off`. Without it the bench's other language (German beside English, English beside German).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `MODEL_BENCH_PARAKEET`        | The folder Parakeet's files are in: each recording is then read with Parakeet too, listening for the address book's names, and its reading is the phrase, as in the app once it is downloaded. Without it Apple's recogniser alone writes the phrase.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `MODEL_BENCH_PLACE_NAMES`     | `cases`: the places the run's cases mean (each `expect.place`'s first name) are Parakeet's names beside the address book's people, as the calendar of someone who has been to each hands them on. Without it Parakeet listens for the people alone.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `MODEL_BENCH_PLACES`          | `mapkit`: each place a case says is meant (`expect.place`) is asked of the app's place lookup against MapKit (the helper's), with the hearing's other readings of it, as a dictated turn asks. Without it the location's text decides. MapKit lets through about forty calls a minute, so a run of the recordings takes a quarter of an hour longer; a lookup that the network or the limit let down is asked again, three times in all, and what still failed is counted with the places (its miss may be that).                                                                                                                                                                                                                                                                  |
 | `MODEL_BENCH_COMPARE`         | An earlier report (JSON) to print the difference to: the cases that flipped, the fields that moved, and how often chance alone would flip as many cases one way. A run of several models or arms compares each with its own earlier report; a run of one model on one arm (`MODEL_BENCH_APPLE=0`, one pipeline) compares it with whatever report is named, another model's too (v2 beside v3).                                                                                                                                                                                                                                                                                                                                                                                     |
 | `MODEL_BENCH_BLIND`           | `show`: the blind cases are printed like the open ones. For fixing an expectation, never while briefs or prompts are written (see Blind cases).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -498,12 +499,14 @@ English phone with German as its second language, read by Assistant v2
 (the published file on the bundled `llama-server`) as of Wednesday
 2026-11-25, the places asked of MapKit that day, at `ac5539c8`:
 
-| Heard with            | Pass   | Lost to the hearing | Lost after it | Words wrong | Places taken · offered · text alone · missed |
-| --------------------- | ------ | ------------------- | ------------- | ----------- | -------------------------------------------- |
-| The transcripts       | 97/104 |                     | 7             |             | not asked                                    |
-| Parakeet and Apple    | 50/104 | 48                  | 6             | 22%         | 33 · 18 · 2 · 26 of 79                       |
-| … with the name check | 54/104 | 44                  | 6             | 21%         | 34 · 19 · 3 · 27 of 83                       |
-| Apple alone           | 13/104 | 84                  | 7             | 62%         | 4 · 13 · 0 · 39 of 56                        |
+| Heard with           | Pass   | Lost to the hearing | Lost after it | Words wrong | Places taken · offered · text alone · missed |
+| -------------------- | ------ | ------------------- | ------------- | ----------- | -------------------------------------------- |
+| The transcripts      | 97/104 |                     | 7             |             | not asked                                    |
+| Parakeet and Apple   | 50/104 | 48                  | 6             | 22%         | 33 · 18 · 2 · 26 of 79                       |
+| … people at 0.65     | 55/104 | 43                  | 6             | 21%         | 34 · 20 · 3 · 27 of 83                       |
+| … with places listed | 57/104 | 41                  | 6             | 16%         | 64 · 3 · 2 · 10 of 79                        |
+| … and people at 0.65 | 61/104 | 37                  | 6             | 16%         | 64 · 4 · 3 · 11 of 82                        |
+| Apple alone          | 13/104 | 84                  | 7             | 62%         | 4 · 13 · 0 · 39 of 56                        |
 
 - The hearing loses nearly every phrase that is lost: v2 reads 97 of
   the 104 as they are written.
@@ -517,18 +520,19 @@ English phone with German as its second language, read by Assistant v2
   first name said alone took the next word with it into the contact's
   full name ("Sarah morgen" → "Sarah Novak", "Anna in" → "Anna Lee",
   "at Klein(od)" → "David Klein"), and each of those phrases was lost.
-  The name check (`parakeetNames.ts`, 2026-11-26 at `7e55a00e`, both
-  runs that day) sends those six as Parakeet heard them and keeps the
-  eleven: four of the six pass now; "Anna in the Türkenschanz Park"
-  still misses its place and "from Friday to Sunday" is a weekend.
-  Titles went from 81 to 87 of 108. FluidAudio asked 0.65 alike
-  (`ParakeetBridge.swift`, at `d0cfc724`) made only the eleven right
-  replacements, with the same 54 and every count alike. The check's
-  rules were set on these readings and on forty made-up address
-  books (every first name said alone given each of forty surnames),
-  run through FluidAudio's
-  rescoring directly; a list alone fixes nothing (first names as terms
-  of their own: 16 wrong replacements, surnames alone 13).
+  Since #385 a person's name replaces a span only when spelt 0.65 alike
+  (FluidAudio's per-term `minSimilarity`, 2026-11-27 at `ff4e5abc`,
+  every run that day): only the eleven right ones are left, five of the
+  six pass ("from Friday to Sunday" is a weekend), titles 81 → 87 of 108. A list alone fixes nothing (run through FluidAudio's rescoring
+  directly: first names as terms of their own make 16 wrong
+  replacements, surnames alone 13).
+- With the cases' places listed too (`MODEL_BENCH_PLACE_NAMES=cases`,
+  someone who has been to each of them), 57 pass at FluidAudio's floor
+  and 61 with people at 0.65: places keep their floor, since one 0.65
+  for every name lost more right place readings than wrong ones
+  ("CafeMick" → Kaffemik). Listed places make wrong replacements of their
+  own ("Coffee with" → "Coffee Hawelka", "Lunch" → "Munich", "nach acht"
+  → "Naschmarkt").
 - The model reads a recogniser's writing other than the same words
   typed: "Konzert am Karlsplatz, nächsten Donnerstag um acht." is 08:00,
   the transcript without the comma and the period 20:00; "Flight to

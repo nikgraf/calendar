@@ -195,9 +195,11 @@ the switch and the download, iOS `parakeetRuntime.ts`, Mac
 then rescored against the names the user is likely to say (core
 `dictationVocabulary`: a year of guests and places by count, then the
 contacts, at most 100 of each, handed over as each phrase starts). The
-answer waits for it at most 4 s. A name replaces a span only when it is
-spelt 0.65 alike (FluidAudio's `minSimilarity`; its pass from what the
-spotter heard, for ten names or fewer, keeps floors of its own). When it
+answer waits for it at most 4 s. A person's name replaces a span only when
+it is spelt 0.65 alike (FluidAudio's per-term `minSimilarity`, which both
+of its passes honour; places keep its floor): the names reach Swift with
+the people among them named (the helper's `parakeet.use` `people`, the
+iOS module's `parakeetPeople`, missing in builds before #385). When it
 came, its text is the phrase
 the thread reads (`Heard.text`) and Apple's goes along as `Heard.apple`
 (`heardFromSegments`); Apple's recogniser still decides that nothing was

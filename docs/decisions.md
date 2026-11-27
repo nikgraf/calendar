@@ -1581,15 +1581,15 @@ was cut (pruned 2026-11-17).
   may hold 3.5 GB, so Gemma 4 E2B (4 GB) does not load. Rejected: the
   package's prebuilt binary, a memory entitlement, scoring on the phone.
   Open: Apple's six hung calls, the prompt read again on every call.
-- **A name replaces what Parakeet heard only when spelt 0.65 alike**
-  (2026-11-27, #385) — its list turned a first name said alone and the
-  next word into a full name ("Sarah morgen" → Sarah Novak): six of the
-  104 recordings lost. With FluidAudio's `minSimilarity` at 0.65 only the
-  eleven right replacements are left. Rejected: another list (first names
-  or surnames as terms: 13–16 new wrong ones); a JS check of the
-  replacements (as good on the bench, rules grown on made-up cases; an
-  older iOS build keeps the bug until its next build). Open: a full name
-  heard as another with the same first name; the spotter pass's floors.
+- **A person's name replaces what Parakeet heard only when spelt 0.65
+  alike** (2026-11-27, #385) — the list turned a first name said alone
+  and the next word into a full name ("Sarah morgen" → Sarah Novak), six
+  of 104 recordings lost. Each person's term carries 0.65; places keep
+  FluidAudio's floor. 50 → 55 of 104, 57 → 61 with places listed.
+  Rejected: another list (13–16 new wrong ones); one 0.65 for all (lost
+  more right place readings than wrong ones, ignored by the spotter pass
+  for ten names or fewer); a JS check (rules grown on made-up cases).
+  Open: listed places' own wrong replacements ("Lunch" → "Munich").
 - **Dictation reads each phrase with Parakeet** (2026-11-24, #378) — once
   downloaded (the Create lesson's Download Models, Settings › Dictation) and
   on (from the start), moondream's Parakeet Ultra reads the finished phrase

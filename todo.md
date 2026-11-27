@@ -171,14 +171,15 @@ was written; re-verify before starting one.
       and surnames neither language has as a word that the calendar has
       never named (Kaffemik before the first event there) and street
       addresses; Parakeet's wrong replacements from a real list
-      (measured with the clips' places: "nach acht" → "Naschmarkt"; a
-      first name said alone no longer takes the next word into a full
-      name since FluidAudio asks 0.65 alike, #385, but with forty
-      made-up address books a listed full name said in full can still
-      become another with the same first name, "Tom Baker" → "Tom
-      Bauer"; and for a list of ten or fewer FluidAudio's pass from what
-      its spotter heard keeps its own floors, 0.30 and 0.50, which no
-      measurement here has looked at; recordings of names said alone,
+      (a first name said alone no longer takes the next word into a
+      full name since people's names ask 0.65, #385; with the voice
+      cases' places listed, `MODEL_BENCH_PLACE_NAMES=cases`, places make
+      their own: "nach acht" → "Naschmarkt", "Lunch" → "Munich",
+      "Coffee with" → "Coffee Hawelka", 14 judged wrong of 69, at
+      FluidAudio's floor, since one 0.65 for all lost more right place
+      readings than wrong ones; with forty made-up address books a full
+      name said in full can still become another with the same first
+      name, "Tom Baker" → "Tom Bauer"; recordings of names said alone,
       short, hyphenated and split ones would test the threshold).
       MapKit's structured city/region/country fields in a native build.
       The voice cases say what a change does to the whole way
