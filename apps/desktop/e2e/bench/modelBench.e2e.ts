@@ -473,12 +473,13 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         (turn) => 'audio' in turn.input && existsSync(join(BENCH_DIR, 'audio', turn.input.audio)),
       ),
     );
-    // The places the cases mean, listed as Parakeet's names: a calendar that has been to each.
+    // The places every case means (whatever the selection, so a case run alone hears the same
+    // list), listed as Parakeet's names: a calendar that has been to each.
     const placeNames =
       process.env['MODEL_BENCH_PLACE_NAMES'] === 'cases'
         ? [
             ...new Set(
-              cases.flatMap((benchCase) =>
+              loadCases(join(BENCH_DIR, 'cases')).flatMap((benchCase) =>
                 benchCase.turns.flatMap((turn) => turn.expect.place?.slice(0, 1) ?? []),
               ),
             ),

@@ -128,11 +128,11 @@ const devicePort = (): ParakeetPort | undefined => {
         }),
     readChoice: choice.read,
     remove: () => native.parakeetRemove(),
-    use: async (on, vocabulary, people) => {
-      // A build from before #385 has no `parakeetPeople`: its names keep FluidAudio's floor.
-      await native.parakeetPeople?.([...people]);
-      await native.parakeetUse(on, [...vocabulary]);
-    },
+    // A build from before #385 has no `parakeetUseNames`: its names keep FluidAudio's floor.
+    use: (on, vocabulary, people) =>
+      native.parakeetUseNames === undefined
+        ? native.parakeetUse(on, [...vocabulary])
+        : native.parakeetUseNames(on, [...vocabulary], [...people]),
     writeChoice: choice.write,
   };
 };

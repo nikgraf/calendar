@@ -230,6 +230,14 @@ actor ParakeetEngine {
   /// loaded here: `prepare` does that as dictation starts, and the first
   /// phrase loads them otherwise.
   func use(on: Bool, vocabulary: [String]) {
+    use(on: on, vocabulary: vocabulary, people: nil)
+  }
+
+  /// `use` with the people among the names (`setPeople`) in the same step,
+  /// so two calls that cross never pair one's names with the other's people.
+  /// `people: nil` leaves those told before.
+  func use(on: Bool, vocabulary: [String], people: [String]?) {
+    if let people { setPeople(people) }
     self.on = on
     guard on else {
       releaseModels()

@@ -195,9 +195,15 @@ public class SolunivoSpeechModule: Module {
       try await Self.engine().remove()
     }
 
-    // Which of the names `parakeetUse` and `parakeetSpikeLoad` get are
-    // people's: those ask for a closer match (ParakeetBridge.swift). JS
-    // calls it only where the build has it.
+    // `parakeetUse` with the people among the names, who ask for a closer
+    // match (ParakeetBridge.swift), in one step. JS calls it only where the
+    // build has it.
+    AsyncFunction("parakeetUseNames") {
+      (on: Bool, vocabulary: [String], people: [String]) async in
+      await Self.engine().use(on: on, vocabulary: vocabulary, people: people)
+    }
+
+    // Which of the names `parakeetSpikeLoad` gets are people's.
     AsyncFunction("parakeetPeople") { (names: [String]) async in
       await Self.engine().setPeople(names)
     }

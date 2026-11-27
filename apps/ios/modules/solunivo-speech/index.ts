@@ -56,12 +56,9 @@ export interface SolunivoParakeetNative {
    * and the path turned expensive or constrained (stopped natively).
    */
   readonly parakeetDownload: (wifiOnly: boolean) => Promise<void>;
-  /** As a phrase starts: the models load in the background when dictation reads with Parakeet. */
-  /**
-   * Which of the names `parakeetUse` and `parakeetSpikeLoad` get are
-   * people's (a closer match). Missing in a build from before #385.
-   */
+  /** Which of the names `parakeetSpikeLoad` gets are people's (a closer match). Missing before #385. */
   readonly parakeetPeople?: (names: ReadonlyArray<string>) => Promise<void>;
+  /** As a phrase starts: the models load in the background when dictation reads with Parakeet. */
   readonly parakeetPrepare: () => Promise<void>;
   /** The app left the screen: the models go, the switch stays. */
   readonly parakeetRelieve: () => Promise<void>;
@@ -76,6 +73,12 @@ export interface SolunivoParakeetNative {
   readonly parakeetState: () => Promise<{ readonly bytes: number; readonly here: boolean }>;
   /** Dictation reads with Parakeet, with these names as its vocabulary, or no longer does. */
   readonly parakeetUse: (on: boolean, vocabulary: ReadonlyArray<string>) => Promise<void>;
+  /** `parakeetUse` with the people among the names (a closer match), in one step. Missing before #385. */
+  readonly parakeetUseNames?: (
+    on: boolean,
+    vocabulary: ReadonlyArray<string>,
+    people: ReadonlyArray<string>,
+  ) => Promise<void>;
 }
 
 export interface SolunivoSpeechNative {
