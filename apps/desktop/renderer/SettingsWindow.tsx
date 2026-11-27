@@ -12,6 +12,7 @@ import { TaskNotificationsSection } from './TaskNotificationsSection.tsx';
 import { GettingStartedSection } from './GettingStartedSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { MirrorsSection } from './MirrorsSection.tsx';
+import { AssistantSessionsSection } from './AssistantSessionsSection.tsx';
 import { AssistantModelSection } from './AssistantModelSection.tsx';
 import { ModelSection } from './ModelSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
@@ -72,6 +73,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   model: (
     <>
       <AssistantModelSection />
+      <AssistantSessionsSection />
       <ModelSection />
     </>
   ),

@@ -2,12 +2,15 @@ import {
   appleCalendarStatusCopy,
   contactsStatusCopy,
   remindersStatusCopy,
+  useAction,
   useModelAvailability,
 } from '@calendar/app-state';
-import { noticeCopy } from '@calendar/ai';
+import { noticeCopy, sessionCountLabel, sessionExportName, sessionLogCopy } from '@calendar/ai';
+import { Temporal } from '@calendar/core';
 import { Effect } from 'effect';
-import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Platform } from 'react-native';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { AccessibilityInfo, Alert, Platform, Share } from 'react-native';
+import { assistantSessions } from '../../assistantSessions.ts';
 import { appleLanguageModel } from '../../appleModel.ts';
 import { speech } from '../../speech.ts';
 import { assistantDownload, useAssistantModelState } from '../../assistantRuntime.ts';
@@ -26,8 +29,20 @@ import {
 } from '../../modelAvailabilityCopy.ts';
 import { iosRemindersClient } from '../../remindersClient.ts';
 import { onAppActive } from '../../appActive.ts';
-import { ActionRow, Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
+import { ActionRow, Footer, Row, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
 import { IOS_SETTINGS_PATH, useSettingsConnections } from './SettingsContext.tsx';
+
+/** Delete All asks first: nothing brings the sessions back. */
+const confirmDelete = () => {
+  Alert.alert(
+    'Delete All Assistant Sessions?',
+    'The sessions kept on this iPhone go. A file you exported stays where you saved it.',
+    [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: assistantSessions.delete, style: 'destructive', text: 'Delete All' },
+    ],
+  );
+};
 
 /**
  * What the device actually reports, read from the device. The quick-add
@@ -54,6 +69,22 @@ export function DiagnosticsPage() {
   const [lastError, setLastError] = useState(readLastRenderError);
   const [dictationError, setDictationError] = useState(readLastDictationError);
   const [launches] = useState(readLaunchTimes);
+  const sessions = useSyncExternalStore(assistantSessions.subscribe, assistantSessions.get);
+  const exporting = useAction();
+  const exportSessions = () =>
+    void exporting.run(async () => {
+      // Shared under the day's name: Save to Files keeps the file's own.
+      const file = assistantSessions.exportFile(
+        sessionExportName(Temporal.Now.plainDateISO().toString()),
+      );
+      if (file) {
+        try {
+          await Share.share({ url: file.uri });
+        } finally {
+          assistantSessions.doneExporting();
+        }
+      }
+    });
 
   // Every answer to Check Again is read out, the same one twice included.
   useEffect(() => {
@@ -138,6 +169,40 @@ export function DiagnosticsPage() {
             title={assistantCopy.action.label}
           />
         ) : null}
+      </Section>
+      <Section
+        footer={
+          <Footer testID="assistant-sessions-copy">
+            {exporting.error ?? sessionLogCopy('iPhone')}
+          </Footer>
+        }
+        header="Assistant Sessions"
+        testID="assistant-sessions"
+      >
+        <SwitchRow
+          onValueChange={assistantSessions.setOn}
+          switchTestID="keep-assistant-sessions"
+          title="Keep Assistant Sessions"
+          value={sessions.on}
+        />
+        <Row
+          title="Kept"
+          value={sessionCountLabel(sessions.count).replace(' kept', '')}
+          valueTestID="assistant-sessions-count"
+        />
+        <ActionRow
+          disabled={sessions.count === 0 || exporting.busy}
+          onPress={exportSessions}
+          testID="assistant-sessions-export"
+          title="Export…"
+        />
+        <ActionRow
+          disabled={sessions.count === 0}
+          onPress={confirmDelete}
+          testID="assistant-sessions-delete"
+          title="Delete All…"
+          tone="destructive"
+        />
       </Section>
       <Section
         footer={

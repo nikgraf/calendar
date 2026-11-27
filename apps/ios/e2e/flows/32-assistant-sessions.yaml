@@ -1,0 +1,129 @@
+appId: com.solunivo.app.dev
+name: Keep Assistant Sessions keeps a thread, exports it to the share sheet and deletes it
+tags:
+  - ci
+---
+# Settings › Advanced › Diagnostics › Assistant Sessions. Off at first;
+# on, a thread said to the Assistant is kept once its editor closes (here
+# discarded: an abandoned thread is a session too, and no event is left
+# behind), counted, handed to the share sheet and deleted. Needs the
+# fixture model (CI's bundle) to read the phrase. `launchApp` keeps the
+# app's data between flows: a run that died here may have left sessions
+# and the switch on, so the flow starts by clearing them and ends off.
+- runFlow: ../common/launch.yaml
+- runFlow: ../common/open-diagnostics.yaml
+- scrollUntilVisible:
+    element:
+      id: 'keep-assistant-sessions-host'
+    direction: DOWN
+    timeout: 10000
+- runFlow:
+    when:
+      notVisible:
+        id: 'assistant-sessions-count'
+        text: 'No sessions'
+    commands:
+      - tapOn:
+          id: 'assistant-sessions-delete'
+      - tapOn: 'Delete All'
+- extendedWaitUntil:
+    visible:
+      id: 'assistant-sessions-count'
+      text: 'No sessions'
+    timeout: 5000
+# A SwiftUI switch's frame can be stale: aim at its host, prove it on.
+- retry:
+    maxRetries: 2
+    commands:
+      - copyTextFrom:
+          id: 'keep-assistant-sessions'
+      - runFlow:
+          when:
+            true: ${maestro.copiedText !== '1'}
+          commands:
+            - tapOn:
+                id: 'keep-assistant-sessions-host'
+      - extendedWaitUntil:
+          visible:
+            id: 'keep-assistant-sessions'
+            checked: true
+          timeout: 3000
+- runFlow: ../common/close-settings.yaml
+
+# A phrase to a new item's Assistant, then the editor discarded.
+- runFlow: ../common/open-new-item.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'quick-add-state-fixture'
+    timeout: 30000
+- runFlow:
+    file: ../common/apply-quick-add.yaml
+    env:
+      PHRASE: 'Session check | +1 | 13:00-14:00'
+- extendedWaitUntil:
+    visible:
+      id: 'assistant-card-title'
+      text: 'Session check.*'
+    timeout: 15000
+- tapOn: 'Cancel'
+- tapOn: 'Discard Changes'
+- extendedWaitUntil:
+    notVisible: 'New Event'
+    timeout: 5000
+
+# Kept, counted, exported, deleted.
+- runFlow: ../common/open-diagnostics.yaml
+- scrollUntilVisible:
+    element:
+      id: 'assistant-sessions-export'
+    direction: DOWN
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: 'assistant-sessions-count'
+      text: '1 session'
+    timeout: 5000
+- tapOn:
+    id: 'assistant-sessions-export'
+# While the sheet is up the app's elements leave the tree: its own row is the marker.
+- extendedWaitUntil:
+    visible: 'Save to Files'
+    timeout: 30000
+- retry:
+    maxRetries: 2
+    commands:
+      - runFlow:
+          when:
+            visible: 'Save to Files'
+          commands:
+            - swipe:
+                start: 50%, 62%
+                end: 50%, 97%
+      - extendedWaitUntil:
+          notVisible: 'Save to Files'
+          timeout: 5000
+- tapOn:
+    id: 'assistant-sessions-delete'
+- tapOn: 'Delete All'
+- extendedWaitUntil:
+    visible:
+      id: 'assistant-sessions-count'
+      text: 'No sessions'
+    timeout: 5000
+- retry:
+    maxRetries: 2
+    commands:
+      - copyTextFrom:
+          id: 'keep-assistant-sessions'
+      - runFlow:
+          when:
+            true: ${maestro.copiedText === '1'}
+          commands:
+            - tapOn:
+                id: 'keep-assistant-sessions-host'
+      - extendedWaitUntil:
+          visible:
+            id: 'keep-assistant-sessions'
+            checked: false
+          timeout: 3000
+- runFlow: ../common/close-settings.yaml

@@ -154,27 +154,45 @@ export const tunedPrompt = ({ draft, earlier, referenceDate, text }: TunedTurn):
 
 const REFUSED = "That couldn't be read — try rephrasing.";
 
+/**
+ * What the model was asked and what it wrote back, before any code read
+ * it: the session log keeps both (`sessionLog.ts`). No answer when the
+ * model gave none it could be read from.
+ */
+export interface TunedExchange {
+  readonly answer?: unknown;
+  /** The model threw instead of answering (it stopped, or wrote no JSON). */
+  readonly failed?: true | undefined;
+  readonly prompt: string;
+}
+
 /** One turn through the tuned path: the first phrase, or a change to the draft. */
 export const tunedTurn = async (
   model: LanguageModel,
   turn: TunedTurn,
   {
     adjust,
+    onExchange,
   }: {
     /** Changes the worked-out answer before its result is made (the day on show, for words that name none). */
     readonly adjust?: ((answer: unknown) => unknown) | undefined;
+    /** Told the prompt and the answer once the model was asked, whether or not it answered. */
+    readonly onExchange?: ((exchange: TunedExchange) => void) | undefined;
   } = {},
 ): Promise<QuickAddResult | RefineResult> => {
   if (!turn.text.trim()) {
     return { kind: 'rejected', reason: 'Type what you want to schedule.' };
   }
+  const prompt = tunedPrompt(turn);
   let answer: unknown;
   try {
     // No schema: one held over the answer would have every field written, and the model learnt the short form.
-    answer = await model.generateJson({ jsonSchema: undefined, prompt: tunedPrompt(turn) });
+    answer = await model.generateJson({ jsonSchema: undefined, prompt });
   } catch {
+    onExchange?.({ failed: true, prompt });
     return { kind: 'rejected', reason: REFUSED };
   }
+  onExchange?.({ answer, prompt });
   const day = workedTimes(
     worked(answer, { draftDate: turn.draft?.prefill.date, referenceDate: turn.referenceDate }),
     { draft: turn.draft?.prefill },

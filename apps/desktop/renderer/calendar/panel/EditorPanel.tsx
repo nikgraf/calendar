@@ -37,6 +37,7 @@ import {
   useFinder,
 } from '../../ai/assistantModel.ts';
 import { useParakeetState } from '../../ai/parakeetModel.ts';
+import { sessionSink } from '../../ai/assistantSessions.ts';
 import { backend } from '../../backend.ts';
 import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { Button } from '../../ui/Button.tsx';
@@ -62,6 +63,8 @@ const assistantReader = tunedReader(desktopAssistantModel);
  * (`lessonDemo.ts`), until the model is ready.
  */
 const demoReader = tunedReader(lessonDemoModel);
+/** Where a thread's record goes while Keep Assistant Sessions is on. */
+const SESSIONS = sessionSink();
 
 /**
  * The banner's action: download the Assistant's model (the person agrees),
@@ -329,6 +332,8 @@ export function EditorPanel({
     },
     reader: demo ? demoReader : assistantReader,
     seed,
+    // The lesson's demo answers from a script: nothing of it is the user's.
+    sessions: demo ? undefined : SESSIONS,
     sourceKind,
     task,
     taskLists,

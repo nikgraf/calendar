@@ -7,6 +7,7 @@ import { initFileLogging, logRendererError } from './log.ts';
 import { installApplicationMenu } from './menu.ts';
 import { initPrivacy } from './privacy.ts';
 import { startCaptureHint } from './captureHint.ts';
+import { registerAssistantSessions } from './assistantSessions.ts';
 import { registerAssistantModel } from './assistantModel/index.ts';
 import { commonBackendHandlers } from '@calendar/sync';
 import { registerParakeetModel } from './parakeetModel.ts';
@@ -155,6 +156,7 @@ void app.whenReady().then(() => {
   startAgentHost(host);
   registerModelHelper();
   registerAssistantModel(app.getPath('userData'));
+  registerAssistantSessions(app.getPath('userData'));
   registerParakeetModel(app.getPath('userData'), () =>
     host
       .run(commonBackendHandlers.dictationVocabulary())

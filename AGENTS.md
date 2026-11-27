@@ -280,7 +280,9 @@ commits by staging deliberately.
   `assistant:*` (the Assistant's own model:
   its state, the download, a prompt), `parakeet:*` (Parakeet's state, its
   download, the switch, and a phrase's start, which main answers with the
-  names it reads from the backend itself), the `reminders:*` / `contacts:*` /
+  names it reads from the backend itself), `sessions:*` (Keep Assistant
+  Sessions: the switch, a finished thread kept, Export, Delete All), the
+  `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `appleCalendar:open`
   (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the

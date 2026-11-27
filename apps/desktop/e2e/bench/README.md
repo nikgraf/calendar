@@ -228,6 +228,29 @@ would have put it. It is tagged `phone` and stays open, since it was
 picked for having failed. A new misreading becomes a case like this,
 never an example in the prompt.
 
+Such phrases come from Keep Assistant Sessions (iOS Settings › Advanced
+› Diagnostics, Mac Settings › AI Model; off unless switched on), whose
+Export is a file of the last 200 threads: each turn's words as heard,
+what the model answered, the places and contacts found, and how the
+thread ended. Read one on the Mac:
+
+```bash
+node apps/desktop/e2e/bench/sessionsReport.ts <export.jsonl> --list
+node apps/desktop/e2e/bench/sessionsReport.ts <export.jsonl> --case <id>
+```
+
+The first prints where threads were lost (saved untouched, saved after
+edits by hand, by field, or abandoned; dictated, typed or both) and what
+became of each turn. The second writes that thread as a draft case,
+tagged `phone`: its taken turns as they were heard, the last held to
+where the saved item stands (`dayOffset` from the day it was said). It
+writes to `~/solunivo-session-cases/` unless `--out` names another
+folder, never into `cases/`: an export holds real names, places and
+contacts. Before a draft is committed a person replaces every real name
+and place with made-up ones (contacts from `contacts.json`), writes the
+earlier turns' expectations, and checks the guests, repeat and
+notifications, which the record does not hold in full.
+
 ## Report
 
 `output/bench/<yyyymmdd-hhmm>-<sha>-<provider>.json`: every turn's
