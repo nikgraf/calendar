@@ -497,16 +497,19 @@ to compare two models leaves `MODEL_BENCH_PLACES` out.
 One voice reading aloud in a quiet room (2026-11-23), heard by an
 English phone with German as its second language, read by Assistant v2
 (the published file on the bundled `llama-server`) as of Wednesday
-2026-11-25, the places asked of MapKit that day, at `ac5539c8`:
+2026-11-25. The first three rows and the last asked MapKit on 2026-11-25
+at `ac5539c8`; the four between, on 2026-11-27 at `ff4e5abc` (people's
+names at 0.65, #385), against that day's FluidAudio floor:
 
-| Heard with           | Pass   | Lost to the hearing | Lost after it | Words wrong | Places taken · offered · text alone · missed |
-| -------------------- | ------ | ------------------- | ------------- | ----------- | -------------------------------------------- |
-| The transcripts      | 97/104 |                     | 7             |             | not asked                                    |
-| Parakeet and Apple   | 50/104 | 48                  | 6             | 22%         | 33 · 18 · 2 · 26 of 79                       |
-| … people at 0.65     | 55/104 | 43                  | 6             | 21%         | 34 · 20 · 3 · 27 of 83                       |
-| … with places listed | 57/104 | 41                  | 6             | 16%         | 64 · 3 · 2 · 10 of 79                        |
-| … and people at 0.65 | 61/104 | 37                  | 6             | 16%         | 64 · 4 · 3 · 11 of 82                        |
-| Apple alone          | 13/104 | 84                  | 7             | 62%         | 4 · 13 · 0 · 39 of 56                        |
+| Heard with                      | Pass   | Lost to the hearing | Lost after it | Words wrong | Places taken · offered · text alone · missed |
+| ------------------------------- | ------ | ------------------- | ------------- | ----------- | -------------------------------------------- |
+| The transcripts                 | 97/104 |                     | 7             |             | not asked                                    |
+| Parakeet and Apple              | 50/104 | 48                  | 6             | 22%         | 33 · 18 · 2 · 26 of 79                       |
+| … 2026-11-27                    | 51/104 | 47                  | 6             | 22%         | 33 · 19 · 2 · 25 of 79                       |
+| … people at 0.65                | 55/104 | 43                  | 6             | 21%         | 34 · 20 · 3 · 27 of 83                       |
+| … places listed, at the floor   | 57/104 | 41                  | 6             | 16%         | 64 · 3 · 2 · 10 of 79                        |
+| … places listed, people at 0.65 | 61/104 | 37                  | 6             | 16%         | 64 · 4 · 3 · 11 of 82                        |
+| Apple alone                     | 13/104 | 84                  | 7             | 62%         | 4 · 13 · 0 · 39 of 56                        |
 
 - The hearing loses nearly every phrase that is lost: v2 reads 97 of
   the 104 as they are written.
@@ -521,11 +524,12 @@ English phone with German as its second language, read by Assistant v2
   full name ("Sarah morgen" → "Sarah Novak", "Anna in" → "Anna Lee",
   "at Klein(od)" → "David Klein"), and each of those phrases was lost.
   Since #385 a person's name replaces a span only when spelt 0.65 alike
-  (FluidAudio's per-term `minSimilarity`, 2026-11-27 at `ff4e5abc`,
-  every run that day): only the eleven right ones are left, five of the
-  six pass ("from Friday to Sunday" is a weekend), titles 81 → 87 of 108. A list alone fixes nothing (run through FluidAudio's rescoring
-  directly: first names as terms of their own make 16 wrong
-  replacements, surnames alone 13).
+  (FluidAudio's per-term `minSimilarity`, 2026-11-27 at `ff4e5abc`):
+  only the eleven right ones are left and four of the six pass; "Anna
+  in the Türkenschanz Park" still misses its place and "from Friday to
+  Sunday" is a weekend. Titles 81 → 87 of 108. A list alone fixes
+  nothing (run through FluidAudio's rescoring directly: first names as
+  terms of their own make 16 wrong replacements, surnames alone 13).
 - With the cases' places listed too (`MODEL_BENCH_PLACE_NAMES=cases`,
   someone who has been to each of them), 57 pass at FluidAudio's floor
   and 61 with people at 0.65: places keep their floor, since one 0.65
