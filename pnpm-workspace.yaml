@@ -30,8 +30,8 @@ catalog:
   # patches; a caret once let the lockfile resolve past the renderer (#144).
   react: 19.3.1
   react-dom: 19.3.1
-  '@types/react': ~19.3.0
-  rrule-temporal: ^2.2.9
+  '@types/react': ~19.3.1
+  rrule-temporal: ^2.3.0
   typescript: ^7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vite-plus: 1.4.0
