@@ -1,0 +1,22 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-16.m4a",
+        "transcript": "Picknick mit Anna im Türkenschanzpark am Samstag zu Mittag"
+      },
+      "expect": {
+        "title": "picknick mit anna",
+        "weekday": 6,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "assumedTime": true,
+        "location": "türkenschanzpark",
+        "place": ["Türkenschanzpark"]
+      }
+    }
+  ]
+}

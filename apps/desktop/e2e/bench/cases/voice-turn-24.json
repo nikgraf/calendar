@@ -1,0 +1,33 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-turn", "flow", "guests", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Abendessen am Freitag um 19 Uhr, lade Jörg Hofstätter und Tom Baker ein"
+      },
+      "expect": {
+        "title": "abendessen",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "location": null,
+        "guests": {
+          "emails": ["joerg.hofstaetter@example.com", "tom.baker@example.com"]
+        }
+      }
+    },
+    {
+      "input": {
+        "audio": "turns/turn-24.m4a",
+        "transcript": "ohne Jörg Hofstätter"
+      },
+      "expect": {
+        "guests": {
+          "emails": ["tom.baker@example.com"]
+        }
+      }
+    }
+  ]
+}

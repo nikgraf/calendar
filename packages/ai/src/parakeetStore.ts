@@ -36,8 +36,15 @@ export interface ParakeetPort {
   readonly prepare?: () => Promise<void>;
   readonly readChoice: () => Promise<ParakeetChoice | undefined>;
   readonly remove: () => Promise<void>;
-  /** Dictation reads with Parakeet, with these names, or no longer does. */
-  readonly use: (on: boolean, vocabulary: ReadonlyArray<string>) => Promise<void>;
+  /**
+   * Dictation reads with Parakeet, with these names, or no longer does;
+   * `people` says which of them are people's (a closer match, #385).
+   */
+  readonly use: (
+    on: boolean,
+    vocabulary: ReadonlyArray<string>,
+    people: ReadonlyArray<string>,
+  ) => Promise<void>;
   readonly writeChoice: (choice: ParakeetChoice) => Promise<void>;
 }
 
@@ -65,9 +72,13 @@ export interface ParakeetStore {
   readonly subscribe: (listener: () => void) => () => void;
   /**
    * As a phrase starts: the names dictation listens for, handed on when it
-   * reads with Parakeet, and its models loaded meanwhile.
+   * reads with Parakeet, and its models loaded meanwhile; `people` are the
+   * terms that are people's names.
    */
-  readonly vocabulary: (terms: ReadonlyArray<string>) => Promise<void>;
+  readonly vocabulary: (
+    terms: ReadonlyArray<string>,
+    people?: ReadonlyArray<string>,
+  ) => Promise<void>;
 }
 
 /** What every action does where the build has no Parakeet. */
@@ -128,6 +139,7 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
   const { port } = deps;
   let choice: ParakeetChoice = PARAKEET_DEFAULT;
   let terms: ReadonlyArray<string> = [];
+  let people: ReadonlyArray<string> = [];
   /** The download under way, so a second ask joins it. */
   let running: Promise<void> | undefined;
   /**
@@ -142,7 +154,11 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
 
   const apply = () =>
     port
-      .use(readsWithParakeet(state), readsWithParakeet(state) ? terms : [])
+      .use(
+        readsWithParakeet(state),
+        readsWithParakeet(state) ? terms : [],
+        readsWithParakeet(state) ? people : [],
+      )
       .catch(() => undefined);
 
   const remember = async (next: ParakeetChoice) => {
@@ -323,8 +339,9 @@ export const createParakeetStore = (deps: ParakeetStoreDeps): ParakeetStore => {
       await apply();
     },
     subscribe,
-    vocabulary: async (next) => {
+    vocabulary: async (next, nextPeople = []) => {
       terms = next;
+      people = nextPeople;
       await apply();
       // The load runs while the phrase is said, not at launch.
       if (readsWithParakeet(state)) {

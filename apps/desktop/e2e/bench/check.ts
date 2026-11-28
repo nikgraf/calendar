@@ -22,6 +22,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import type { Expectation } from './cases.ts';
+import type { PlaceOutcome } from './places.ts';
 
 /**
  * What the bench holds between turns and checks after each: the thread's
@@ -35,6 +36,11 @@ export interface BenchDraft {
   readonly guests: ReadonlyArray<AttendeeInput>;
   readonly item: QuickAddItem;
   readonly notes?: string | undefined;
+  /**
+   * What the app's lookup made of the turn's location, against the place
+   * its expectation means: only where the run asked MapKit for it.
+   */
+  readonly place?: PlaceOutcome | undefined;
   /** Minutes before the start. */
   readonly reminders?: ReadonlyArray<number> | undefined;
 }
@@ -284,7 +290,7 @@ const ABOUT: ReadonlyArray<{
   { field: 'date', keys: ['weekday', 'dayOffset', 'dayOfMonth', 'month'], view: 'date' },
   { field: 'time', keys: ['startTime', 'endTime', 'assumedTime', 'spanDays'], view: 'time' },
   { field: 'allDay', keys: ['isAllDay'], view: 'time' },
-  { field: 'location', keys: ['location', 'locationIs'], view: 'location' },
+  { field: 'location', keys: ['location', 'locationIs', 'place'], view: 'location' },
   { field: 'repeat', keys: ['repeat'], view: 'repeat' },
   { field: 'guests', keys: ['guests'], view: 'guests' },
   { field: 'notes', keys: ['notes'], view: 'notes' },
@@ -437,23 +443,53 @@ const checkTime = (expectation: Expectation, item: QuickAddItem, fail: Fail): vo
   }
 };
 
-/** Whether the draft has no location when none is expected, or one holding (or being) the expected text. */
-const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
-  const location = item.kind === 'event' ? item.prefill.location : undefined;
+/** Whether the lookup a run made for a turn's location took or offered the place meant. */
+export const placeFound = (place: PlaceOutcome | undefined): boolean =>
+  place !== undefined && (place.taken || place.offered !== undefined);
+
+const locationOf = (draft: BenchDraft | undefined): string | undefined =>
+  draft?.item.kind === 'event' ? draft.item.prefill.location : undefined;
+
+/**
+ * Whether the draft has no location when none is expected, or the one
+ * expected: the place meant, taken or offered by the app's lookup where
+ * the run asked MapKit (the draft is right there whatever the text
+ * reads: a taken place replaces it, an offered one is a tap away), else
+ * a text holding (or being) the expected one. A later turn that left the
+ * location's text as it was is held to the text: the lookup then found
+ * the place the draft already had, which says nothing of the turn.
+ */
+const checkLocation = (
+  expectation: Expectation,
+  draft: BenchDraft,
+  previous: BenchDraft | undefined,
+  fail: Fail,
+): void => {
+  const location = locationOf(draft);
   if (expectation.location === null && location !== undefined) {
     fail('location', `location=${location}`);
   }
+  const kept = previous !== undefined && fold(location ?? '') === fold(locationOf(previous) ?? '');
+  if (expectation.place !== undefined && !kept && placeFound(draft.place)) {
+    return;
+  }
+  const looked =
+    expectation.place === undefined || draft.place === undefined
+      ? ''
+      : placeFound(draft.place)
+        ? ', kept as it was'
+        : ', the place not offered';
   if (
     typeof expectation.location === 'string' &&
     !fold(location ?? '').includes(fold(expectation.location))
   ) {
-    fail('location', `location=${location ?? '-'}`);
+    fail('location', `location=${location ?? '-'}${looked}`);
   }
   if (
     expectation.locationIs !== undefined &&
     fold(location ?? '') !== fold(expectation.locationIs)
   ) {
-    fail('location', `location=${location ?? '-'}`);
+    fail('location', `location=${location ?? '-'}${looked}`);
   }
 };
 
@@ -609,7 +645,7 @@ export const check = (
   checkTitle(expectation, item, fail);
   checkDate(expectation, item, { previous, today }, fail);
   checkTime(expectation, item, fail);
-  checkLocation(expectation, item, fail);
+  checkLocation(expectation, draft, previous, fail);
   checkRepeat(expectation, item, fail);
   checkGuests(expectation, draft, fail);
   checkNotes(expectation, draft, fail);

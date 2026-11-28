@@ -1,0 +1,19 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-32.m4a",
+        "transcript": "Flug nach Zürich nächsten Mittwoch um halb sieben"
+      },
+      "expect": {
+        "title": ["flug", "flug nach zürich"],
+        "weekday": 3,
+        "location": "zürich",
+        "place": ["Zürich", "Zurich"]
+      }
+    }
+  ]
+}

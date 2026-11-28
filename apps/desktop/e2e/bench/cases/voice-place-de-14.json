@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-14.m4a",
+        "transcript": "Treffen mit Jörg Hofstätter im Café Hawelka am Dienstag um vier"
+      },
+      "expect": {
+        "title": "treffen mit jörg hofstätter",
+        "weekday": 2,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "location": "hawelka",
+        "place": ["Coffee Hawelka", "Café Hawelka"]
+      }
+    }
+  ]
+}

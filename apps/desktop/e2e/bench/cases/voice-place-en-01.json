@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-01.m4a",
+        "transcript": "Lunch with Sarah tomorrow at one at Figlmüller"
+      },
+      "expect": {
+        "title": "lunch with sarah",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": "figlmüller",
+        "place": ["Figlmüller"]
+      }
+    }
+  ]
+}

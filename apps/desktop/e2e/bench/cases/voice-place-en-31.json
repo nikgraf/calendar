@@ -1,0 +1,19 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-31.m4a",
+        "transcript": "Train to München on Monday at seven"
+      },
+      "expect": {
+        "title": ["train", "train to münchen", "train to munich"],
+        "weekday": 1,
+        "location": "münchen",
+        "place": ["Munich", "München"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-21.m4a",
+        "transcript": "Exhibition with Stefan at the MuseumsQuartier on Saturday at eleven"
+      },
+      "expect": {
+        "title": "exhibition with stefan",
+        "weekday": 6,
+        "startTime": "11:00",
+        "endTime": "12:00",
+        "location": "museumsquartier",
+        "place": ["MuseumsQuartier"]
+      }
+    }
+  ]
+}

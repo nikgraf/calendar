@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-07.m4a",
+        "transcript": "Konzert am Karlsplatz nächsten Donnerstag um acht"
+      },
+      "expect": {
+        "title": "konzert",
+        "weekday": 4,
+        "startTime": "20:00",
+        "endTime": "21:00",
+        "location": "karlsplatz",
+        "place": ["Karlsplatz"]
+      }
+    }
+  ]
+}

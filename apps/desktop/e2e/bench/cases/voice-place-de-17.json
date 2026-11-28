@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-17.m4a",
+        "transcript": "Zug vom Westbahnhof am Montag um Viertel nach acht"
+      },
+      "expect": {
+        "title": "zug",
+        "weekday": 1,
+        "startTime": "08:15",
+        "endTime": "09:15",
+        "location": "westbahnhof",
+        "place": ["Westbahnhof", "Wien Westbahnhof"]
+      }
+    }
+  ]
+}

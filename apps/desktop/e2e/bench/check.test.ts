@@ -271,6 +271,50 @@ describe('check', () => {
     expect(check({ locationIs: 'vienna' }, moved, placed.draft, TODAY).failed).toEqual([]);
   });
 
+  it('a place meant is right when the lookup took or offered it, else by the text', () => {
+    const expectation = { location: 'figlmüller', place: ['Figlmüller'] };
+    const lookup = (found: { offered?: number; taken?: boolean }) => ({
+      candidates: [],
+      errors: [],
+      taken: false,
+      ...found,
+    });
+    const heard = (place?: ReturnType<typeof lookup>) =>
+      drafted(event({ location: 'Figli Muller' }, place === undefined ? {} : { place }));
+    // Taken unasked, or among the places to pick from: the text no longer decides.
+    expect(
+      check(expectation, heard(lookup({ offered: 1, taken: true })), undefined, TODAY).failed,
+    ).toEqual([]);
+    expect(check(expectation, heard(lookup({ offered: 3 })), undefined, TODAY).failed).toEqual([]);
+    // Asked and not offered, and not asked at all: the text does.
+    expect(check(expectation, heard(lookup({})), undefined, TODAY).notes).toEqual([
+      'location=Figli Muller, the place not offered',
+    ]);
+    expect(check(expectation, heard(), undefined, TODAY).notes).toEqual(['location=Figli Muller']);
+    const written = drafted(event({ location: 'Figlmüller' }, { place: lookup({}) }));
+    expect(check(expectation, written, undefined, TODAY).failed).toEqual([]);
+    // A later turn that left the location as it was: the lookup found the place the draft
+    // had, which says nothing of the turn, so the text decides ("it's in Vienna", ignored).
+    const narrowed = { locationIs: 'kaffemik, vienna', place: ['Kaffemik'] };
+    const found = lookup({ offered: 1, taken: true });
+    const before = event({ location: 'Kaffemik' });
+    const ignored = drafted(event({ location: 'Kaffemik' }, { place: found }));
+    expect(check(narrowed, ignored, before, TODAY).notes).toEqual([
+      'location=Kaffemik, kept as it was',
+    ]);
+    const followed = drafted(event({ location: 'Kaffemik Wien' }, { place: found }));
+    expect(check(narrowed, followed, before, TODAY).failed).toEqual([]);
+    // A place found does not excuse one where none was said.
+    expect(
+      check(
+        { location: null, place: ['Figlmüller'] },
+        heard(lookup({ offered: 1 })),
+        undefined,
+        TODAY,
+      ).failed,
+    ).toEqual(['location']);
+  });
+
   it('a repeat matches by frequency, interval, count and the month it ends in', () => {
     const fortnightly = drafted(
       event({ recurrence: { freq: 'weekly', interval: 2, untilDate: '2027-03-01' } }),

@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-06.m4a",
+        "transcript": "Pick up David at Praterstern tomorrow at half past five"
+      },
+      "expect": {
+        "title": "pick up david",
+        "dayOffset": 1,
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "location": "praterstern",
+        "place": ["Praterstern"]
+      }
+    }
+  ]
+}

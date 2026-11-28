@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-09.m4a",
+        "transcript": "Treffen mit Max am Schwedenplatz heute Abend um sieben"
+      },
+      "expect": {
+        "title": "treffen mit max",
+        "dayOffset": 0,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "location": "schwedenplatz",
+        "place": ["Schwedenplatz"]
+      }
+    }
+  ]
+}

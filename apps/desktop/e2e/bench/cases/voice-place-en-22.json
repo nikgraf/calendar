@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-22.m4a",
+        "transcript": "Bike ride on the Donauinsel next Sunday at ten"
+      },
+      "expect": {
+        "title": "bike ride",
+        "weekday": 7,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "donauinsel",
+        "place": ["Donauinsel"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-20.m4a",
+        "transcript": "Meet Emily Carter in the Volksgarten on Sunday at three"
+      },
+      "expect": {
+        "title": ["meet emily carter", "meeting with emily carter"],
+        "weekday": 7,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": "volksgarten",
+        "place": ["Volksgarten"]
+      }
+    }
+  ]
+}

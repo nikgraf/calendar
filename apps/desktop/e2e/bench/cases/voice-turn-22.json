@@ -1,0 +1,29 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-turn", "flow", "location", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Treffen am Freitag um 18 Uhr"
+      },
+      "expect": {
+        "title": "treffen",
+        "weekday": 5,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": null
+      }
+    },
+    {
+      "input": {
+        "audio": "turns/turn-22.m4a",
+        "transcript": "am Schwedenplatz"
+      },
+      "expect": {
+        "location": "schwedenplatz",
+        "place": ["Schwedenplatz"]
+      }
+    }
+  ]
+}

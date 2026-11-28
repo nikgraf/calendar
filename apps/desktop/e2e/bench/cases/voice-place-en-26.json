@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-26.m4a",
+        "transcript": "Lunch with David at Zum Schwarzen Kameel on Wednesday at one"
+      },
+      "expect": {
+        "title": "lunch with david",
+        "weekday": 3,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": "schwarzen kameel",
+        "place": ["Zum Schwarzen Kameel"]
+      }
+    }
+  ]
+}

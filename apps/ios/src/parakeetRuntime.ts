@@ -128,7 +128,7 @@ const devicePort = (): ParakeetPort | undefined => {
         }),
     readChoice: choice.read,
     remove: () => native.parakeetRemove(),
-    use: (on, vocabulary) => native.parakeetUse(on, [...vocabulary]),
+    use: (on, vocabulary, people) => native.parakeetUse(on, [...vocabulary], [...people]),
     writeChoice: choice.write,
   };
 };
@@ -168,7 +168,7 @@ export const beforeListening = async (): Promise<void> => {
   }
   const names = await Effect.runPromise(backendClient.dictationVocabulary()).catch(() => undefined);
   if (names !== undefined) {
-    await store.vocabulary([...names.people, ...names.places]);
+    await store.vocabulary([...names.people, ...names.places], names.people);
   }
 };
 

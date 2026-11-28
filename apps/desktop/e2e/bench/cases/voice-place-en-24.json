@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-24.m4a",
+        "transcript": "Dinner with Tom Baker at Mayer am Pfarrplatz next Friday at seven"
+      },
+      "expect": {
+        "title": "dinner with tom baker",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "location": "mayer am pfarrplatz",
+        "place": ["Mayer am Pfarrplatz"]
+      }
+    }
+  ]
+}

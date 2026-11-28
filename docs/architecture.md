@@ -217,7 +217,12 @@ the switch and the download, iOS `parakeetRuntime.ts`, Mac
 then rescored against the names the user is likely to say (core
 `dictationVocabulary`: a year of guests and places by count, then the
 contacts, at most 100 of each, handed over as each phrase starts). The
-answer waits for it at most 4 s. When it came, its text is the phrase
+answer waits for it at most 4 s. A person's name replaces a span only when
+it is spelt 0.65 alike (FluidAudio's per-term `minSimilarity`, which both
+of its passes honour; places keep its floor): the names reach Swift with
+the people among them named (`people` in the helper's `parakeet.use` and
+the iOS module's `parakeetUse`). When it
+came, its text is the phrase
 the thread reads (`Heard.text`) and Apple's goes along as `Heard.apple`
 (`heardFromSegments`); Apple's recogniser still decides that nothing was
 said. The audio stays in memory and goes with the phrase. The phrase ends on its words, not its loudness:

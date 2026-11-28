@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { type LanguageModel, transcriptFromSegments } from '@calendar/ai';
+import type { LanguageModel } from '@calendar/ai';
 import { Temporal } from '@calendar/core';
 import { strictSchema, withoutNulls } from '../../electron/strictSchema.ts';
 
@@ -9,9 +9,8 @@ import { strictSchema, withoutNulls } from '../../electron/strictSchema.ts';
  * The models the bench runs on, behind the app's own `LanguageModel`
  * seam: Apple's through the desktop helper binary, a served one over
  * Ollama's API or an OpenAI-compatible endpoint (the shapes the app's
- * model provider sends). The helper also transcribes, for the recorded
- * turns — SpeechAnalyzer is the framework iOS dictates with, so the Mac
- * stands in for both platforms.
+ * model provider sends). The helper also hears the recorded turns
+ * (`listening.ts`) and answers the place lookup (`placeLookup.ts`).
  */
 
 /** One model call as the report keeps it: the prompt, what came back, how long it took. */
@@ -290,35 +289,6 @@ export const helperStatus = async (helper: HelperClient): Promise<string> => {
   return result.status === 'ready'
     ? 'ready'
     : `${result.status}${result.detail ? ` (${result.detail})` : ''}`;
-};
-
-/** Recorded audio in, words out — the helper's SpeechAnalyzer, assets installed on first use per locale. */
-export interface Speech {
-  readonly prepare: (locale: string) => Promise<void>;
-  readonly transcribe: (audio: Buffer, locale: string) => Promise<string | undefined>;
-}
-
-export const helperSpeech = (helper: HelperClient): Speech => {
-  const prepared = new Map<string, Promise<void>>();
-  return {
-    prepare: (locale) => {
-      let waiting = prepared.get(locale);
-      if (waiting === undefined) {
-        waiting = helper.request('prepareSpeech', { locale }).then(() => undefined);
-        // A failed install is tried again next time, not remembered.
-        waiting.catch(() => prepared.delete(locale));
-        prepared.set(locale, waiting);
-      }
-      return waiting;
-    },
-    transcribe: async (audio, locale) => {
-      const result = (await helper.request('transcribe', {
-        audioBase64: audio.toString('base64'),
-        locale,
-      })) as { segments: ReadonlyArray<{ text: string }> };
-      return transcriptFromSegments(result.segments);
-    },
-  };
 };
 
 const GENERATE_TIMEOUT_MS = 120_000;

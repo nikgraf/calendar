@@ -1366,6 +1366,16 @@ was cut (pruned 2026-11-17).
 
 ## AI
 
+- **The way from a recording to a draft is measured** (2026-11-26, #385) —
+  nothing said which step loses a dictated phrase: the model bench read
+  written phrases, the place bench stored readings. Nik's 104 recordings
+  are model-bench cases (`voice`), heard through the helper's listening
+  as the app hears a phrase (Parakeet with the address book's names
+  too), read by the model, their place asked of MapKit. English phone,
+  v2: 50 pass with Parakeet (48 lost to the hearing, 6 after it; 97 as
+  written), 13 with Apple alone. Rejected: a bench of its own, MapKit
+  in every run, each clip heard in its own language. Open: real rooms,
+  unscripted speech, where a phrase ends; todo.md has what the runs found.
 - **Keep Assistant Sessions: real threads, kept on the device** (2026-11-26,
   #386) — off unless switched on (iOS Settings › Advanced › Diagnostics, Mac
   › AI Model): one record per thread, made by the shared thread hook as its
@@ -1580,6 +1590,15 @@ was cut (pruned 2026-11-17).
   may hold 3.5 GB, so Gemma 4 E2B (4 GB) does not load. Rejected: the
   package's prebuilt binary, a memory entitlement, scoring on the phone.
   Open: Apple's six hung calls, the prompt read again on every call.
+- **A person's name replaces what Parakeet heard only when spelt 0.65
+  alike** (2026-11-27, #385) — the list turned a first name said alone
+  and the next word into a full name ("Sarah morgen" → Sarah Novak), six
+  of 104 recordings lost. Each person's term carries 0.65; places keep
+  FluidAudio's floor. 51 → 55 of 104, 57 → 61 with places listed.
+  Rejected: another list (13–16 new wrong ones); one 0.65 for all (lost
+  more right place readings than wrong ones, ignored by the spotter pass
+  for ten names or fewer); a JS check (rules grown on made-up cases).
+  Open: listed places' own wrong replacements ("Lunch" → "Munich").
 - **Dictation reads each phrase with Parakeet** (2026-11-24, #378) — once
   downloaded (the Create lesson's Download Models, Settings › Dictation) and
   on (from the start), moondream's Parakeet Ultra reads the finished phrase

@@ -158,9 +158,7 @@ void app.whenReady().then(() => {
   registerAssistantModel(app.getPath('userData'));
   registerAssistantSessions(app.getPath('userData'));
   registerParakeetModel(app.getPath('userData'), () =>
-    host
-      .run(commonBackendHandlers.dictationVocabulary())
-      .then(({ people, places }) => [...people, ...places]),
+    host.run(commonBackendHandlers.dictationVocabulary()),
   );
   registerRemindersIpc();
   registerContactsIpc();

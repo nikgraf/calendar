@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-33.m4a",
+        "transcript": "Weekend in Salzburg with Anna from Friday to Sunday"
+      },
+      "expect": {
+        "title": ["weekend with anna", "weekend in salzburg with anna"],
+        "weekday": 5,
+        "isAllDay": true,
+        "spanDays": 2,
+        "location": "salzburg",
+        "place": ["Salzburg"]
+      }
+    }
+  ]
+}

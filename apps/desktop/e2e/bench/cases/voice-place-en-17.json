@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-17.m4a",
+        "transcript": "Train from Westbahnhof on Monday at eight fifteen"
+      },
+      "expect": {
+        "title": "train",
+        "weekday": 1,
+        "startTime": "08:15",
+        "endTime": "09:15",
+        "location": "westbahnhof",
+        "place": ["Westbahnhof", "Wien Westbahnhof"]
+      }
+    }
+  ]
+}

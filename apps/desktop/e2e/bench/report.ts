@@ -1,7 +1,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Field, FIELDS } from './check.ts';
+import { type Field, FIELDS, placeFound } from './check.ts';
 import { type Flip, flipLines, namedCases } from './flips.ts';
+import type { ParakeetReading } from './listening.ts';
+import type { PlaceOutcome } from './places.ts';
 import type { ModelCall } from './providers.ts';
 
 /**
@@ -28,9 +30,22 @@ export interface TurnReport {
   /** The draft after the turn, or the rejection. */
   readonly outcome: unknown;
   /**
-   * The transcript's own parse, run when the recogniser erred and the turn
-   * failed: whose fault it was. Its outcome is kept, so the verdict can be
-   * scored again with the turn's (`rescore.ts`).
+   * A heard turn's other readings, beside `heard` (the words that were
+   * sent): Apple's recogniser's when Parakeet's were sent, the second
+   * language's, and Parakeet's own account (its words before the names
+   * it listens for, and what they replaced).
+   */
+  readonly readings?:
+    | {
+        readonly apple?: string | undefined;
+        readonly other?: string | undefined;
+        readonly parakeet?: ParakeetReading | undefined;
+      }
+    | undefined;
+  /**
+   * The transcript's own parse, run when the turn failed on words that are
+   * not the transcript's to the letter: whose fault it was. Its outcome is
+   * kept, so the verdict can be scored again with the turn's (`rescore.ts`).
    */
   readonly said?:
     | {
@@ -39,6 +54,8 @@ export interface TurnReport {
         readonly outcome?: unknown;
       }
     | undefined;
+  /** What a heard recording says, word for word. Absent in reports from before it was kept. */
+  readonly transcript?: string | undefined;
   readonly wordErrorRate?: number | undefined;
 }
 
@@ -65,11 +82,37 @@ export interface Score {
   readonly fields: Readonly<Partial<Record<Field, Counter>>>;
   /** Of a turn's model calls together. */
   readonly medianMs: number;
+  /**
+   * Over the turns whose place the run asked MapKit for: taken unasked,
+   * offered to pick, right by its text alone, or missed. Absent where
+   * none was asked.
+   */
+  readonly places?: PlaceTally | undefined;
   /** Over the recorded turns: what became of each file, and the mean word error rate of the transcribed ones. */
   readonly recordings?:
     | {
         /** The recogniser could not read the file; the transcript ran. */
         readonly failed: number;
+        /**
+         * Of the transcribed turns, where each failing one was lost: to the
+         * hearing (the transcript passes: a word misheard, or the
+         * recogniser's punctuation and spelling read another way), or after
+         * it (the transcript fails too, or is what was heard to the
+         * letter). `unjudged`: failing on other words than the transcript's,
+         * which was never read (a turn that passed when it ran and fails a
+         * rescore). `noDraft`: heard, but the turns before it left no draft
+         * for its words to change, so nothing read them. Absent in reports
+         * from before it was counted.
+         */
+        readonly heard?:
+          | {
+              readonly lostAfter: number;
+              readonly lostHearing: number;
+              readonly noDraft: number;
+              readonly ok: number;
+              readonly unjudged: number;
+            }
+          | undefined;
         readonly missing: number;
         readonly skipped: number;
         readonly transcribed: number;
@@ -78,6 +121,51 @@ export interface Score {
     | undefined;
   readonly turns: Counter;
 }
+
+export interface PlaceTally {
+  readonly asked: number;
+  /** A MapKit call of the lookup failed or gave no answer in time: a miss may be that. */
+  readonly errors: number;
+  readonly missed: number;
+  /** Among the places to pick from, not taken. */
+  readonly offered: number;
+  readonly taken: number;
+  /** Not found by the lookup, the text names it all the same. */
+  readonly text: number;
+}
+
+/**
+ * Where a heard turn stands. A failing one was lost to the hearing when
+ * its transcript passes, and after it when that fails too or is what was
+ * heard to the letter (the turn's own failure is the transcript's). One
+ * that fails on other words than the transcript's, which was never read,
+ * is not judged: a run reads it for every such turn, a rescore only where
+ * the run did. A report from before the transcript was kept is read as it
+ * was made: no reading means the words were heard right. A heard turn
+ * that had no draft to change was lost before anything read its words.
+ */
+const heardWhere = (
+  turn: TurnReport,
+): 'lostAfter' | 'lostHearing' | 'noDraft' | 'ok' | 'unjudged' => {
+  // No outcome: the turns before it made no draft, and its words were never read.
+  if (turn.outcome === undefined || turn.outcome === null) {
+    return 'noDraft';
+  }
+  if (turn.failed.length === 0) {
+    return 'ok';
+  }
+  if (turn.said !== undefined) {
+    return turn.said.ok ? 'lostHearing' : 'lostAfter';
+  }
+  const asWritten =
+    turn.transcript === undefined ? turn.wordErrorRate === 0 : turn.heard === turn.transcript;
+  return asWritten ? 'lostAfter' : 'unjudged';
+};
+
+/** What the run's place lookup made of a turn's location, as its stored outcome holds it. */
+const placeOf = (turn: TurnReport): PlaceOutcome | undefined =>
+  (turn.outcome as { readonly draft?: { readonly place?: PlaceOutcome } } | null | undefined)?.draft
+    ?.place;
 
 export interface BenchReport {
   readonly cases: ReadonlyArray<CaseReport>;
@@ -125,6 +213,8 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
   const durations: Array<number> = [];
   const rates: Array<number> = [];
   const audio = { failed: 0, missing: 0, skipped: 0, transcribed: 0 };
+  const heard = { lostAfter: 0, lostHearing: 0, noDraft: 0, ok: 0, unjudged: 0 };
+  const places = { asked: 0, errors: 0, missed: 0, offered: 0, taken: 0, text: 0 };
   for (const benchCase of cases) {
     for (const turn of benchCase.turns) {
       turnsTotal += 1;
@@ -138,6 +228,22 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
       if (turn.wordErrorRate !== undefined) {
         rates.push(turn.wordErrorRate);
       }
+      if (turn.audio === 'transcribed') {
+        heard[heardWhere(turn)] += 1;
+      }
+      const place = placeOf(turn);
+      if (place !== undefined) {
+        places.asked += 1;
+        places.errors += place.errors.length > 0 ? 1 : 0;
+        const how = place.taken
+          ? 'taken'
+          : placeFound(place)
+            ? 'offered'
+            : turn.failed.includes('location')
+              ? 'missed'
+              : 'text';
+        places[how] += 1;
+      }
       for (const field of turn.checked) {
         const counter = fields[field] ?? { ok: 0, total: 0 };
         counter.total += 1;
@@ -150,11 +256,13 @@ export const scoreOf = (cases: ReadonlyArray<CaseReport>): Score => {
     cases: { ok: cases.filter((benchCase) => benchCase.ok).length, total: cases.length },
     fields,
     medianMs: median(durations),
+    places: places.asked === 0 ? undefined : places,
     recordings:
       audio.failed + audio.missing + audio.skipped + audio.transcribed === 0
         ? undefined
         : {
             ...audio,
+            heard: audio.transcribed === 0 ? undefined : heard,
             wordErrorRate:
               rates.length === 0 ? 0 : rates.reduce((sum, rate) => sum + rate, 0) / rates.length,
           },
@@ -202,10 +310,11 @@ const caseLine = (benchCase: CaseReport): string => {
     if (turn.notes.length > 0) {
       details.push(`${label}${turn.notes.join(', ')}`);
     }
+    // A word misheard, or a failing turn whose transcript was read (its words differ by a mark at least).
     if (
       turn.audio === 'transcribed' &&
       turn.wordErrorRate !== undefined &&
-      turn.wordErrorRate > 0
+      (turn.wordErrorRate > 0 || (turn.said !== undefined && turn.failed.length > 0))
     ) {
       details.push(
         `${label}heard "${turn.heard ?? ''}" (WER ${percent(turn.wordErrorRate)}${
@@ -297,6 +406,26 @@ export const formatReport = (
       ]
         .filter(Boolean)
         .join(', ')}`,
+    );
+    if (score.recordings.heard !== undefined) {
+      const { lostAfter, lostHearing, noDraft, ok, unjudged } = score.recordings.heard;
+      lines.push(
+        `   heard turns: ${String(ok)}/${String(transcribed)} pass · ${String(lostHearing)} lost to the hearing (the transcript passes) · ${String(lostAfter)} lost after it (the transcript fails too, or is what was heard)${
+          unjudged > 0
+            ? ` · ${String(unjudged)} not judged (the transcript was never read: scored again from a run they passed)`
+            : ''
+        }${noDraft > 0 ? ` · ${String(noDraft)} with no draft to change (the turns before made none)` : ''}`,
+      );
+    }
+  }
+  if (score.places !== undefined) {
+    const { asked, errors, missed, offered, taken, text } = score.places;
+    lines.push(
+      `   places asked of MapKit: ${String(asked)} · taken ${String(taken)} · offered ${String(offered)} · right as text only ${String(text)} · missed ${String(missed)}${
+        errors === 0
+          ? ''
+          : ` (${String(errors)} with a MapKit call that failed or gave no answer in time: a miss may be that)`
+      }`,
     );
   }
   return lines.join('\n');

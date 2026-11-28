@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-18.m4a",
+        "transcript": "Thomas Karpfeneder am Hauptbahnhof abholen, Donnerstag um sechs"
+      },
+      "expect": {
+        "title": "thomas karpfeneder abholen",
+        "weekday": 4,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": "hauptbahnhof",
+        "place": ["Wien Hauptbahnhof", "Hauptbahnhof"]
+      }
+    }
+  ]
+}

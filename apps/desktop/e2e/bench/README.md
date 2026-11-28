@@ -13,19 +13,24 @@ Set the variables inline or `export` them: a bench whose `MODEL_BENCH`
 is not "1" skips itself without a word (`docs/platform-notes.md` → Shell
 and tooling, on zsh).
 
-| Variable               | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MODEL_BENCH_HELPER`   | The desktop helper binary; default the package's own `helper/.build/release` build (`pnpm --filter @calendar/desktop build:helper`). `MODEL_BENCH_APPLE=0` leaves Apple's model out; `MODEL_BENCH_APPLE_REQUIRED=1` adds it a second time as `apple-required`, asked for every field (empty where the words give nothing): asked with optional fields it answers a first phrase with the title alone.                                                                                                                                                                                                                                                                                                                                                                              |
-| `MODEL_BENCH_OLLAMA`   | Ollama models, comma-separated (`gemma3:4b,gemma3:12b`); `MODEL_BENCH_OLLAMA_URL` the server (`http://localhost:11434`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `MODEL_BENCH_OPENAI`   | Models behind an OpenAI-compatible endpoint, comma-separated; `MODEL_BENCH_OPENAI_URL` the base up to `/v1` (`http://localhost:1234/v1`; Ollama's is `http://localhost:11434/v1`), `MODEL_BENCH_OPENAI_KEY` its key, `MODEL_BENCH_OPENAI_EXTRA` JSON joined to every request body (`{"reasoning_effort":"none"}` stops a reasoning model thinking aloud on Ollama); it may not name the model, the messages or the response format, and the report keeps it with the endpoint (`settings`). This path sends the strict schema: every field required, an optional one nullable. `MODEL_BENCH_OPENAI_JSON=object` is for a server with JSON mode only (DeepSeek's API): the schema then goes into the prompt; a busy server (429, 5xx) and a blank JSON-mode answer are asked again. |
-| `MODEL_BENCH_PIPELINE` | What runs around the model, comma-separated: `tuned` (the default), `plain`. See Arms.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `MODEL_BENCH_CASES`    | Only the cases whose id contains a term or whose tags hold it (`flow,de`). A selection leaves the blind cases out: a run of a few cases would give a blind one's outcome away by its counts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `MODEL_BENCH_STT`      | `off`: every recording's transcript is parsed, nothing is transcribed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `MODEL_BENCH_COMPARE`  | An earlier report (JSON) to print the difference to: the cases that flipped, the fields that moved, and how often chance alone would flip as many cases one way. A run of several models or arms compares each with its own earlier report; a run of one model on one arm (`MODEL_BENCH_APPLE=0`, one pipeline) compares it with whatever report is named, another model's too (v2 beside v3).                                                                                                                                                                                                                                                                                                                                                                                     |
-| `MODEL_BENCH_BLIND`    | `show`: the blind cases are printed like the open ones. For fixing an expectation, never while briefs or prompts are written (see Blind cases).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `MODEL_BENCH_TODAY`    | The day the run reads its phrases on (`YYYY-MM-DD`); default the clock's. What "this week" and "Friday" mean moves with the day, so two runs are compared on one day: name the earlier run's (its report's `today`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `MODEL_BENCH_RESCORE`  | Earlier reports (files, or a folder of them, comma-separated) scored again by the checks as they are now, without asking any model; each is written as a new report that names the run it came from, in its file name too. A recorded turn's "the transcript passes" is scored again where the report kept the transcript's outcome, and left out where it did not. A case that is gone, or has other turns or words than the model answered, stays as the report had it and is named. For a change to the checks or to an expectation alone; a changed address book or recording needs a run.                                                                                                                                                                                     |
-| `MODEL_BENCH_OUT`      | Where reports go; default `output/bench/` (gitignored).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Variable                      | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MODEL_BENCH_HELPER`          | The desktop helper binary; default the package's own `helper/.build/release` build (`pnpm --filter @calendar/desktop build:helper`). `MODEL_BENCH_APPLE=0` leaves Apple's model out; `MODEL_BENCH_APPLE_REQUIRED=1` adds it a second time as `apple-required`, asked for every field (empty where the words give nothing): asked with optional fields it answers a first phrase with the title alone.                                                                                                                                                                                                                                                                                                                                                                              |
+| `MODEL_BENCH_OLLAMA`          | Ollama models, comma-separated (`gemma3:4b,gemma3:12b`); `MODEL_BENCH_OLLAMA_URL` the server (`http://localhost:11434`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `MODEL_BENCH_OPENAI`          | Models behind an OpenAI-compatible endpoint, comma-separated; `MODEL_BENCH_OPENAI_URL` the base up to `/v1` (`http://localhost:1234/v1`; Ollama's is `http://localhost:11434/v1`), `MODEL_BENCH_OPENAI_KEY` its key, `MODEL_BENCH_OPENAI_EXTRA` JSON joined to every request body (`{"reasoning_effort":"none"}` stops a reasoning model thinking aloud on Ollama); it may not name the model, the messages or the response format, and the report keeps it with the endpoint (`settings`). This path sends the strict schema: every field required, an optional one nullable. `MODEL_BENCH_OPENAI_JSON=object` is for a server with JSON mode only (DeepSeek's API): the schema then goes into the prompt; a busy server (429, 5xx) and a blank JSON-mode answer are asked again. |
+| `MODEL_BENCH_PIPELINE`        | What runs around the model, comma-separated: `tuned` (the default), `plain`. See Arms.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `MODEL_BENCH_CASES`           | Only the cases whose id contains a term or whose tags hold it (`flow,de`). A selection leaves the blind cases out: a run of a few cases would give a blind one's outcome away by its counts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `MODEL_BENCH_STT`             | `off`: every recording's transcript is parsed, nothing is heard.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `MODEL_BENCH_LANGUAGE`        | The language the device listens in (`en-US`): every recording is heard in it, a German sentence too, as a phone does. Without it each case is heard in its own language.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `MODEL_BENCH_SECOND_LANGUAGE` | The second language a phrase is read in beside it (Settings › Dictation): a locale, `auto` (what this Mac comes to) or `off`. Without it the bench's other language (German beside English, English beside German).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `MODEL_BENCH_PARAKEET`        | The folder Parakeet's files are in: each recording is then read with Parakeet too, listening for the address book's names, and its reading is the phrase, as in the app once it is downloaded. Without it Apple's recogniser alone writes the phrase.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `MODEL_BENCH_PLACE_NAMES`     | `cases`: the places the run's cases mean (each `expect.place`'s first name) are Parakeet's names beside the address book's people, as the calendar of someone who has been to each hands them on. Without it Parakeet listens for the people alone.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `MODEL_BENCH_PLACES`          | `mapkit`: each place a case says is meant (`expect.place`) is asked of the app's place lookup against MapKit (the helper's), with the hearing's other readings of it, as a dictated turn asks. Without it the location's text decides. MapKit lets through about forty calls a minute, so a run of the recordings takes a quarter of an hour longer; a lookup that the network or the limit let down is asked again, three times in all, and what still failed is counted with the places (its miss may be that).                                                                                                                                                                                                                                                                  |
+| `MODEL_BENCH_COMPARE`         | An earlier report (JSON) to print the difference to: the cases that flipped, the fields that moved, and how often chance alone would flip as many cases one way. A run of several models or arms compares each with its own earlier report; a run of one model on one arm (`MODEL_BENCH_APPLE=0`, one pipeline) compares it with whatever report is named, another model's too (v2 beside v3).                                                                                                                                                                                                                                                                                                                                                                                     |
+| `MODEL_BENCH_BLIND`           | `show`: the blind cases are printed like the open ones. For fixing an expectation, never while briefs or prompts are written (see Blind cases).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `MODEL_BENCH_TODAY`           | The day the run reads its phrases on (`YYYY-MM-DD`); default the clock's. What "this week" and "Friday" mean moves with the day, so two runs are compared on one day: name the earlier run's (its report's `today`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `MODEL_BENCH_RESCORE`         | Earlier reports (files, or a folder of them, comma-separated) scored again by the checks as they are now, without asking any model; each is written as a new report that names the run it came from, in its file name too. A recorded turn's "the transcript passes" is scored again where the report kept the transcript's outcome, and left out where it did not: a heard turn that passed when it ran and fails now is counted as not judged, since its transcript was never read. A place is scored by the lookup the report kept. A case that is gone, or has other turns or words than the model answered, stays as the report had it and is named. For a change to the checks or to an expectation alone; a changed address book, recording or place name needs a run.      |
+| `MODEL_BENCH_OUT`             | Where reports go; default `output/bench/` (gitignored).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Arms
 
@@ -115,12 +120,13 @@ thread does. The report keeps the raw model answers per turn.
 ```
 
 - `input` is `{ "text" }`, or `{ "audio", "transcript" }`: a file under
-  `audio/` and what it says, word for word. The recording goes through
-  the helper's SpeechAnalyzer; the transcript gives the word error rate,
-  and when the recogniser erred and the turn failed, the transcript is
-  parsed too, so the table says whether the words as said would have
-  passed. A missing file runs as its transcript (`audio: "missing"` in
-  the report).
+  `audio/` and what it says, word for word. The recording is heard as
+  the app hears a phrase (Recordings, below); the transcript gives the
+  word error rate, and when the turn failed on words that are not the
+  transcript's to the letter (a word misheard, or only the recogniser's
+  punctuation and spelling), the transcript is parsed too, so the table
+  says whether the words as said would have passed. A missing file runs as its transcript
+  (`audio: "missing"` in the report).
 - `expect` says where a person would put it — never a literal date, the
   bench runs on "today". `weekday` (ISO, 1 Monday) or `dayOffset` (0
   today); `dayOfMonth` and `month` for a date said by its number ("the
@@ -134,7 +140,13 @@ thread does. The report keeps the raw model answers per turn.
   accents, ß; a list names several a person would accept) or
   `titleIncludes`; `location` (folded part, or `null` for
   none) or `locationIs` (whole, folded: a turn that must not keep what
-  was there); `repeat` (`freq`, `interval`, `count`, `untilMonth`, `byDay` as
+  was there), and beside either `place`, MapKit's names for the place
+  meant: where the run asks MapKit (`MODEL_BENCH_PLACES=mapkit`) the
+  location is right when the app's lookup takes the place or offers it
+  to pick, whatever the text reads (a name heard as "Figelmuller" that
+  still finds Figlmüller), and by its text where the lookup finds none
+  or is not asked, and where a later turn left the location as it was
+  (the place found is then the one the draft had); `repeat` (`freq`, `interval`, `count`, `untilMonth`, `byDay` as
   weekday codes for a weekly rule and with their place in the month for
   a monthly one, `1TU` the first Tuesday and `-1FR` the last Friday, or
   `null`);
@@ -152,8 +164,9 @@ thread does. The report keeps the raw model answers per turn.
   before the turn. A change that moves the time and leaves the title
   alone states the times; if the title moved too, that is a failure.
   Times and all-day-ness are one part.
-- `lang` picks the recogniser's locale (`en-US`, `de-DE`; `locale`
-  overrides) and `contacts` the address book in `contacts.json` (default
+- `lang` picks the language a recording is heard in (`en-US`, `de-DE`;
+  `locale` overrides, and `MODEL_BENCH_LANGUAGE` names one for the whole
+  run) and `contacts` the address book in `contacts.json` (default
   `team`) names are looked up in, every match, as the thread does.
 - Notes and notifications are what the model's answer says, folded
   into the draft as the thread does it.
@@ -182,7 +195,9 @@ day, `allday` a draft without times or one that runs past midnight.
 `dictated` as a recogniser writes speech (no punctuation, numbers as
 words, a correction inside the phrase). `phone` marks a phrase from real
 use, as it was heard: those are scored apart by their tag, since the
-other cases were written at a desk.
+other cases were written at a desk. `voice` marks a case whose phrase is
+one of Nik's recordings: `voice-place` a sentence that names a place,
+`voice-turn` a few words said to a draft a typed turn made.
 
 ### Blind cases
 
@@ -261,7 +276,16 @@ the recorded turns, how many were transcribed (with the mean word error
 rate), ran as their transcript for want of a file or because the
 recogniser could not read it, or were skipped. Below the score it prints
 the open cases passed per tag and, where the run held blind cases, the
-open and the blind ones apart.
+open and the blind ones apart. For the heard turns it says where each
+failing one was lost: to the hearing (the transcript passes: a word was
+misheard, or the model read the recogniser's punctuation and spelling
+another way) or after it (the transcript fails too, or is what was
+heard: the model, a convention, the lookup), with the heard turns
+whose first phrase had made no draft counted apart; and for the
+places asked of MapKit, how many were taken unasked, offered to pick,
+right by their text alone, or missed. A heard turn keeps every reading
+(`readings`: Apple's, the second language's, and Parakeet's words
+before the names with what the names replaced).
 
 Every wording of a prompt goes through the bench before it is kept, a
 reviewer's included: a model at temperature 0 answers alike run after
@@ -435,6 +459,123 @@ said it on what.
 
 ## Recordings
 
-`audio/README.md` lists the clips the cases ask for and how to record
-them. Only the Mac's helper transcribes, but SpeechAnalyzer is the
-framework iOS dictates with, so the Mac stands in for both platforms.
+A recorded turn is heard as the app hears a phrase (`listening.ts`): its
+audio goes into the helper's listening at the microphone's pace
+(`speech.start`, `speech.audio`) and is read whole when it ends
+(`speech.finish`), by Apple's recogniser in the language the device
+listens in, by the second language's beside it and, where the run names
+its files, by Parakeet with the address book's names to listen for.
+The words that are sent on are the ones the app would send: Parakeet's
+where the run reads with it, else Apple's. A run that names Parakeet's
+folder stops when its files are not there, loads it before each phrase
+as the app does, and says a phrase again while it still loads (the
+first load after a download takes half a minute, and a phrase waits
+four seconds for it); a phrase it never reads is a failed hearing, run
+as its transcript and counted so, never Apple's words under its name. The Mac's helper runs the Swift the iPhone
+runs (`SpeechBridge.swift`, `ParakeetBridge.swift`), so the Mac stands
+in for both platforms; what it cannot stand in for is the iPhone's
+microphone and room.
+
+`audio/README.md` lists the clips and how to record them. Nik's 104
+recordings (2026-11-23) are the `voice` cases: eighty sentences that
+name a place and a person (`voice-place-<lang>-<#>`, forty places in
+English and in German) and twenty-four short turns said to a draft
+(`voice-turn-<#>`), with the people of the recordings in the `voices`
+address book among others who are not said. They measure the whole way
+from the voice to the draft, and say which step lost a phrase:
+
+```bash
+MODEL_BENCH=1 E2E=1 MODEL_BENCH_APPLE=0 MODEL_BENCH_CASES=voice-place,voice-turn \
+  MODEL_BENCH_OPENAI_URL=http://127.0.0.1:8090/v1 MODEL_BENCH_OPENAI=assistant-v2 \
+  MODEL_BENCH_LANGUAGE=en-US MODEL_BENCH_PARAKEET=<folder> MODEL_BENCH_PLACES=mapkit \
+  pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts
+```
+
+That is an English phone with German as its second language, Parakeet
+downloaded: every clip is heard in English, the German sentences too.
+Parakeet's folder is the one the app downloads into (the dev variant's
+`~/Library/Application Support/@calendar/desktop/parakeet` once Settings
+› Dictation fetched it), or one the built helper filled (712 MB from
+Hugging Face, at the commits the app pins; it prints its progress and
+`{"result":{},"id":1}` when both models are there, then Ctrl-C):
+
+```bash
+(echo '{"id":1,"method":"parakeet.download","params":{"folder":"<absolute folder>"}}'; cat) | apps/desktop/helper/.build/release/solunivo-model-helper
+```
+
+The table's last lines say how many heard turns pass, how many
+were lost to the hearing (the transcript passes) and how many after it,
+and what MapKit made of the places. A selection by `voice` alone also
+takes the cases with "invoice" in their name: name both tags.
+
+Two runs heard by two devices (with and without Parakeet, another
+language) are two results, named in the report's settings, and are
+compared by those lines: `MODEL_BENCH_COMPARE` leaves a recording heard
+in other words out of its flips. MapKit's answers move with its data and
+the network, so a place count is a measure of the day, and a run meant
+to compare two models leaves `MODEL_BENCH_PLACES` out.
+
+### Where the recordings stand
+
+One voice reading aloud in a quiet room (2026-11-23), heard by an
+English phone with German as its second language, read by Assistant v2
+(the published file on the bundled `llama-server`) as of Wednesday
+2026-11-25. The first three rows and the last asked MapKit on 2026-11-25
+at `ac5539c8`; the four between, on 2026-11-27 at `ff4e5abc` (people's
+names at 0.65, #385), against that day's FluidAudio floor:
+
+| Heard with                      | Pass   | Lost to the hearing | Lost after it | Words wrong | Places taken · offered · text alone · missed |
+| ------------------------------- | ------ | ------------------- | ------------- | ----------- | -------------------------------------------- |
+| The transcripts                 | 97/104 |                     | 7             |             | not asked                                    |
+| Parakeet and Apple              | 50/104 | 48                  | 6             | 22%         | 33 · 18 · 2 · 26 of 79                       |
+| … 2026-11-27                    | 51/104 | 47                  | 6             | 22%         | 33 · 19 · 2 · 25 of 79                       |
+| … people at 0.65                | 55/104 | 43                  | 6             | 21%         | 34 · 20 · 3 · 27 of 83                       |
+| … places listed, at the floor   | 57/104 | 41                  | 6             | 16%         | 64 · 3 · 2 · 10 of 79                        |
+| … places listed, people at 0.65 | 61/104 | 37                  | 6             | 16%         | 64 · 4 · 3 · 11 of 82                        |
+| Apple alone                     | 13/104 | 84                  | 7             | 62%         | 4 · 13 · 0 · 39 of 56                        |
+
+- The hearing loses nearly every phrase that is lost: v2 reads 97 of
+  the 104 as they are written.
+- With Parakeet, by set: the English sentences 15 of 40, the German ones
+  21 of 40 (on a phone that listens in English: Parakeet reads both
+  languages), the English turns 7 of 16, the German ones 7 of 8. Of the
+  48 phrases lost to the hearing the place is wrong in 33, the title in
+  22, the day in 8.
+- Parakeet's names: it replaced words in 17 phrases. Eleven are full
+  names put right ("Thomas Kapfmeder" → Thomas Karpfeneder). In six a
+  first name said alone took the next word with it into the contact's
+  full name ("Sarah morgen" → "Sarah Novak", "Anna in" → "Anna Lee",
+  "at Klein(od)" → "David Klein"), and each of those phrases was lost.
+  Since #385 a person's name replaces a span only when spelt 0.65 alike
+  (FluidAudio's per-term `minSimilarity`, 2026-11-27 at `ff4e5abc`):
+  only the eleven right ones are left and four of the six pass; "Anna
+  in the Türkenschanz Park" still misses its place and "from Friday to
+  Sunday" is a weekend. Titles 81 → 87 of 108. A list alone fixes
+  nothing (run through FluidAudio's rescoring directly: first names as
+  terms of their own make 16 wrong replacements, surnames alone 13).
+- With the cases' places listed too (`MODEL_BENCH_PLACE_NAMES=cases`,
+  someone who has been to each of them), 57 pass at FluidAudio's floor
+  and 61 with people at 0.65: places keep their floor, since one 0.65
+  for every name lost more right place readings than wrong ones
+  ("CafeMick" → Kaffemik). Listed places make wrong replacements of their
+  own ("Coffee with" → "Coffee Hawelka", "Lunch" → "Munich", "nach acht"
+  → "Naschmarkt").
+- The model reads a recogniser's writing other than the same words
+  typed: "Konzert am Karlsplatz, nächsten Donnerstag um acht." is 08:00,
+  the transcript without the comma and the period 20:00; "Flight to
+  Zurich" keeps the destination in the title, "Flight to Zürich" makes
+  it the place. Both count as lost to the hearing.
+- Lost after the hearing, with Parakeet, six that fail as written too:
+  the two "abholen" sentences (written, they are read as to-dos, which
+  hold no place), the two weekends "from Friday to Sunday" (no draft of
+  several days), "it's in Vienna" (the venue replaced by the city) and
+  a hike that keeps its hill in the title.
+- Apple's recogniser alone passes 13: none of the 48 German phrases (it
+  listens in English, and the second language's reading reaches only
+  the place lookup) and 13 of the 56 English ones, where Parakeet
+  passes 22. Every phrase it passes, Parakeet passes too. Fewer places
+  are asked there because fewer drafts name one.
+
+What the numbers are not: a phone's microphone, a room with noise or
+other voices, speech that is not read aloud, or a phrase cut where the
+speaker paused. Every clip is one whole phrase.

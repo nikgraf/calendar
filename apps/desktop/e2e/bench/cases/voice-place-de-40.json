@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-40.m4a",
+        "transcript": "Workshop in der Praterstraße 1 nächsten Montag von neun bis zwölf"
+      },
+      "expect": {
+        "title": "workshop",
+        "weekday": 1,
+        "startTime": "09:00",
+        "endTime": "12:00",
+        "location": "praterstraße 1",
+        "place": ["Praterstraße 1"]
+      }
+    }
+  ]
+}

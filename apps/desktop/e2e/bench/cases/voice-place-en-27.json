@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-27.m4a",
+        "transcript": "Dinner with Jörg Hofstätter at Plachutta on Saturday at eight"
+      },
+      "expect": {
+        "title": "dinner with jörg hofstätter",
+        "weekday": 6,
+        "startTime": "20:00",
+        "endTime": "21:00",
+        "location": "plachutta",
+        "place": ["Plachutta"]
+      }
+    }
+  ]
+}

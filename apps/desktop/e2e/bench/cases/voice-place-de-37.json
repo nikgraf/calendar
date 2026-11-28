@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-37.m4a",
+        "transcript": "Arzt in der Wollzeile 5 morgen um neun"
+      },
+      "expect": {
+        "title": "arzt",
+        "dayOffset": 1,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "location": "wollzeile 5",
+        "place": ["Wollzeile 5"]
+      }
+    }
+  ]
+}

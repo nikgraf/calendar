@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-19.m4a",
+        "transcript": "Lunch break in the Burggarten tomorrow at twelve thirty"
+      },
+      "expect": {
+        "title": "lunch break",
+        "dayOffset": 1,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "location": "burggarten",
+        "place": ["Burggarten"]
+      }
+    }
+  ]
+}

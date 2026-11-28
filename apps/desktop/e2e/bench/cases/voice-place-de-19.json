@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "de",
+  "tags": ["voice", "voice-place", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-de-19.m4a",
+        "transcript": "Mittagspause im Burggarten morgen um halb eins"
+      },
+      "expect": {
+        "title": "mittagspause",
+        "dayOffset": 1,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "location": "burggarten",
+        "place": ["Burggarten"]
+      }
+    }
+  ]
+}

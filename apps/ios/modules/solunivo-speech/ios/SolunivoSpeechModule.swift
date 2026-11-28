@@ -196,9 +196,11 @@ public class SolunivoSpeechModule: Module {
     }
 
     // Dictation reads with Parakeet, with these names as its vocabulary
-    // (the models load in the background), or no longer does.
-    AsyncFunction("parakeetUse") { (on: Bool, vocabulary: [String]) async in
-      await Self.engine().use(on: on, vocabulary: vocabulary)
+    // (the models load in the background), or no longer does. `people` are
+    // the names among them that ask for a closer match (ParakeetBridge.swift).
+    AsyncFunction("parakeetUse") {
+      (on: Bool, vocabulary: [String], people: [String]) async in
+      await Self.engine().use(on: on, vocabulary: vocabulary, people: people)
     }
 
     // As a phrase starts: the models load in the background while it is
@@ -215,10 +217,10 @@ public class SolunivoSpeechModule: Module {
     // The Speech Spike page (Settings › Advanced): any version, any
     // vocabulary, a file; `onParakeetProgress` while the model downloads.
     AsyncFunction("parakeetSpikeLoad") {
-      (version: String, vocabulary: [String]) async throws -> [String: Any] in
+      (version: String, vocabulary: [String], people: [String]) async throws -> [String: Any] in
       let module = WeakModule(self)
       let loadMs = try await Self.engine().spikeLoad(
-        version: version, vocabulary: vocabulary
+        version: version, vocabulary: vocabulary, people: people
       ) { progress in
         module.value?.sendEvent(
           "onParakeetProgress", ["fraction": progress.fractionCompleted])

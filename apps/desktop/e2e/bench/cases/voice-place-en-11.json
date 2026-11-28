@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-11.m4a",
+        "transcript": "Coffee with Sarah at Kaffemik tomorrow at ten"
+      },
+      "expect": {
+        "title": "coffee with sarah",
+        "dayOffset": 1,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "kaffemik",
+        "place": ["Kaffemik"]
+      }
+    }
+  ]
+}

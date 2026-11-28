@@ -41,6 +41,9 @@ export default {
         'e2e/bombadil/taskEditor.ts',
         'public/*.worklet.js',
       ],
+      // llama.cpp's source, checked out by `build:llama` (the bench's server): its own
+      // tooling is not this workspace's, and the folder's .gitignore does not keep knip out.
+      ignore: ['llama/.build/**'],
       ignoreBinaries: ['swift'],
       // The JSDoc type of forge.config.cjs, from @electron-forge/cli.
       ignoreDependencies: ['@electron-forge/shared-types'],

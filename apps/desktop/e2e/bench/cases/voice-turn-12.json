@@ -1,0 +1,29 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-turn", "flow", "location"],
+  "turns": [
+    {
+      "input": {
+        "text": "Beer on Thursday at 6pm"
+      },
+      "expect": {
+        "title": "beer",
+        "weekday": 4,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": null
+      }
+    },
+    {
+      "input": {
+        "audio": "turns/turn-12.m4a",
+        "transcript": "at the Schweizerhaus"
+      },
+      "expect": {
+        "location": "schweizerhaus",
+        "place": ["Schweizerhaus"]
+      }
+    }
+  ]
+}

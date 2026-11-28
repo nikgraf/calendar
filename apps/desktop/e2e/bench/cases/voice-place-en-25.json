@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-25.m4a",
+        "transcript": "Beer with Max at the Schweizerhaus on Thursday at six"
+      },
+      "expect": {
+        "title": "beer with max",
+        "weekday": 4,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": "schweizerhaus",
+        "place": ["Schweizerhaus"]
+      }
+    }
+  ]
+}

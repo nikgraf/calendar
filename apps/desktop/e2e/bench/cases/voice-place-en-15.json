@@ -1,0 +1,21 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-place"],
+  "turns": [
+    {
+      "input": {
+        "audio": "places/place-en-15.m4a",
+        "transcript": "Run in the Augarten tomorrow morning at seven"
+      },
+      "expect": {
+        "title": "run",
+        "dayOffset": 1,
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "location": "augarten",
+        "place": ["Augarten"]
+      }
+    }
+  ]
+}

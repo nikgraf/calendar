@@ -1,0 +1,29 @@
+{
+  "contacts": "voices",
+  "lang": "en",
+  "tags": ["voice", "voice-turn", "flow", "location"],
+  "turns": [
+    {
+      "input": {
+        "text": "Run tomorrow at 7am"
+      },
+      "expect": {
+        "title": "run",
+        "dayOffset": 1,
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "location": null
+      }
+    },
+    {
+      "input": {
+        "audio": "turns/turn-08.m4a",
+        "transcript": "in the Augarten"
+      },
+      "expect": {
+        "location": "augarten",
+        "place": ["Augarten"]
+      }
+    }
+  ]
+}

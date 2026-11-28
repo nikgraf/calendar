@@ -61,16 +61,25 @@ export interface SolunivoParakeetNative {
   /** The app left the screen: the models go, the switch stays. */
   readonly parakeetRelieve: () => Promise<void>;
   readonly parakeetRemove: () => Promise<void>;
+  /** `people`: the names among `vocabulary` that are people's (a closer match). */
   readonly parakeetSpikeLoad: (
     version: ParakeetVersion,
     vocabulary: ReadonlyArray<string>,
+    people: ReadonlyArray<string>,
   ) => Promise<{ readonly loadMs: number }>;
   readonly parakeetSpikeRelease: () => Promise<void>;
   /** A file URI (`file:///…`) of audio AVAudioFile reads. */
   readonly parakeetSpikeTranscribe: (uri: string) => Promise<ParakeetHeard>;
   readonly parakeetState: () => Promise<{ readonly bytes: number; readonly here: boolean }>;
-  /** Dictation reads with Parakeet, with these names as its vocabulary, or no longer does. */
-  readonly parakeetUse: (on: boolean, vocabulary: ReadonlyArray<string>) => Promise<void>;
+  /**
+   * Dictation reads with Parakeet, with these names as its vocabulary, or no
+   * longer does. `people`: the names among them that are people's (a closer match).
+   */
+  readonly parakeetUse: (
+    on: boolean,
+    vocabulary: ReadonlyArray<string>,
+    people: ReadonlyArray<string>,
+  ) => Promise<void>;
 }
 
 export interface SolunivoSpeechNative {

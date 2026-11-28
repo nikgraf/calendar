@@ -41,7 +41,12 @@ enum ParakeetDispatch {
       if case .array(let values)? = params["vocabulary"] {
         vocabulary = values.compactMap(\.stringValue)
       }
-      await ParakeetEngine.shared.use(on: on, vocabulary: vocabulary)
+      // Which of them are people's names (a stricter match): none when not sent.
+      var people: [String] = []
+      if case .array(let values)? = params["people"] {
+        people = values.compactMap(\.stringValue)
+      }
+      await ParakeetEngine.shared.use(on: on, vocabulary: vocabulary, people: people)
       return [:]
     default:
       throw HelperError.badRequest("unknown method \(method)")

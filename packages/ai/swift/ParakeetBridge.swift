@@ -99,12 +99,24 @@ actor ParakeetEngine {
     locale.language.languageCode.map { languages.contains($0.identifier) } ?? false
   }
 
+  /// How alike a span must be spelt to a person's name before the name
+  /// may replace it (each person's term carries it, so FluidAudio's pass
+  /// from what its spotter heard, for ten names or fewer, honours it too).
+  /// FluidAudio's own floor (0.52, 0.55 or 0.60 by list size) let a first
+  /// name said alone take the next word into a full name ("Anna in" →
+  /// Anna Lee); at 0.65 Nik's 104 recordings kept every right name and had
+  /// none of those (#385). Places keep FluidAudio's floor: at 0.65 they
+  /// lost more right readings ("CafeMick" → Kaffemik) than wrong ones.
+  private static let personSimilarity: Float = 0.65
+
   /// How long a phrase's answer waits for Parakeet before it goes without it.
   static let readLimit: Duration = .seconds(4)
 
   private var folder: URL?
   private var on = false
   private var terms: [String] = []
+  /// The terms that are people's names (lowercased), which ask for `personSimilarity`.
+  private var personNames: Set<String> = []
   private var loaded: (version: AsrModelVersion, asr: AsrManager, models: AsrModels)?
   private var ctc: CtcModels?
   private var session: VocabularyBoostingSession?
@@ -216,8 +228,10 @@ actor ParakeetEngine {
   /// Dictation reads with Parakeet (`on`), with these names as its
   /// vocabulary, or no longer does and lets the models go. Nothing is
   /// loaded here: `prepare` does that as dictation starts, and the first
-  /// phrase loads them otherwise.
-  func use(on: Bool, vocabulary: [String]) {
+  /// phrase loads them otherwise. `people` are the names among them that
+  /// are people's (`personSimilarity`); the rest keep FluidAudio's floor.
+  func use(on: Bool, vocabulary: [String], people: [String]) {
+    setPeople(people)
     self.on = on
     guard on else {
       releaseModels()
@@ -226,6 +240,15 @@ actor ParakeetEngine {
     let next = Self.cleaned(vocabulary)
     if next != terms {
       terms = next
+      session = nil
+      spotting = nil
+    }
+  }
+
+  private func setPeople(_ names: [String]) {
+    let next = Set(Self.cleaned(names).map { $0.lowercased() })
+    if next != personNames {
+      personNames = next
       session = nil
       spotting = nil
     }
@@ -310,14 +333,17 @@ actor ParakeetEngine {
       task = spotting
     } else {
       let wanted = terms
-      task = Task { try await self.buildSession(for: wanted, generation: started) }
+      let people = personNames
+      task = Task { try await self.buildSession(for: wanted, people: people, generation: started) }
       spotting = task
     }
     defer { if spotting == task { spotting = nil } }
     try await task.value
   }
 
-  private func buildSession(for wanted: [String], generation started: Int) async throws {
+  private func buildSession(for wanted: [String], people: Set<String>, generation started: Int)
+    async throws
+  {
     if ctc == nil {
       let (_, directory) = try paths()
       guard CtcModels.modelsExist(at: directory) else { return }
@@ -327,10 +353,15 @@ actor ParakeetEngine {
     }
     guard let ctc else { return }
     let built = try await VocabularyBoostingSession(
-      vocabulary: CustomVocabularyContext(terms: wanted.map { CustomVocabularyTerm(text: $0) }),
+      vocabulary: CustomVocabularyContext(
+        terms: wanted.map {
+          CustomVocabularyTerm(
+            text: $0,
+            minSimilarity: people.contains($0.lowercased()) ? Self.personSimilarity : nil)
+        }),
       ctcModels: ctc)
     // Other names came meanwhile: the next phrase builds theirs.
-    guard generation == started, terms == wanted else { return }
+    guard generation == started, terms == wanted, personNames == people else { return }
     session = built
   }
 
@@ -435,11 +466,13 @@ actor ParakeetEngine {
 
   // MARK: The Speech Spike page (iOS): any version, any vocabulary, a file.
 
-  /// Loads `version` with `vocabulary` (fetching what is missing), for the
-  /// Speech Spike page's measurements; dictation's reading loads Ultra
-  /// with its own vocabulary again when it next reads.
+  /// Loads `version` with `vocabulary` and its `people` (as `use` takes
+  /// them, fetching what is missing), for the Speech Spike page's
+  /// measurements; dictation's reading loads Ultra with its own vocabulary
+  /// again when it next reads.
   func spikeLoad(
-    version name: String, vocabulary: [String], progress: @escaping ProgressHandler
+    version name: String, vocabulary: [String], people: [String],
+    progress: @escaping ProgressHandler
   ) async throws -> Double {
     let version: AsrModelVersion
     switch name {
@@ -462,6 +495,7 @@ actor ParakeetEngine {
       }
     }
     terms = Self.cleaned(vocabulary)
+    setPeople(people)
     _ = try await prepare(version)
     return Date().timeIntervalSince(started) * 1000
   }
