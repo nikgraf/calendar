@@ -128,11 +128,7 @@ const devicePort = (): ParakeetPort | undefined => {
         }),
     readChoice: choice.read,
     remove: () => native.parakeetRemove(),
-    // A build from before #385 has no `parakeetUseNames`: its names keep FluidAudio's floor.
-    use: (on, vocabulary, people) =>
-      native.parakeetUseNames === undefined
-        ? native.parakeetUse(on, [...vocabulary])
-        : native.parakeetUseNames(on, [...vocabulary], [...people]),
+    use: (on, vocabulary, people) => native.parakeetUse(on, [...vocabulary], [...people]),
     writeChoice: choice.write,
   };
 };

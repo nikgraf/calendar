@@ -220,8 +220,8 @@ contacts, at most 100 of each, handed over as each phrase starts). The
 answer waits for it at most 4 s. A person's name replaces a span only when
 it is spelt 0.65 alike (FluidAudio's per-term `minSimilarity`, which both
 of its passes honour; places keep its floor): the names reach Swift with
-the people among them named (the helper's `parakeet.use` `people`, the
-iOS module's `parakeetUseNames`, missing in builds before #385). When it
+the people among them named (`people` in the helper's `parakeet.use` and
+the iOS module's `parakeetUse`). When it
 came, its text is the phrase
 the thread reads (`Heard.text`) and Apple's goes along as `Heard.apple`
 (`heardFromSegments`); Apple's recogniser still decides that nothing was

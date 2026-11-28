@@ -228,16 +228,10 @@ actor ParakeetEngine {
   /// Dictation reads with Parakeet (`on`), with these names as its
   /// vocabulary, or no longer does and lets the models go. Nothing is
   /// loaded here: `prepare` does that as dictation starts, and the first
-  /// phrase loads them otherwise.
-  func use(on: Bool, vocabulary: [String]) {
-    use(on: on, vocabulary: vocabulary, people: nil)
-  }
-
-  /// `use` with the people among the names (`setPeople`) in the same step,
-  /// so two calls that cross never pair one's names with the other's people.
-  /// `people: nil` leaves those told before.
-  func use(on: Bool, vocabulary: [String], people: [String]?) {
-    if let people { setPeople(people) }
+  /// phrase loads them otherwise. `people` are the names among them that
+  /// are people's (`personSimilarity`); the rest keep FluidAudio's floor.
+  func use(on: Bool, vocabulary: [String], people: [String]) {
+    setPeople(people)
     self.on = on
     guard on else {
       releaseModels()
@@ -251,9 +245,7 @@ actor ParakeetEngine {
     }
   }
 
-  /// Which of the vocabulary's names are people's (`personSimilarity`),
-  /// told before `use` or `spikeLoad`: the rest keep FluidAudio's floor.
-  func setPeople(_ names: [String]) {
+  private func setPeople(_ names: [String]) {
     let next = Set(Self.cleaned(names).map { $0.lowercased() })
     if next != personNames {
       personNames = next
@@ -474,11 +466,13 @@ actor ParakeetEngine {
 
   // MARK: The Speech Spike page (iOS): any version, any vocabulary, a file.
 
-  /// Loads `version` with `vocabulary` (fetching what is missing), for the
-  /// Speech Spike page's measurements; dictation's reading loads Ultra
-  /// with its own vocabulary again when it next reads.
+  /// Loads `version` with `vocabulary` and its `people` (as `use` takes
+  /// them, fetching what is missing), for the Speech Spike page's
+  /// measurements; dictation's reading loads Ultra with its own vocabulary
+  /// again when it next reads.
   func spikeLoad(
-    version name: String, vocabulary: [String], progress: @escaping ProgressHandler
+    version name: String, vocabulary: [String], people: [String],
+    progress: @escaping ProgressHandler
   ) async throws -> Double {
     let version: AsrModelVersion
     switch name {
@@ -501,6 +495,7 @@ actor ParakeetEngine {
       }
     }
     terms = Self.cleaned(vocabulary)
+    setPeople(people)
     _ = try await prepare(version)
     return Date().timeIntervalSince(started) * 1000
   }

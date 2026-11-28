@@ -107,8 +107,11 @@ const parakeetPort = (): ParakeetPort | undefined => {
       );
       try {
         const people = new Set([...SPIKE_PEOPLE, ...devicePeople]);
-        await native.parakeetPeople?.(vocabulary.filter((name) => people.has(name)));
-        return await native.parakeetSpikeLoad(version, vocabulary);
+        return await native.parakeetSpikeLoad(
+          version,
+          vocabulary,
+          vocabulary.filter((name) => people.has(name)),
+        );
       } finally {
         listening.remove();
       }
